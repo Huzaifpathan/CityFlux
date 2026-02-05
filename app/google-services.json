@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "701522099832",
+    "project_id": "cityflux-82a92",
+    "storage_bucket": "cityflux-82a92.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:701522099832:android:b3925a0a70057cc5dab78d",
+        "android_client_info": {
+          "package_name": "com.example.cityflux"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDI1ymfA454oJ3yZmLvoDgn-ZePNlHIRxU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

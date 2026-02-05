@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <style name="Theme.CityFlux" parent="Theme.Material3.Dark.NoActionBar">
+        <item name="colorPrimary">#0D47A1</item>
+        <item name="colorSecondary">#00C853</item>
+    </style>
+
+</resources>
