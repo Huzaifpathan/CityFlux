@@ -1,4 +1,4 @@
-package com.example.cityflux.ui.admin
+package com.example.cityflux.ui.citizen
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -12,10 +12,11 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
+import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
 
-data class Issue(
+data class CitizenIssue(
     val id: String = "",
     val title: String = "",
     val description: String = "",
@@ -25,19 +26,24 @@ data class Issue(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AdminDashboardScreen() {
+fun MyReportsScreen() {
 
+    val auth = FirebaseAuth.getInstance()
     val firestore = FirebaseFirestore.getInstance()
-    var issues by remember { mutableStateOf(listOf<Issue>()) }
 
-    // Real-time listener
+    var issues by remember { mutableStateOf(listOf<CitizenIssue>()) }
+
     DisposableEffect(Unit) {
+
+        val uid = auth.currentUser?.uid ?: return@DisposableEffect onDispose { }
+
         val listener: ListenerRegistration =
             firestore.collection("issues")
+                .whereEqualTo("userId", uid)
                 .addSnapshotListener { snapshot, _ ->
                     if (snapshot != null) {
                         issues = snapshot.documents.map {
-                            Issue(
+                            CitizenIssue(
                                 id = it.id,
                                 title = it.getString("title") ?: "",
                                 description = it.getString("description") ?: "",
@@ -73,18 +79,25 @@ fun AdminDashboardScreen() {
         ) {
 
             Text(
-                text = "Admin Dashboard",
+                text = "My Reports",
                 style = MaterialTheme.typography.headlineMedium,
                 color = Color.White
             )
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            LazyColumn(
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                items(issues) { issue ->
-                    IssueCard(issue)
+            if (issues.isEmpty()) {
+                Text(
+                    text = "No reports yet",
+                    color = Color(0xFFB8C6FF)
+                )
+            } else {
+                LazyColumn(
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    items(issues) { issue ->
+                        CitizenIssueCard(issue)
+                    }
                 }
             }
         }
@@ -92,10 +105,7 @@ fun AdminDashboardScreen() {
 }
 
 @Composable
-fun IssueCard(issue: Issue) {
-
-    val firestore = FirebaseFirestore.getInstance()
-    var loading by remember { mutableStateOf(false) }
+fun CitizenIssueCard(issue: CitizenIssue) {
 
     Card(
         shape = RoundedCornerShape(20.dp),
@@ -130,39 +140,6 @@ fun IssueCard(issue: Issue) {
                 else
                     Color(0xFFFF9800)
             )
-
-            Spacer(modifier = Modifier.height(10.dp))
-
-            if (issue.status != "Resolved") {
-                Button(
-                    onClick = {
-                        loading = true
-                        firestore.collection("issues")
-                            .document(issue.id)
-                            .update("status", "Resolved")
-                            .addOnSuccessListener {
-                                loading = false
-                            }
-                            .addOnFailureListener {
-                                loading = false
-                            }
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(14.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = Color(0xFF4CAF50)
-                    )
-                ) {
-                    if (loading) {
-                        CircularProgressIndicator(
-                            color = Color.White,
-                            modifier = Modifier.size(18.dp)
-                        )
-                    } else {
-                        Text("Mark as Resolved")
-                    }
-                }
-            }
         }
     }
 }

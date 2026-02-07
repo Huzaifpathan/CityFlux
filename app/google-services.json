@@ -1,13 +1,13 @@
 {
   "project_info": {
-    "project_number": "701522099832",
-    "project_id": "cityflux-82a92",
-    "storage_bucket": "cityflux-82a92.firebasestorage.app"
+    "project_number": "738657526468",
+    "project_id": "cityflux-1adab",
+    "storage_bucket": "cityflux-1adab.firebasestorage.app"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:701522099832:android:b3925a0a70057cc5dab78d",
+        "mobilesdk_app_id": "1:738657526468:android:eaf25ec79b6e2e8ad49f91",
         "android_client_info": {
           "package_name": "com.example.cityflux"
         }
@@ -15,7 +15,7 @@
       "oauth_client": [],
       "api_key": [
         {
-          "current_key": "AIzaSyDI1ymfA454oJ3yZmLvoDgn-ZePNlHIRxU"
+          "current_key": "AIzaSyC-LHCrVQqk22mHeFcI5R70WdHh2ipyUHE"
         }
       ],
       "services": {
