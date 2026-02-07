@@ -1,5 +1,45 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!-- CityFlux Modern Color Palette -->
+    
+    <!-- Primary Brand Colors -->
+    <color name="primary_blue">#FF2563EB</color>
+    <color name="primary_blue_dark">#FF1D4ED8</color>
+    <color name="primary_purple">#FF7C3AED</color>
+    <color name="primary_teal">#FF0D9488</color>
+    
+    <!-- Surface Colors -->
+    <color name="surface_white">#FFFFFFFF</color>
+    <color name="surface_light">#FFFAFAFA</color>
+    <color name="surface_dark">#FF111827</color>
+    
+    <!-- Text Colors -->
+    <color name="text_primary">#FF1F2933</color>
+    <color name="text_secondary">#FF6B7280</color>
+    <color name="text_tertiary">#FF9CA3AF</color>
+    <color name="text_accent">#FF2563EB</color>
+    <color name="text_on_dark">#FFF9FAFB</color>
+    
+    <!-- Category Accent Colors -->
+    <color name="accent_traffic">#FF2563EB</color>
+    <color name="accent_parking">#FF10B981</color>
+    <color name="accent_issues">#FFEF4444</color>
+    <color name="accent_alerts">#FFF59E0B</color>
+    
+    <!-- Status Colors -->
+    <color name="accent_green">#FF10B981</color>
+    <color name="accent_orange">#FFF59E0B</color>
+    <color name="accent_red">#FFEF4444</color>
+    <color name="accent_blue">#FF2563EB</color>
+    
+    <!-- UI Element Colors -->
+    <color name="card_background">#FFFFFFFF</color>
+    <color name="card_border">#FFE5E7EB</color>
+    <color name="divider">#FFE5E7EB</color>
+    <color name="input_border">#FFD1D5DB</color>
+    <color name="input_border_focused">#FF2563EB</color>
+    
+    <!-- Legacy colors for compatibility -->
     <color name="purple_200">#FFBB86FC</color>
     <color name="purple_500">#FF6200EE</color>
     <color name="purple_700">#FF3700B3</color>

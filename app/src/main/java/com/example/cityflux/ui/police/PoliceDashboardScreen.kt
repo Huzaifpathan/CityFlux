@@ -1,14 +1,19 @@
 package com.example.cityflux.ui.police
 
+import androidx.compose.animation.*
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.cityflux.model.Issue
+import com.example.cityflux.ui.theme.*
 import com.google.firebase.firestore.FirebaseFirestore
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -34,7 +39,7 @@ fun PoliceDashboardScreen() {
                         try {
                             doc.toObject(Issue::class.java)?.copy(id = doc.id)
                         } catch (ex: Exception) {
-                            null   // 🔥 prevents crash
+                            null
                         }
                     } ?: emptyList()
 
@@ -44,26 +49,92 @@ fun PoliceDashboardScreen() {
 
     Scaffold(
         topBar = {
-            TopAppBar(title = { Text("Police Dashboard") })
-        }
+            CityFluxTopBar(
+                title = "Police Dashboard",
+                showNotification = true,
+                showProfile = true
+            )
+        },
+        containerColor = SurfaceWhite
     ) { padding ->
 
-        Box(
+        Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(padding),
-            contentAlignment = Alignment.Center
+                .background(SurfaceWhite)
+                .padding(padding)
+                .padding(horizontal = 20.dp)
         ) {
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Text(
+                text = "Active Issues",
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Bold,
+                color = TextPrimary
+            )
+
+            Spacer(modifier = Modifier.height(6.dp))
+
+            Text(
+                text = "Monitor and resolve city issues",
+                style = MaterialTheme.typography.bodyMedium,
+                color = TextSecondary
+            )
+
+            Spacer(modifier = Modifier.height(20.dp))
+
             when {
-                loading -> CircularProgressIndicator()
-                error -> Text("Error loading issues")
-                issues.isEmpty() -> Text("No issues available")
-                else -> LazyColumn(
-                    modifier = Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    items(issues) { issue ->
-                        PoliceIssueCard(issue)
+                loading -> {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        LoadingSpinner()
+                    }
+                }
+                error -> {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            "Error loading issues",
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = AccentRed
+                        )
+                    }
+                }
+                issues.isEmpty() -> {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            "No issues available",
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = TextSecondary
+                        )
+                    }
+                }
+                else -> {
+                    LazyColumn(
+                        verticalArrangement = Arrangement.spacedBy(14.dp),
+                        contentPadding = PaddingValues(bottom = 24.dp)
+                    ) {
+                        itemsIndexed(issues) { index, issue ->
+                            AnimatedVisibility(
+                                visible = true,
+                                enter = fadeIn(tween(300, delayMillis = index * 50)) +
+                                        slideInVertically(
+                                            initialOffsetY = { it / 6 },
+                                            animationSpec = tween(300, delayMillis = index * 50)
+                                        )
+                            ) {
+                                PoliceIssueCard(issue)
+                            }
+                        }
                     }
                 }
             }

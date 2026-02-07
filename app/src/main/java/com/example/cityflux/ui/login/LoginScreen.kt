@@ -1,18 +1,21 @@
 package com.example.cityflux.ui.login
 
+import androidx.compose.animation.*
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import com.example.cityflux.ui.theme.*
 import com.google.firebase.auth.FirebaseAuth
 
 @Composable
@@ -28,165 +31,183 @@ fun LoginScreen(
 
     var loading by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf("") }
+    var visible by remember { mutableStateOf(false) }
 
-    val gradient = Brush.verticalGradient(
-        colors = listOf(
-            Color(0xFF0D47A1),
-            Color(0xFF00C853)
-        )
-    )
+    LaunchedEffect(Unit) {
+        visible = true
+    }
 
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(gradient),
+            .background(SurfaceWhite)
+            .systemBarsPadding(),
         contentAlignment = Alignment.Center
     ) {
-        Card(
-            modifier = Modifier
-                .padding(24.dp)
-                .fillMaxWidth(),
-            shape = RoundedCornerShape(22.dp),
-            elevation = CardDefaults.cardElevation(12.dp),
-            colors = CardDefaults.cardColors(
-                containerColor = Color(0xFF2F3136)
-            )
+        AnimatedVisibility(
+            visible = visible,
+            enter = fadeIn(animationSpec = tween(400)) + 
+                    slideInVertically(
+                        initialOffsetY = { it / 8 },
+                        animationSpec = tween(400)
+                    )
         ) {
-            Column(
-                modifier = Modifier.padding(24.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
+            Card(
+                modifier = Modifier
+                    .padding(24.dp)
+                    .fillMaxWidth()
+                    .shadow(
+                        elevation = 8.dp,
+                        shape = RoundedCornerShape(20.dp),
+                        ambientColor = CardShadow,
+                        spotColor = CardShadowMedium
+                    ),
+                shape = RoundedCornerShape(20.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = CardBackground
+                )
             ) {
-
-                // 🔹 App Title
-                Text(
-                    text = "CityFlux",
-                    fontSize = 32.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.White
-                )
-
-                Text(
-                    text = "Smart City Management",
-                    color = Color.LightGray,
-                    fontSize = 14.sp
-                )
-
-                Spacer(modifier = Modifier.height(24.dp))
-
-                // 🔹 Email
-                OutlinedTextField(
-                    value = email,
-                    onValueChange = { email = it },
-                    label = { Text("Email") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                // 🔹 Password
-                OutlinedTextField(
-                    value = password,
-                    onValueChange = { password = it },
-                    label = { Text("Password") },
-                    visualTransformation = PasswordVisualTransformation(),
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                Spacer(modifier = Modifier.height(18.dp))
-
-                // 🔹 Email Login Button
-                Button(
-                    onClick = {
-                        if (email.isBlank() || password.isBlank()) {
-                            errorMessage = "Please enter email and password"
-                            return@Button
-                        }
-
-                        loading = true
-                        errorMessage = ""
-
-                        auth.signInWithEmailAndPassword(email, password)
-                            .addOnSuccessListener {
-                                loading = false
-                                onLoginSuccess()
-                            }
-                            .addOnFailureListener {
-                                loading = false
-                                errorMessage = it.message ?: "Login failed"
-                            }
-                    },
+                Column(
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .height(52.dp),
-                    shape = RoundedCornerShape(14.dp),
-                    enabled = !loading
+                        .padding(28.dp)
+                        .verticalScroll(rememberScrollState()),
+                    horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    if (loading) {
-                        CircularProgressIndicator(
-                            color = Color.White,
-                            strokeWidth = 2.dp,
-                            modifier = Modifier.size(22.dp)
+
+                    // App Title
+                    Text(
+                        text = "CityFlux",
+                        style = MaterialTheme.typography.headlineLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = PrimaryBlue
+                    )
+
+                    Spacer(modifier = Modifier.height(4.dp))
+
+                    Text(
+                        text = "Smart City Management",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = TextSecondary
+                    )
+
+                    Spacer(modifier = Modifier.height(32.dp))
+
+                    // Email Field
+                    AppTextField(
+                        value = email,
+                        onValueChange = { email = it },
+                        label = "Email"
+                    )
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    // Password Field
+                    AppTextField(
+                        value = password,
+                        onValueChange = { password = it },
+                        label = "Password",
+                        visualTransformation = PasswordVisualTransformation()
+                    )
+
+                    Spacer(modifier = Modifier.height(24.dp))
+
+                    // Login Button
+                    PrimaryButton(
+                        text = "Login with Email",
+                        onClick = {
+                            if (email.isBlank() || password.isBlank()) {
+                                errorMessage = "Please enter email and password"
+                                return@PrimaryButton
+                            }
+
+                            loading = true
+                            errorMessage = ""
+
+                            auth.signInWithEmailAndPassword(email, password)
+                                .addOnSuccessListener {
+                                    loading = false
+                                    onLoginSuccess()
+                                }
+                                .addOnFailureListener {
+                                    loading = false
+                                    errorMessage = it.message ?: "Login failed"
+                                }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        loading = loading,
+                        enabled = !loading
+                    )
+
+                    Spacer(modifier = Modifier.height(28.dp))
+
+                    // Divider
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        HorizontalDivider(
+                            modifier = Modifier.weight(1f),
+                            color = Divider
                         )
-                    } else {
-                        Text("Login with Email", fontSize = 16.sp)
+                        Text(
+                            text = "  OR  ",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = TextSecondary
+                        )
+                        HorizontalDivider(
+                            modifier = Modifier.weight(1f),
+                            color = Divider
+                        )
                     }
-                }
 
-                Spacer(modifier = Modifier.height(24.dp))
+                    Spacer(modifier = Modifier.height(20.dp))
 
-                // 🔹 Phone Number Field
-                OutlinedTextField(
-                    value = phone,
-                    onValueChange = { phone = it },
-                    label = { Text("Phone Number (+91XXXXXXXXXX)") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                // 🔹 OTP Button (DISABLED SAFELY)
-                Button(
-                    onClick = {
-                        errorMessage =
-                            "Phone OTP login will be enabled after billing activation"
-                    },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(52.dp),
-                    shape = RoundedCornerShape(14.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = Color(0xFF90CAF9)
+                    // Phone Number Field
+                    AppTextField(
+                        value = phone,
+                        onValueChange = { phone = it },
+                        label = "Phone Number (+91XXXXXXXXXX)"
                     )
-                ) {
-                    Text(
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    // OTP Button (Disabled)
+                    SecondaryButton(
                         text = "Login with OTP (Coming Soon)",
-                        fontSize = 16.sp,
-                        color = Color.Black
+                        onClick = {
+                            errorMessage = "Phone OTP login will be enabled after billing activation"
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = true
                     )
-                }
 
-                Spacer(modifier = Modifier.height(12.dp))
+                    Spacer(modifier = Modifier.height(16.dp))
 
-                // 🔹 Error Message
-                if (errorMessage.isNotEmpty()) {
-                    Text(
-                        text = errorMessage,
-                        color = MaterialTheme.colorScheme.error,
-                        fontSize = 13.sp
-                    )
-                }
+                    // Error Message
+                    AnimatedVisibility(
+                        visible = errorMessage.isNotEmpty(),
+                        enter = fadeIn() + expandVertically(),
+                        exit = fadeOut() + shrinkVertically()
+                    ) {
+                        Text(
+                            text = errorMessage,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = AccentRed,
+                            modifier = Modifier.padding(bottom = 8.dp)
+                        )
+                    }
 
-                Spacer(modifier = Modifier.height(18.dp))
+                    Spacer(modifier = Modifier.height(12.dp))
 
-                // 🔹 Register
-                TextButton(onClick = onRegisterClick) {
-                    Text(
-                        text = "New user? Register here",
-                        color = Color.White
-                    )
+                    // Register Link
+                    TextButton(onClick = onRegisterClick) {
+                        Text(
+                            text = "New user? Register here",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Medium,
+                            color = PrimaryBlue
+                        )
+                    }
                 }
             }
         }

@@ -1,20 +1,23 @@
 package com.example.cityflux.ui.admin
 
+import androidx.compose.animation.*
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.example.cityflux.model.Issue
+import com.example.cityflux.ui.theme.*
 import com.google.firebase.firestore.FirebaseFirestore
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AdminDashboardScreen() {
 
@@ -37,39 +40,82 @@ fun AdminDashboardScreen() {
             }
     }
 
-    val gradient = Brush.verticalGradient(
-        colors = listOf(Color(0xFF1A237E), Color(0xFF0D47A1))
-    )
+    Scaffold(
+        topBar = {
+            CityFluxTopBar(
+                title = "Admin Dashboard",
+                showNotification = true,
+                showProfile = true
+            )
+        },
+        containerColor = SurfaceWhite
+    ) { padding ->
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(gradient)
-            .padding(16.dp)
-    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(SurfaceWhite)
+                .padding(padding)
+                .padding(horizontal = 20.dp)
+        ) {
 
-        Text(
-            text = "Admin Dashboard",
-            fontSize = 26.sp,
-            fontWeight = FontWeight.Bold,
-            color = Color.White
-        )
+            Spacer(modifier = Modifier.height(16.dp))
 
-        Spacer(modifier = Modifier.height(16.dp))
+            Text(
+                text = "Manage Issues",
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Bold,
+                color = TextPrimary
+            )
 
-        when {
-            loading -> {
-                CircularProgressIndicator(color = Color.White)
-            }
-            issues.isEmpty() -> {
-                Text("No issues reported yet", color = Color.White)
-            }
-            else -> {
-                LazyColumn(
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    items(issues) { issue ->
-                        AdminIssueCard(issue)
+            Spacer(modifier = Modifier.height(6.dp))
+
+            Text(
+                text = "Review and update reported issues",
+                style = MaterialTheme.typography.bodyMedium,
+                color = TextSecondary
+            )
+
+            Spacer(modifier = Modifier.height(20.dp))
+
+            when {
+                loading -> {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        LoadingSpinner()
+                    }
+                }
+                issues.isEmpty() -> {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            "No issues reported yet",
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = TextSecondary
+                        )
+                    }
+                }
+                else -> {
+                    LazyColumn(
+                        verticalArrangement = Arrangement.spacedBy(14.dp),
+                        contentPadding = PaddingValues(bottom = 24.dp)
+                    ) {
+                        itemsIndexed(issues) { index, issue ->
+                            AnimatedVisibility(
+                                visible = true,
+                                enter = fadeIn(tween(300, delayMillis = index * 50)) +
+                                        slideInVertically(
+                                            initialOffsetY = { it / 6 },
+                                            animationSpec = tween(300, delayMillis = index * 50)
+                                        )
+                            ) {
+                                AdminIssueCard(issue)
+                            }
+                        }
                     }
                 }
             }

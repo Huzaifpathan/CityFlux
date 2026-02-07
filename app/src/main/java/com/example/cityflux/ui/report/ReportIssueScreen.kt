@@ -1,17 +1,22 @@
 package com.example.cityflux.ui.report
 
+import androidx.compose.animation.*
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import com.example.cityflux.ui.theme.*
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
-import com.google.firebase.firestore.FieldValue
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ReportIssueScreen(
@@ -24,137 +29,215 @@ fun ReportIssueScreen(
     var issueType by remember { mutableStateOf("Traffic") }
     var error by remember { mutableStateOf("") }
     var loading by remember { mutableStateOf(false) }
+    var visible by remember { mutableStateOf(false) }
 
     val issueTypes = listOf("Traffic", "Parking", "Garbage", "Road Damage", "Other")
 
-    val db = FirebaseFirestore.getInstance()
-    val userId = FirebaseAuth.getInstance().currentUser?.uid
+    LaunchedEffect(Unit) {
+        visible = true
+    }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(20.dp),
-        verticalArrangement = Arrangement.Top
-    ) {
-
-        Text(
-            text = "Report an Issue",
-            fontSize = 26.sp,
-            fontWeight = FontWeight.Bold
-        )
-
-        Spacer(modifier = Modifier.height(20.dp))
-
-        OutlinedTextField(
-            value = title,
-            onValueChange = { title = it },
-            label = { Text("Issue Title") },
-            modifier = Modifier.fillMaxWidth()
-        )
-
-        Spacer(modifier = Modifier.height(12.dp))
-
-        OutlinedTextField(
-            value = description,
-            onValueChange = { description = it },
-            label = { Text("Issue Description") },
-            modifier = Modifier.fillMaxWidth(),
-            minLines = 3
-        )
-
-        Spacer(modifier = Modifier.height(12.dp))
-
-        // 🔽 Issue Type Dropdown
-        ExposedDropdownMenuBox(
-            expanded = expanded,
-            onExpandedChange = { expanded = !expanded }
-        ) {
-            OutlinedTextField(
-                value = issueType,
-                onValueChange = {},
-                readOnly = true,
-                label = { Text("Issue Type") },
-                modifier = Modifier
-                    .menuAnchor()
-                    .fillMaxWidth()
+    Scaffold(
+        topBar = {
+            CityFluxTopBar(
+                title = "Report Issue",
+                showNotification = false,
+                showProfile = true
             )
+        },
+        containerColor = SurfaceWhite
+    ) { padding ->
+        
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(SurfaceWhite)
+                .padding(padding)
+                .padding(horizontal = 20.dp)
+                .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.Top
+        ) {
 
-            ExposedDropdownMenu(
-                expanded = expanded,
-                onDismissRequest = { expanded = false }
+            Spacer(modifier = Modifier.height(16.dp))
+
+            AnimatedVisibility(
+                visible = visible,
+                enter = fadeIn(tween(400))
             ) {
-                issueTypes.forEach { type ->
-                    DropdownMenuItem(
-                        text = { Text(type) },
-                        onClick = {
-                            issueType = type
-                            expanded = false
-                        }
+                Column {
+                    Text(
+                        text = "Report an Issue",
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = TextPrimary
+                    )
+
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    Text(
+                        text = "Help us improve your city",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = TextSecondary
                     )
                 }
             }
-        }
 
-        Spacer(modifier = Modifier.height(20.dp))
+            Spacer(modifier = Modifier.height(24.dp))
 
-        if (error.isNotEmpty()) {
-            Text(
-                text = error,
-                color = MaterialTheme.colorScheme.error
-            )
-            Spacer(modifier = Modifier.height(10.dp))
-        }
+            AnimatedVisibility(
+                visible = visible,
+                enter = fadeIn(tween(400, delayMillis = 100)) +
+                        slideInVertically(
+                            initialOffsetY = { it / 6 },
+                            animationSpec = tween(400, delayMillis = 100)
+                        )
+            ) {
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .shadow(
+                            elevation = 6.dp,
+                            shape = RoundedCornerShape(16.dp),
+                            ambientColor = CardShadow,
+                            spotColor = CardShadowMedium
+                        ),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = CardBackground
+                    )
+                ) {
+                    Column(
+                        modifier = Modifier.padding(22.dp)
+                    ) {
+                        AppTextField(
+                            value = title,
+                            onValueChange = { title = it },
+                            label = "Issue Title"
+                        )
 
-        Button(
-            onClick = {
-                if (title.isBlank() || description.isBlank()) {
-                    error = "All fields are required"
-                    return@Button
-                }
+                        Spacer(modifier = Modifier.height(16.dp))
 
-                val userId = FirebaseAuth.getInstance().currentUser?.uid
-                if (userId == null) {
-                    error = "User not logged in"
-                    return@Button
-                }
+                        AppTextField(
+                            value = description,
+                            onValueChange = { description = it },
+                            label = "Issue Description",
+                            singleLine = false,
+                            minLines = 3
+                        )
 
-                loading = true
-                error = ""
+                        Spacer(modifier = Modifier.height(16.dp))
 
-                val issueData = hashMapOf(
-                    "title" to title,
-                    "description" to description,
-                    "type" to issueType,
-                    "userId" to userId,
-                    "timestamp" to System.currentTimeMillis() // 🔥 IMPORTANT CHANGE
-                )
+                        // Issue Type Dropdown
+                        ExposedDropdownMenuBox(
+                            expanded = expanded,
+                            onExpandedChange = { expanded = !expanded }
+                        ) {
+                            OutlinedTextField(
+                                value = issueType,
+                                onValueChange = {},
+                                readOnly = true,
+                                label = { 
+                                    Text(
+                                        "Issue Type",
+                                        style = MaterialTheme.typography.bodyMedium
+                                    ) 
+                                },
+                                modifier = Modifier
+                                    .menuAnchor()
+                                    .fillMaxWidth(),
+                                shape = RoundedCornerShape(12.dp),
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedBorderColor = InputBorderFocused,
+                                    unfocusedBorderColor = InputBorder,
+                                    focusedLabelColor = PrimaryBlue,
+                                    unfocusedLabelColor = TextSecondary
+                                )
+                            )
 
-                FirebaseFirestore.getInstance()
-                    .collection("issues")
-                    .add(issueData)
-                    .addOnSuccessListener {
-                        loading = false
-                        onReportSubmitted() // 🔥 MUST BE CALLED
+                            ExposedDropdownMenu(
+                                expanded = expanded,
+                                onDismissRequest = { expanded = false }
+                            ) {
+                                issueTypes.forEach { type ->
+                                    DropdownMenuItem(
+                                        text = { 
+                                            Text(
+                                                type,
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                color = TextPrimary
+                                            ) 
+                                        },
+                                        onClick = {
+                                            issueType = type
+                                            expanded = false
+                                        }
+                                    )
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(24.dp))
+
+                        // Error Message
+                        AnimatedVisibility(
+                            visible = error.isNotEmpty(),
+                            enter = fadeIn() + expandVertically(),
+                            exit = fadeOut() + shrinkVertically()
+                        ) {
+                            Text(
+                                text = error,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = AccentRed,
+                                modifier = Modifier.padding(bottom = 12.dp)
+                            )
+                        }
+
+                        PrimaryButton(
+                            text = "Submit Issue",
+                            onClick = {
+                                if (title.isBlank() || description.isBlank()) {
+                                    error = "All fields are required"
+                                    return@PrimaryButton
+                                }
+
+                                val userId = FirebaseAuth.getInstance().currentUser?.uid
+                                if (userId == null) {
+                                    error = "User not logged in"
+                                    return@PrimaryButton
+                                }
+
+                                loading = true
+                                error = ""
+
+                                val issueData = hashMapOf(
+                                    "title" to title,
+                                    "description" to description,
+                                    "type" to issueType,
+                                    "userId" to userId,
+                                    "timestamp" to System.currentTimeMillis()
+                                )
+
+                                FirebaseFirestore.getInstance()
+                                    .collection("issues")
+                                    .add(issueData)
+                                    .addOnSuccessListener {
+                                        loading = false
+                                        onReportSubmitted()
+                                    }
+                                    .addOnFailureListener { e ->
+                                        loading = false
+                                        error = e.message ?: "Failed to submit issue"
+                                    }
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            loading = loading,
+                            enabled = !loading
+                        )
                     }
-                    .addOnFailureListener { e ->
-                        loading = false
-                        error = e.message ?: "Failed to submit issue"
-                    }
-            },
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(50.dp),
-            enabled = !loading
-        ) {
-            if (loading) {
-                CircularProgressIndicator(
-                    strokeWidth = 2.dp,
-                    modifier = Modifier.size(22.dp)
-                )
-            } else {
-                Text("Submit Issue")
+                }
             }
-        }
 
+            Spacer(modifier = Modifier.height(24.dp))
+        }
     }
 }

@@ -1,25 +1,24 @@
 package com.example.cityflux.ui.dashboard
 
+import androidx.compose.animation.*
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.DirectionsCar
+import androidx.compose.material.icons.filled.Traffic
+import androidx.compose.material.icons.filled.Report
+import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
+import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import com.example.cityflux.ui.theme.*
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CitizenDashboardScreen(
     onParkingClick: () -> Unit,
@@ -27,110 +26,134 @@ fun CitizenDashboardScreen(
     onReportClick: () -> Unit,
     onUpdatesClick: () -> Unit
 ) {
+    var visible by remember { mutableStateOf(false) }
 
-    val gradient = Brush.verticalGradient(
-        colors = listOf(Color(0xFF0D47A1), Color(0xFF00C853))
-    )
-
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(gradient)
-            .padding(16.dp)
-    ) {
-
-        Text(
-            text = "Welcome to CityFlux",
-            fontSize = 26.sp,
-            fontWeight = FontWeight.Bold,
-            color = Color.White
-        )
-
-        Spacer(modifier = Modifier.height(6.dp))
-
-        Text(
-            text = "Citizen Dashboard",
-            color = Color.White.copy(alpha = 0.9f)
-        )
-
-        Spacer(modifier = Modifier.height(24.dp))
-
-        Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-
-            DashboardCard(
-                title = "Smart Parking",
-                description = "Check parking availability",
-                icon = Icons.Filled.Home,
-                onClick = onParkingClick
-            )
-
-            DashboardCard(
-                title = "Traffic Status",
-                description = "View traffic conditions",
-                icon = Icons.Filled.Settings,
-                onClick = onTrafficClick
-            )
-
-            DashboardCard(
-                title = "Report an Issue",
-                description = "Report city problems",
-                icon = Icons.Filled.Info,
-                onClick = onReportClick
-            )
-
-            DashboardCard(
-                title = "City Updates",
-                description = "View trends & announcements",
-                icon = Icons.Filled.Person,
-                onClick = onUpdatesClick
-            )
-        }
+    LaunchedEffect(Unit) {
+        visible = true
     }
-}
 
-@Composable
-fun DashboardCard(
-    title: String,
-    description: String,
-    icon: ImageVector,
-    onClick: () -> Unit
-) {
-    Card(
-        shape = RoundedCornerShape(18.dp),
-        elevation = CardDefaults.cardElevation(8.dp),
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(110.dp)
-            .clickable { onClick() }
-    ) {
-        Row(
+    Scaffold(
+        topBar = {
+            CityFluxTopBar(
+                title = "CityFlux",
+                showNotification = true,
+                showProfile = true
+            )
+        },
+        containerColor = SurfaceWhite
+    ) { padding ->
+
+        Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(20.dp),
-            verticalAlignment = Alignment.CenterVertically
+                .background(SurfaceWhite)
+                .padding(padding)
+                .padding(horizontal = 20.dp)
+                .verticalScroll(rememberScrollState())
         ) {
 
-            Icon(
-                imageVector = icon,
-                contentDescription = title,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(48.dp)
-            )
+            Spacer(modifier = Modifier.height(16.dp))
 
-            Spacer(modifier = Modifier.width(20.dp))
+            AnimatedVisibility(
+                visible = visible,
+                enter = fadeIn(tween(400))
+            ) {
+                Column {
+                    Text(
+                        text = "Welcome to CityFlux",
+                        style = MaterialTheme.typography.headlineMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = TextPrimary
+                    )
 
-            Column {
-                Text(
-                    text = title,
-                    fontSize = 20.sp,
-                    fontWeight = FontWeight.Bold
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = description,
-                    color = Color.Gray
-                )
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    Text(
+                        text = "Citizen Dashboard",
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = TextSecondary
+                    )
+                }
             }
+
+            Spacer(modifier = Modifier.height(28.dp))
+
+            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+
+                // Smart Parking - Green accent
+                AnimatedVisibility(
+                    visible = visible,
+                    enter = fadeIn(tween(400, delayMillis = 100)) + 
+                            slideInVertically(
+                                initialOffsetY = { it / 6 },
+                                animationSpec = tween(400, delayMillis = 100)
+                            )
+                ) {
+                    DashboardActionCard(
+                        title = "Smart Parking",
+                        description = "Check parking availability",
+                        icon = Icons.Filled.DirectionsCar,
+                        onClick = onParkingClick,
+                        accentColor = AccentParking
+                    )
+                }
+
+                // Traffic Status - Blue accent
+                AnimatedVisibility(
+                    visible = visible,
+                    enter = fadeIn(tween(400, delayMillis = 200)) + 
+                            slideInVertically(
+                                initialOffsetY = { it / 6 },
+                                animationSpec = tween(400, delayMillis = 200)
+                            )
+                ) {
+                    DashboardActionCard(
+                        title = "Traffic Status",
+                        description = "View traffic conditions",
+                        icon = Icons.Filled.Traffic,
+                        onClick = onTrafficClick,
+                        accentColor = AccentTraffic
+                    )
+                }
+
+                // Report an Issue - Red accent
+                AnimatedVisibility(
+                    visible = visible,
+                    enter = fadeIn(tween(400, delayMillis = 300)) + 
+                            slideInVertically(
+                                initialOffsetY = { it / 6 },
+                                animationSpec = tween(400, delayMillis = 300)
+                            )
+                ) {
+                    DashboardActionCard(
+                        title = "Report an Issue",
+                        description = "Report city problems",
+                        icon = Icons.Filled.Report,
+                        onClick = onReportClick,
+                        accentColor = AccentIssues
+                    )
+                }
+
+                // City Updates - Orange accent
+                AnimatedVisibility(
+                    visible = visible,
+                    enter = fadeIn(tween(400, delayMillis = 400)) + 
+                            slideInVertically(
+                                initialOffsetY = { it / 6 },
+                                animationSpec = tween(400, delayMillis = 400)
+                            )
+                ) {
+                    DashboardActionCard(
+                        title = "City Updates",
+                        description = "View trends & announcements",
+                        icon = Icons.Filled.Notifications,
+                        onClick = onUpdatesClick,
+                        accentColor = AccentAlerts
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
         }
     }
 }
