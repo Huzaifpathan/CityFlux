@@ -54,6 +54,7 @@ dependencies {
     implementation(platform("com.google.firebase:firebase-bom:32.7.0"))
     implementation("com.google.firebase:firebase-auth-ktx")
     implementation("com.google.firebase:firebase-firestore-ktx")
+    implementation("com.google.firebase:firebase-storage-ktx")   // ✅ ADD THIS
 
     // 🎨 Material
     implementation("com.google.android.material:material:1.11.0")
@@ -72,6 +73,15 @@ dependencies {
     implementation("androidx.compose.material:material-icons-extended")
     implementation("androidx.compose.ui:ui-text-google-fonts:1.6.0")
 
+    // 📍 Location
+    implementation(libs.play.services.location)
+
+    // 🖼 Image loader for report screen
+    implementation("io.coil-kt:coil-compose:2.5.0")   // ✅ ADD THIS
+
+    // 🧭 Navigation
+    implementation("androidx.navigation:navigation-compose:2.7.7")
+
     // 🧪 Testing
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
@@ -82,7 +92,4 @@ dependencies {
     // 🛠 Debug
     debugImplementation(libs.androidx.ui.tooling)
     debugImplementation(libs.androidx.ui.test.manifest)
-
-    implementation("androidx.navigation:navigation-compose:2.7.7")
-
 }
