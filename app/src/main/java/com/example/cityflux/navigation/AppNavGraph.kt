@@ -5,7 +5,9 @@ import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import com.example.cityflux.ui.admin.AdminDashboardScreen
+import com.example.cityflux.ui.citizen.MyReportsScreen
 import com.example.cityflux.ui.dashboard.CitizenDashboardScreen
+import com.example.cityflux.ui.login.ForgotPasswordScreen
 import com.example.cityflux.ui.login.LoginScreen
 import com.example.cityflux.ui.police.PoliceDashboardScreen
 import com.example.cityflux.ui.register.RegisterScreen
@@ -23,16 +25,35 @@ fun AppNavGraph(navController: NavHostController) {
         // 🔐 LOGIN
         composable(Routes.LOGIN) {
             LoginScreen(
-                onLoginSuccess = {
+                onCitizenLogin = {
+                    navController.navigate(Routes.CITIZEN_DASHBOARD) {
+                        popUpTo(Routes.LOGIN) { inclusive = true }
+                    }
+                },
+                onAdminLogin = {
+                    navController.navigate(Routes.ADMIN_DASHBOARD) {
+                        popUpTo(Routes.LOGIN) { inclusive = true }
+                    }
+                },
+                onPoliceLogin = {
+                    navController.navigate(Routes.POLICE_DASHBOARD) {
+                        popUpTo(Routes.LOGIN) { inclusive = true }
+                    }
+                },
+                onRoleSelection = {
                     navController.navigate(Routes.ROLE) {
                         popUpTo(Routes.LOGIN) { inclusive = true }
                     }
                 },
                 onRegisterClick = {
                     navController.navigate(Routes.REGISTER)
+                },
+                onForgotClick = {
+                    navController.navigate(Routes.FORGOT_PASSWORD)
                 }
             )
         }
+
 
         // 📝 REGISTER
         composable(Routes.REGISTER) {
@@ -41,9 +62,23 @@ fun AppNavGraph(navController: NavHostController) {
                     navController.navigate(Routes.ROLE) {
                         popUpTo(Routes.REGISTER) { inclusive = true }
                     }
+                },
+                onLoginClick = {
+                    navController.popBackStack()
                 }
             )
         }
+
+
+        // 🔑 FORGOT PASSWORD
+        composable(Routes.FORGOT_PASSWORD) {
+            ForgotPasswordScreen(
+                onBackToLogin = {
+                    navController.popBackStack()
+                }
+            )
+        }
+
 
         // 👥 ROLE SELECTION
         composable(Routes.ROLE) {
@@ -66,24 +101,32 @@ fun AppNavGraph(navController: NavHostController) {
             )
         }
 
-        // 🧑‍💻 CITIZEN
+        // 🧑 CITIZEN DASHBOARD
         composable(Routes.CITIZEN_DASHBOARD) {
             CitizenDashboardScreen(
-                onParkingClick = {},
-                onTrafficClick = {},
-                onUpdatesClick = {},
-                onReportClick = {
+                onReportIssue = {
                     navController.navigate(Routes.REPORT)
+                },
+                onViewParking = { /* later */ },
+                onViewAlerts = {
+                    navController.navigate(Routes.MY_REPORTS)
+                },
+                onProfile = { /* later */ },
+                onLogout = {
+                    navController.navigate(Routes.LOGIN) {
+                        popUpTo(Routes.CITIZEN_DASHBOARD) { inclusive = true }
+                    }
                 }
             )
         }
 
-        // 👨‍💼 ADMIN
+
+        // 👨‍💼 ADMIN DASHBOARD
         composable(Routes.ADMIN_DASHBOARD) {
             AdminDashboardScreen()
         }
 
-        // 🚓 POLICE
+        // 🚓 POLICE DASHBOARD
         composable(Routes.POLICE_DASHBOARD) {
             PoliceDashboardScreen()
         }
@@ -96,5 +139,9 @@ fun AppNavGraph(navController: NavHostController) {
                 }
             )
         }
+        composable(Routes.MY_REPORTS) {
+            MyReportsScreen()
+        }
+
     }
 }

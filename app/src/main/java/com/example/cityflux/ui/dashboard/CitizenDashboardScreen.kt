@@ -4,86 +4,119 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.google.firebase.auth.FirebaseAuth
 
 @Composable
 fun CitizenDashboardScreen(
-    onParkingClick: () -> Unit,
-    onTrafficClick: () -> Unit,
-    onReportClick: () -> Unit,
-    onUpdatesClick: () -> Unit
+    onReportIssue: () -> Unit,
+    onViewParking: () -> Unit,
+    onViewAlerts: () -> Unit,   // now used for My Reports
+    onProfile: () -> Unit,
+    onLogout: () -> Unit
 ) {
+    val auth = FirebaseAuth.getInstance()
 
-    val gradient = Brush.verticalGradient(
-        colors = listOf(Color(0xFF0D47A1), Color(0xFF00C853))
-    )
-
-    Column(
+    Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(gradient)
-            .padding(16.dp)
+            .background(
+                Brush.verticalGradient(
+                    listOf(
+                        Color(0xFF020C2B),
+                        Color(0xFF031A3D),
+                        Color(0xFF020C2B)
+                    )
+                )
+            )
     ) {
 
-        Text(
-            text = "Welcome to CityFlux",
-            fontSize = 26.sp,
-            fontWeight = FontWeight.Bold,
-            color = Color.White
-        )
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(20.dp)
+        ) {
 
-        Spacer(modifier = Modifier.height(6.dp))
+            Spacer(modifier = Modifier.height(30.dp))
 
-        Text(
-            text = "Citizen Dashboard",
-            color = Color.White.copy(alpha = 0.9f)
-        )
-
-        Spacer(modifier = Modifier.height(24.dp))
-
-        Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-
-            DashboardCard(
-                title = "Smart Parking",
-                description = "Check parking availability",
-                icon = Icons.Filled.Home,
-                onClick = onParkingClick
+            Text(
+                text = "Citizen Dashboard",
+                color = Color.White,
+                fontSize = 28.sp,
+                fontWeight = FontWeight.SemiBold
             )
 
-            DashboardCard(
-                title = "Traffic Status",
-                description = "View traffic conditions",
-                icon = Icons.Filled.Settings,
-                onClick = onTrafficClick
+            Text(
+                text = "Manage traffic and parking services",
+                color = Color(0xFF9FB3FF),
+                fontSize = 14.sp,
+                modifier = Modifier.padding(bottom = 24.dp)
             )
 
-            DashboardCard(
-                title = "Report an Issue",
-                description = "Report city problems",
-                icon = Icons.Filled.Info,
-                onClick = onReportClick
-            )
+            // GRID
+            Column(
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
 
-            DashboardCard(
-                title = "City Updates",
-                description = "View trends & announcements",
-                icon = Icons.Filled.Person,
-                onClick = onUpdatesClick
-            )
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    DashboardCard(
+                        title = "Report Issue",
+                        onClick = onReportIssue,
+                        modifier = Modifier.weight(1f)
+                    )
+
+                    DashboardCard(
+                        title = "Parking",
+                        onClick = onViewParking,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    DashboardCard(
+                        title = "My Reports",   // changed label
+                        onClick = onViewAlerts,
+                        modifier = Modifier.weight(1f)
+                    )
+
+                    DashboardCard(
+                        title = "Profile",
+                        onClick = onProfile,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.weight(1f))
+
+            // Logout button
+            Button(
+                onClick = {
+                    auth.signOut()
+                    onLogout()
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(52.dp),
+                shape = RoundedCornerShape(28.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFFFF5252)
+                )
+            ) {
+                Text("Logout", color = Color.White, fontSize = 16.sp)
+            }
         }
     }
 }
@@ -91,46 +124,28 @@ fun CitizenDashboardScreen(
 @Composable
 fun DashboardCard(
     title: String,
-    description: String,
-    icon: ImageVector,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
     Card(
-        shape = RoundedCornerShape(18.dp),
-        elevation = CardDefaults.cardElevation(8.dp),
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(110.dp)
-            .clickable { onClick() }
+        modifier = modifier
+            .height(120.dp)
+            .clickable { onClick() },
+        shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = Color(0xFF0F1C3F).copy(alpha = 0.75f)
+        )
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(20.dp),
-            verticalAlignment = Alignment.CenterVertically
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center
         ) {
-
-            Icon(
-                imageVector = icon,
-                contentDescription = title,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(48.dp)
+            Text(
+                text = title,
+                color = Color.White,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.SemiBold
             )
-
-            Spacer(modifier = Modifier.width(20.dp))
-
-            Column {
-                Text(
-                    text = title,
-                    fontSize = 20.sp,
-                    fontWeight = FontWeight.Bold
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = description,
-                    color = Color.Gray
-                )
-            }
         }
     }
 }
