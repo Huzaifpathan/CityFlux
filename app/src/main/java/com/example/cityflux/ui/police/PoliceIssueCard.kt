@@ -7,6 +7,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -16,6 +17,8 @@ import com.google.firebase.firestore.FirebaseFirestore
 
 @Composable
 fun PoliceIssueCard(issue: Issue) {
+    
+    val colors = MaterialTheme.cityFluxColors
     
     // Get accent color based on issue type
     val accentColor = when (issue.type.lowercase()) {
@@ -29,43 +32,44 @@ fun PoliceIssueCard(issue: Issue) {
         modifier = Modifier
             .fillMaxWidth()
             .shadow(
-                elevation = 4.dp,
-                shape = RoundedCornerShape(14.dp),
-                ambientColor = CardShadow,
-                spotColor = CardShadowMedium
+                elevation = 6.dp,
+                shape = RoundedCornerShape(CornerRadius.Large),
+                ambientColor = colors.cardShadow,
+                spotColor = colors.cardShadowMedium
             ),
-        shape = RoundedCornerShape(14.dp),
+        shape = RoundedCornerShape(CornerRadius.Large),
         colors = CardDefaults.cardColors(
-            containerColor = CardBackground
+            containerColor = colors.cardBackground
         )
     ) {
-        Row {
+        Row(modifier = Modifier.height(IntrinsicSize.Min)) {
             // Colored accent bar on left
             Box(
                 modifier = Modifier
                     .width(4.dp)
                     .fillMaxHeight()
+                    .clip(RoundedCornerShape(topStart = CornerRadius.Large, bottomStart = CornerRadius.Large))
                     .background(accentColor)
             )
             
-            Column(modifier = Modifier.padding(18.dp)) {
+            Column(modifier = Modifier.padding(Spacing.Large)) {
 
                 Text(
                     text = issue.title,
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold,
-                    color = TextPrimary
+                    color = colors.textPrimary
                 )
 
-                Spacer(modifier = Modifier.height(6.dp))
+                Spacer(modifier = Modifier.height(Spacing.Small))
 
                 Text(
                     text = issue.description,
                     style = MaterialTheme.typography.bodyMedium,
-                    color = TextSecondary
+                    color = colors.textSecondary
                 )
 
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(Spacing.Medium))
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -75,16 +79,16 @@ fun PoliceIssueCard(issue: Issue) {
                     Text(
                         text = "Type: ${issue.type}",
                         style = MaterialTheme.typography.bodySmall,
-                        color = TextSecondary
+                        color = colors.textSecondary
                     )
                     
                     StatusChip(status = issue.status)
                 }
 
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(Spacing.Large))
 
                 Row(
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(Spacing.Medium),
                     modifier = Modifier.fillMaxWidth()
                 ) {
 
@@ -97,8 +101,8 @@ fun PoliceIssueCard(issue: Issue) {
                         },
                         modifier = Modifier
                             .weight(1f)
-                            .height(44.dp),
-                        shape = RoundedCornerShape(10.dp),
+                            .height(48.dp),
+                        shape = RoundedCornerShape(CornerRadius.Medium),
                         colors = ButtonDefaults.buttonColors(
                             containerColor = AccentOrange
                         ),
@@ -124,8 +128,8 @@ fun PoliceIssueCard(issue: Issue) {
                         },
                         modifier = Modifier
                             .weight(1f)
-                            .height(44.dp),
-                        shape = RoundedCornerShape(10.dp),
+                            .height(48.dp),
+                        shape = RoundedCornerShape(CornerRadius.Medium),
                         colors = ButtonDefaults.buttonColors(
                             containerColor = AccentGreen
                         ),

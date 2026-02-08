@@ -1,6 +1,5 @@
 package com.example.cityflux.ui.admin
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -8,10 +7,12 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
+import com.example.cityflux.ui.theme.*
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
 
@@ -29,6 +30,7 @@ fun AdminDashboardScreen() {
 
     val firestore = FirebaseFirestore.getInstance()
     var issues by remember { mutableStateOf(listOf<Issue>()) }
+    val colors = MaterialTheme.cityFluxColors
 
     // Real-time listener
     DisposableEffect(Unit) {
@@ -53,38 +55,29 @@ fun AdminDashboardScreen() {
         }
     }
 
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(
-                Brush.verticalGradient(
-                    listOf(
-                        Color(0xFF020C2B),
-                        Color(0xFF031A3D),
-                        Color(0xFF020C2B)
-                    )
-                )
-            )
-    ) {
+    CleanBackground {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(20.dp)
+                .padding(Spacing.XLarge)
+                .statusBarsPadding()
+                .navigationBarsPadding()
         ) {
 
-            Text(
-                text = "Admin Dashboard",
-                style = MaterialTheme.typography.headlineMedium,
-                color = Color.White
+            Spacer(modifier = Modifier.height(Spacing.Large))
+
+            ScreenHeader(
+                title = "Admin Dashboard",
+                subtitle = "Manage all reported issues"
             )
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(Spacing.XLarge))
 
             LazyColumn(
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                verticalArrangement = Arrangement.spacedBy(Spacing.Medium)
             ) {
                 items(issues) { issue ->
-                    IssueCard(issue)
+                    AdminIssueCard(issue)
                 }
             }
         }
@@ -92,77 +85,71 @@ fun AdminDashboardScreen() {
 }
 
 @Composable
-fun IssueCard(issue: Issue) {
+fun AdminIssueCard(issue: Issue) {
 
     val firestore = FirebaseFirestore.getInstance()
     var loading by remember { mutableStateOf(false) }
+    val colors = MaterialTheme.cityFluxColors
+    
+    val accentColor = when (issue.status.lowercase()) {
+        "resolved" -> AccentGreen
+        "in progress" -> AccentOrange
+        else -> AccentRed
+    }
 
-    Card(
-        shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = Color(0xFF0F1C3F).copy(alpha = 0.8f)
-        ),
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Column(modifier = Modifier.padding(16.dp)) {
+    IssueCard(accentColor = accentColor) {
+        Text(
+            issue.title, 
+            color = colors.textPrimary,
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold
+        )
+        
+        Spacer(modifier = Modifier.height(Spacing.XSmall))
+        
+        Text(
+            issue.description, 
+            color = colors.textSecondary,
+            style = MaterialTheme.typography.bodyMedium
+        )
 
-            Text(issue.title, color = Color.White)
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(issue.description, color = Color(0xFFB8C6FF))
+        Spacer(modifier = Modifier.height(Spacing.Medium))
 
-            Spacer(modifier = Modifier.height(8.dp))
-
-            if (issue.imageUrl.isNotEmpty()) {
-                AsyncImage(
-                    model = issue.imageUrl,
-                    contentDescription = null,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(150.dp)
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-            }
-
-            Text(
-                text = "Status: ${issue.status}",
-                color = if (issue.status == "Resolved")
-                    Color(0xFF4CAF50)
-                else
-                    Color(0xFFFF9800)
+        if (issue.imageUrl.isNotEmpty()) {
+            AsyncImage(
+                model = issue.imageUrl,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(150.dp)
+                    .clip(RoundedCornerShape(CornerRadius.Medium))
             )
+            Spacer(modifier = Modifier.height(Spacing.Medium))
+        }
 
-            Spacer(modifier = Modifier.height(10.dp))
+        StatusChip(status = issue.status)
 
-            if (issue.status != "Resolved") {
-                Button(
-                    onClick = {
-                        loading = true
-                        firestore.collection("issues")
-                            .document(issue.id)
-                            .update("status", "Resolved")
-                            .addOnSuccessListener {
-                                loading = false
-                            }
-                            .addOnFailureListener {
-                                loading = false
-                            }
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(14.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = Color(0xFF4CAF50)
-                    )
-                ) {
-                    if (loading) {
-                        CircularProgressIndicator(
-                            color = Color.White,
-                            modifier = Modifier.size(18.dp)
-                        )
-                    } else {
-                        Text("Mark as Resolved")
-                    }
-                }
-            }
+        Spacer(modifier = Modifier.height(Spacing.Medium))
+
+        if (issue.status.lowercase() != "resolved") {
+            PrimaryButton(
+                text = "Mark as Resolved",
+                onClick = {
+                    loading = true
+                    firestore.collection("issues")
+                        .document(issue.id)
+                        .update("status", "Resolved")
+                        .addOnSuccessListener {
+                            loading = false
+                        }
+                        .addOnFailureListener {
+                            loading = false
+                        }
+                },
+                modifier = Modifier.fillMaxWidth(),
+                loading = loading
+            )
         }
     }
 }

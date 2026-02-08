@@ -1,18 +1,19 @@
 package com.example.cityflux.ui.dashboard
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import com.example.cityflux.ui.theme.*
 import com.google.firebase.auth.FirebaseAuth
 
 @Composable
@@ -24,85 +25,69 @@ fun CitizenDashboardScreen(
     onLogout: () -> Unit
 ) {
     val auth = FirebaseAuth.getInstance()
+    val colors = MaterialTheme.cityFluxColors
 
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(
-                Brush.verticalGradient(
-                    listOf(
-                        Color(0xFF020C2B),
-                        Color(0xFF031A3D),
-                        Color(0xFF020C2B)
-                    )
-                )
-            )
-    ) {
-
+    CleanBackground {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(20.dp)
+                .verticalScroll(rememberScrollState())
+                .padding(Spacing.XLarge)
+                .statusBarsPadding()
+                .navigationBarsPadding()
         ) {
 
-            Spacer(modifier = Modifier.height(30.dp))
+            Spacer(modifier = Modifier.height(Spacing.Large))
 
-            Text(
-                text = "Citizen Dashboard",
-                color = Color.White,
-                fontSize = 28.sp,
-                fontWeight = FontWeight.SemiBold
+            ScreenHeader(
+                title = "Citizen Dashboard",
+                subtitle = "Manage traffic and parking services"
             )
 
-            Text(
-                text = "Manage traffic and parking services",
-                color = Color(0xFF9FB3FF),
-                fontSize = 14.sp,
-                modifier = Modifier.padding(bottom = 24.dp)
-            )
+            Spacer(modifier = Modifier.height(Spacing.XXLarge))
 
-            // GRID
+            // Dashboard Action Cards
             Column(
-                verticalArrangement = Arrangement.spacedBy(16.dp)
+                verticalArrangement = Arrangement.spacedBy(Spacing.Large)
             ) {
+                DashboardActionCard(
+                    title = "Report Issue",
+                    description = "Report traffic or parking issues",
+                    icon = Icons.Outlined.ReportProblem,
+                    accentColor = AccentIssues,
+                    onClick = onReportIssue
+                )
 
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    DashboardCard(
-                        title = "Report Issue",
-                        onClick = onReportIssue,
-                        modifier = Modifier.weight(1f)
-                    )
+                DashboardActionCard(
+                    title = "Parking",
+                    description = "Find available parking spots",
+                    icon = Icons.Outlined.LocalParking,
+                    accentColor = AccentParking,
+                    onClick = onViewParking
+                )
 
-                    DashboardCard(
-                        title = "Parking",
-                        onClick = onViewParking,
-                        modifier = Modifier.weight(1f)
-                    )
-                }
+                DashboardActionCard(
+                    title = "My Reports",
+                    description = "View your submitted reports",
+                    icon = Icons.Outlined.Assignment,
+                    accentColor = AccentTraffic,
+                    onClick = onViewAlerts
+                )
 
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    DashboardCard(
-                        title = "My Reports",   // changed label
-                        onClick = onViewAlerts,
-                        modifier = Modifier.weight(1f)
-                    )
-
-                    DashboardCard(
-                        title = "Profile",
-                        onClick = onProfile,
-                        modifier = Modifier.weight(1f)
-                    )
-                }
+                DashboardActionCard(
+                    title = "Profile",
+                    description = "View and edit your profile",
+                    icon = Icons.Outlined.Person,
+                    accentColor = AccentAlerts,
+                    onClick = onProfile
+                )
             }
 
             Spacer(modifier = Modifier.weight(1f))
+            Spacer(modifier = Modifier.height(Spacing.XXLarge))
 
             // Logout button
-            Button(
+            OutlinedButton(
                 onClick = {
                     auth.signOut()
                     onLogout()
@@ -110,42 +95,20 @@ fun CitizenDashboardScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(52.dp),
-                shape = RoundedCornerShape(28.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = Color(0xFFFF5252)
-                )
+                shape = RoundedCornerShape(CornerRadius.Medium),
+                colors = ButtonDefaults.outlinedButtonColors(
+                    contentColor = AccentRed
+                ),
+                border = androidx.compose.foundation.BorderStroke(1.5.dp, AccentRed)
             ) {
-                Text("Logout", color = Color.White, fontSize = 16.sp)
+                Text(
+                    "Logout", 
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.SemiBold
+                )
             }
-        }
-    }
-}
-
-@Composable
-fun DashboardCard(
-    title: String,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    Card(
-        modifier = modifier
-            .height(120.dp)
-            .clickable { onClick() },
-        shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = Color(0xFF0F1C3F).copy(alpha = 0.75f)
-        )
-    ) {
-        Box(
-            modifier = Modifier.fillMaxSize(),
-            contentAlignment = Alignment.Center
-        ) {
-            Text(
-                text = title,
-                color = Color.White,
-                fontSize = 16.sp,
-                fontWeight = FontWeight.SemiBold
-            )
+            
+            Spacer(modifier = Modifier.height(Spacing.Large))
         }
     }
 }

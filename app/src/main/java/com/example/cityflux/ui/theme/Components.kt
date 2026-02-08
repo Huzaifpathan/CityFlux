@@ -8,13 +8,16 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
@@ -27,44 +30,73 @@ import androidx.compose.ui.unit.dp
 
 // ═══════════════════════════════════════════════════════════════════
 // CityFlux Modern UI Components - Clean Professional Design
-// White backgrounds, subtle shadows, colored accents
+// Theme-aware with full light/dark mode support
 // ═══════════════════════════════════════════════════════════════════
 
+// Standard corner radius values
+object CornerRadius {
+    val Small = 8.dp
+    val Medium = 12.dp
+    val Large = 14.dp
+    val XLarge = 16.dp
+    val Round = 24.dp
+}
+
+// Standard spacing values
+object Spacing {
+    val XSmall = 4.dp
+    val Small = 8.dp
+    val Medium = 12.dp
+    val Large = 16.dp
+    val XLarge = 20.dp
+    val XXLarge = 24.dp
+    val Section = 32.dp
+}
+
 /**
- * Clean white background container for all screens
+ * Clean background container for all screens - theme aware
  */
 @Composable
 fun CleanBackground(
     modifier: Modifier = Modifier,
     content: @Composable BoxScope.() -> Unit
 ) {
+    val colors = MaterialTheme.cityFluxColors
     Box(
         modifier = modifier
             .fillMaxSize()
-            .background(SurfaceWhite),
+            .background(MaterialTheme.colorScheme.background),
         content = content
     )
 }
 
 /**
- * Gradient background for splash/login screens only
+ * Subtle gradient background for splash/login screens only
  */
 @Composable
 fun GradientBackground(
     modifier: Modifier = Modifier,
     content: @Composable BoxScope.() -> Unit
 ) {
+    val colors = MaterialTheme.cityFluxColors
+    val gradientColors = if (colors.isDark) {
+        listOf(
+            Color(0xFF0F172A),
+            Color(0xFF1E293B),
+            Color(0xFF0F172A)
+        )
+    } else {
+        listOf(
+            Color(0xFFF8FAFC),
+            Color(0xFFFFFFFF),
+            Color(0xFFF8FAFC)
+        )
+    }
+    
     Box(
         modifier = modifier
             .fillMaxSize()
-            .background(
-                Brush.verticalGradient(
-                    colors = listOf(
-                        Color(0xFFF8FAFC),
-                        Color(0xFFFFFFFF)
-                    )
-                )
-            ),
+            .background(Brush.verticalGradient(gradientColors)),
         content = content
     )
 }
@@ -76,20 +108,35 @@ fun GradientBackground(
 @Composable
 fun CityFluxTopBar(
     title: String = "CityFlux",
+    showBack: Boolean = false,
     showNotification: Boolean = true,
     showProfile: Boolean = true,
+    onBackClick: () -> Unit = {},
     onNotificationClick: () -> Unit = {},
     onProfileClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
+    val colors = MaterialTheme.cityFluxColors
+    
     TopAppBar(
         title = {
             Text(
                 text = title,
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
-                color = TextPrimary
+                color = colors.textPrimary
             )
+        },
+        navigationIcon = {
+            if (showBack) {
+                IconButton(onClick = onBackClick) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                        contentDescription = "Back",
+                        tint = colors.textPrimary
+                    )
+                }
+            }
         },
         actions = {
             if (showNotification) {
@@ -97,7 +144,7 @@ fun CityFluxTopBar(
                     Icon(
                         imageVector = Icons.Filled.Notifications,
                         contentDescription = "Notifications",
-                        tint = TextSecondary
+                        tint = colors.textSecondary
                     )
                 }
             }
@@ -106,21 +153,21 @@ fun CityFluxTopBar(
                     Icon(
                         imageVector = Icons.Filled.Person,
                         contentDescription = "Profile",
-                        tint = TextSecondary
+                        tint = colors.textSecondary
                     )
                 }
             }
         },
         colors = TopAppBarDefaults.topAppBarColors(
-            containerColor = SurfaceWhite,
-            titleContentColor = TextPrimary
+            containerColor = MaterialTheme.colorScheme.background,
+            titleContentColor = colors.textPrimary
         ),
         modifier = modifier
     )
 }
 
 /**
- * Unified screen header on white background
+ * Unified screen header - theme aware
  */
 @Composable
 fun ScreenHeader(
@@ -128,26 +175,29 @@ fun ScreenHeader(
     subtitle: String? = null,
     modifier: Modifier = Modifier
 ) {
+    val colors = MaterialTheme.cityFluxColors
+    
     Column(modifier = modifier) {
         Text(
             text = title,
             style = MaterialTheme.typography.headlineMedium,
             fontWeight = FontWeight.Bold,
-            color = TextPrimary
+            color = colors.textPrimary
         )
         if (subtitle != null) {
-            Spacer(modifier = Modifier.height(4.dp))
+            Spacer(modifier = Modifier.height(Spacing.XSmall))
             Text(
                 text = subtitle,
                 style = MaterialTheme.typography.bodyMedium,
-                color = TextSecondary
+                color = colors.textSecondary
             )
         }
     }
 }
 
 /**
- * Modern card with colored left accent border
+ * Modern card with colored left accent border (12-16px radius)
+ * Blue for Traffic, Green for Parking, Red for Issues, Orange for Alerts
  */
 @Composable
 fun AccentCard(
@@ -157,21 +207,23 @@ fun AccentCard(
     onClick: (() -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit
 ) {
+    val colors = MaterialTheme.cityFluxColors
+    
     Card(
         modifier = modifier
             .shadow(
                 elevation = elevation,
-                shape = RoundedCornerShape(14.dp),
-                ambientColor = CardShadow,
-                spotColor = CardShadowMedium
+                shape = RoundedCornerShape(CornerRadius.Large),
+                ambientColor = colors.cardShadow,
+                spotColor = colors.cardShadow.copy(alpha = 0.5f)
             ),
-        shape = RoundedCornerShape(14.dp),
+        shape = RoundedCornerShape(CornerRadius.Large),
         colors = CardDefaults.cardColors(
-            containerColor = CardBackground
+            containerColor = colors.cardBackground
         ),
         onClick = onClick ?: {}
     ) {
-        Row {
+        Row(modifier = Modifier.height(IntrinsicSize.Min)) {
             // Colored accent bar on left
             Box(
                 modifier = Modifier
@@ -182,7 +234,7 @@ fun AccentCard(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(16.dp),
+                    .padding(Spacing.Large),
                 content = content
             )
         }
@@ -198,28 +250,30 @@ fun AppCard(
     elevation: Dp = 4.dp,
     content: @Composable ColumnScope.() -> Unit
 ) {
+    val colors = MaterialTheme.cityFluxColors
+    
     Card(
         modifier = modifier
             .shadow(
                 elevation = elevation,
-                shape = RoundedCornerShape(14.dp),
-                ambientColor = CardShadow,
-                spotColor = CardShadowMedium
+                shape = RoundedCornerShape(CornerRadius.Large),
+                ambientColor = colors.cardShadow,
+                spotColor = colors.cardShadow.copy(alpha = 0.5f)
             ),
-        shape = RoundedCornerShape(14.dp),
+        shape = RoundedCornerShape(CornerRadius.Large),
         colors = CardDefaults.cardColors(
-            containerColor = CardBackground
+            containerColor = colors.cardBackground
         )
     ) {
         Column(
-            modifier = Modifier.padding(20.dp),
+            modifier = Modifier.padding(Spacing.XLarge),
             content = content
         )
     }
 }
 
 /**
- * Dashboard action card with icon and colored top accent
+ * Dashboard action card with icon and colored top accent strip
  */
 @Composable
 fun DashboardActionCard(
@@ -230,18 +284,20 @@ fun DashboardActionCard(
     modifier: Modifier = Modifier,
     accentColor: Color = AccentTraffic
 ) {
+    val colors = MaterialTheme.cityFluxColors
+    
     Card(
         modifier = modifier
             .fillMaxWidth()
             .shadow(
                 elevation = 6.dp,
-                shape = RoundedCornerShape(14.dp),
-                ambientColor = CardShadow,
-                spotColor = CardShadowMedium
+                shape = RoundedCornerShape(CornerRadius.Large),
+                ambientColor = colors.cardShadow,
+                spotColor = colors.cardShadow.copy(alpha = 0.5f)
             ),
-        shape = RoundedCornerShape(14.dp),
+        shape = RoundedCornerShape(CornerRadius.Large),
         colors = CardDefaults.cardColors(
-            containerColor = CardBackground
+            containerColor = colors.cardBackground
         ),
         onClick = onClick
     ) {
@@ -260,11 +316,11 @@ fun DashboardActionCard(
                     .padding(18.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Icon container with subtle background
+                // Icon container with subtle tinted background
                 Box(
                     modifier = Modifier
                         .size(52.dp)
-                        .clip(RoundedCornerShape(12.dp))
+                        .clip(RoundedCornerShape(CornerRadius.Medium))
                         .background(accentColor.copy(alpha = 0.1f)),
                     contentAlignment = Alignment.Center
                 ) {
@@ -276,29 +332,120 @@ fun DashboardActionCard(
                     )
                 }
 
-                Spacer(modifier = Modifier.width(16.dp))
+                Spacer(modifier = Modifier.width(Spacing.Large))
 
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = title,
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold,
-                        color = TextPrimary
+                        color = colors.textPrimary
                     )
-                    Spacer(modifier = Modifier.height(4.dp))
+                    Spacer(modifier = Modifier.height(Spacing.XSmall))
                     Text(
                         text = description,
                         style = MaterialTheme.typography.bodySmall,
-                        color = TextSecondary
+                        color = colors.textSecondary
                     )
                 }
+                
+                Icon(
+                    imageVector = Icons.Outlined.ChevronRight,
+                    contentDescription = null,
+                    tint = colors.textTertiary,
+                    modifier = Modifier.size(20.dp)
+                )
             }
         }
     }
 }
 
 /**
- * Primary button - solid blue with white text
+ * Update card for the Updates feed with slide-up entrance animation
+ */
+@Composable
+fun UpdateCard(
+    title: String,
+    subtitle: String,
+    timestamp: String,
+    category: UpdateCategory,
+    onClick: () -> Unit = {},
+    modifier: Modifier = Modifier
+) {
+    val colors = MaterialTheme.cityFluxColors
+    val accentColor = when (category) {
+        UpdateCategory.TRAFFIC -> AccentTraffic
+        UpdateCategory.PARKING -> AccentParking
+        UpdateCategory.ISSUES -> AccentIssues
+        UpdateCategory.ALERTS -> AccentAlerts
+    }
+    
+    Card(
+        modifier = modifier
+            .fillMaxWidth()
+            .shadow(
+                elevation = 4.dp,
+                shape = RoundedCornerShape(CornerRadius.Large),
+                ambientColor = colors.cardShadow,
+                spotColor = colors.cardShadow.copy(alpha = 0.5f)
+            ),
+        shape = RoundedCornerShape(CornerRadius.Large),
+        colors = CardDefaults.cardColors(
+            containerColor = colors.cardBackground
+        ),
+        onClick = onClick
+    ) {
+        Row(modifier = Modifier.height(IntrinsicSize.Min)) {
+            // Left accent bar
+            Box(
+                modifier = Modifier
+                    .width(4.dp)
+                    .fillMaxHeight()
+                    .background(accentColor)
+            )
+            
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(Spacing.Large)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.Top
+                ) {
+                    Text(
+                        text = title,
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = colors.textPrimary,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Text(
+                        text = timestamp,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = colors.textTertiary
+                    )
+                }
+                
+                Spacer(modifier = Modifier.height(Spacing.Small))
+                
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = colors.textSecondary
+                )
+            }
+        }
+    }
+}
+
+enum class UpdateCategory {
+    TRAFFIC, PARKING, ISSUES, ALERTS
+}
+
+/**
+ * Primary button - solid blue with white text - Material ripple effect
  */
 @Composable
 fun PrimaryButton(
@@ -310,15 +457,14 @@ fun PrimaryButton(
 ) {
     Button(
         onClick = onClick,
-        modifier = modifier
-            .height(52.dp),
+        modifier = modifier.height(52.dp),
         enabled = enabled && !loading,
-        shape = RoundedCornerShape(12.dp),
+        shape = RoundedCornerShape(CornerRadius.Medium),
         colors = ButtonDefaults.buttonColors(
-            containerColor = ButtonPrimary,
-            contentColor = TextOnPrimary,
+            containerColor = PrimaryBlue,
+            contentColor = Color.White,
             disabledContainerColor = ButtonDisabled,
-            disabledContentColor = TextSecondary
+            disabledContentColor = Color.White.copy(alpha = 0.6f)
         ),
         elevation = ButtonDefaults.buttonElevation(
             defaultElevation = 2.dp,
@@ -329,7 +475,7 @@ fun PrimaryButton(
     ) {
         if (loading) {
             CircularProgressIndicator(
-                color = TextOnPrimary,
+                color = Color.White,
                 strokeWidth = 2.dp,
                 modifier = Modifier.size(22.dp)
             )
@@ -355,10 +501,9 @@ fun SecondaryButton(
 ) {
     OutlinedButton(
         onClick = onClick,
-        modifier = modifier
-            .height(52.dp),
+        modifier = modifier.height(52.dp),
         enabled = enabled,
-        shape = RoundedCornerShape(12.dp),
+        shape = RoundedCornerShape(CornerRadius.Medium),
         colors = ButtonDefaults.outlinedButtonColors(
             contentColor = PrimaryBlue
         ),
@@ -391,6 +536,8 @@ fun AppTextField(
     readOnly: Boolean = false,
     trailingIcon: @Composable (() -> Unit)? = null
 ) {
+    val colors = MaterialTheme.cityFluxColors
+    
     OutlinedTextField(
         value = value,
         onValueChange = onValueChange,
@@ -407,15 +554,17 @@ fun AppTextField(
         minLines = minLines,
         readOnly = readOnly,
         trailingIcon = trailingIcon,
-        shape = RoundedCornerShape(12.dp),
+        shape = RoundedCornerShape(CornerRadius.Medium),
         colors = OutlinedTextFieldDefaults.colors(
-            focusedBorderColor = InputBorderFocused,
-            unfocusedBorderColor = InputBorder,
+            focusedBorderColor = colors.inputBorderFocused,
+            unfocusedBorderColor = colors.inputBorder,
             focusedLabelColor = PrimaryBlue,
-            unfocusedLabelColor = TextSecondary,
+            unfocusedLabelColor = colors.textSecondary,
             cursorColor = PrimaryBlue,
-            focusedContainerColor = Color.Transparent,
-            unfocusedContainerColor = Color.Transparent
+            focusedContainerColor = colors.inputBackground,
+            unfocusedContainerColor = colors.inputBackground,
+            focusedTextColor = colors.textPrimary,
+            unfocusedTextColor = colors.textPrimary
         )
     )
 }
@@ -437,7 +586,7 @@ fun StatusChip(
     
     Surface(
         modifier = modifier,
-        shape = RoundedCornerShape(8.dp),
+        shape = RoundedCornerShape(CornerRadius.Small),
         color = backgroundColor
     ) {
         Text(
@@ -460,6 +609,8 @@ fun CategoryChip(
     onClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
+    val colors = MaterialTheme.cityFluxColors
+    
     FilterChip(
         selected = selected,
         onClick = onClick,
@@ -470,15 +621,15 @@ fun CategoryChip(
                 fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal
             )
         },
-        shape = RoundedCornerShape(8.dp),
+        shape = RoundedCornerShape(CornerRadius.Small),
         colors = FilterChipDefaults.filterChipColors(
             containerColor = Color.Transparent,
             selectedContainerColor = PrimaryBlue.copy(alpha = 0.1f),
-            labelColor = TextSecondary,
+            labelColor = colors.textSecondary,
             selectedLabelColor = PrimaryBlue
         ),
         border = FilterChipDefaults.filterChipBorder(
-            borderColor = CardBorder,
+            borderColor = colors.cardBorder,
             selectedBorderColor = PrimaryBlue,
             enabled = true,
             selected = selected
@@ -488,7 +639,7 @@ fun CategoryChip(
 }
 
 /**
- * Role selection card
+ * Role selection card with modern design
  */
 @Composable
 fun RoleCard(
@@ -498,31 +649,33 @@ fun RoleCard(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val colors = MaterialTheme.cityFluxColors
+    
     Card(
         modifier = modifier
             .fillMaxWidth()
             .shadow(
                 elevation = 6.dp,
-                shape = RoundedCornerShape(16.dp),
-                ambientColor = CardShadow,
-                spotColor = CardShadowMedium
+                shape = RoundedCornerShape(CornerRadius.XLarge),
+                ambientColor = colors.cardShadow,
+                spotColor = colors.cardShadow.copy(alpha = 0.5f)
             ),
-        shape = RoundedCornerShape(16.dp),
+        shape = RoundedCornerShape(CornerRadius.XLarge),
         colors = CardDefaults.cardColors(
-            containerColor = CardBackground
+            containerColor = colors.cardBackground
         ),
         onClick = onClick
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(20.dp),
+                .padding(Spacing.XLarge),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Box(
                 modifier = Modifier
                     .size(56.dp)
-                    .clip(RoundedCornerShape(14.dp))
+                    .clip(RoundedCornerShape(CornerRadius.Large))
                     .background(PrimaryBlue.copy(alpha = 0.1f)),
                 contentAlignment = Alignment.Center
             ) {
@@ -541,21 +694,28 @@ fun RoleCard(
                     text = title,
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold,
-                    color = TextPrimary
+                    color = colors.textPrimary
                 )
-                Spacer(modifier = Modifier.height(4.dp))
+                Spacer(modifier = Modifier.height(Spacing.XSmall))
                 Text(
                     text = description,
                     style = MaterialTheme.typography.bodySmall,
-                    color = TextSecondary
+                    color = colors.textSecondary
                 )
             }
+            
+            Icon(
+                imageVector = Icons.Outlined.ChevronRight,
+                contentDescription = null,
+                tint = colors.textTertiary,
+                modifier = Modifier.size(20.dp)
+            )
         }
     }
 }
 
 /**
- * Issue card for police/admin dashboards
+ * Issue card for police/admin dashboards with left accent bar
  */
 @Composable
 fun IssueCard(
@@ -563,21 +723,23 @@ fun IssueCard(
     accentColor: Color = AccentIssues,
     content: @Composable ColumnScope.() -> Unit
 ) {
+    val colors = MaterialTheme.cityFluxColors
+    
     Card(
         modifier = modifier
             .fillMaxWidth()
             .shadow(
                 elevation = 4.dp,
-                shape = RoundedCornerShape(14.dp),
-                ambientColor = CardShadow,
-                spotColor = CardShadowMedium
+                shape = RoundedCornerShape(CornerRadius.Large),
+                ambientColor = colors.cardShadow,
+                spotColor = colors.cardShadow.copy(alpha = 0.5f)
             ),
-        shape = RoundedCornerShape(14.dp),
+        shape = RoundedCornerShape(CornerRadius.Large),
         colors = CardDefaults.cardColors(
-            containerColor = CardBackground
+            containerColor = colors.cardBackground
         )
     ) {
-        Row {
+        Row(modifier = Modifier.height(IntrinsicSize.Min)) {
             // Colored accent bar on left
             Box(
                 modifier = Modifier
@@ -588,7 +750,7 @@ fun IssueCard(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(16.dp),
+                    .padding(Spacing.Large),
                 content = content
             )
         }
@@ -596,7 +758,7 @@ fun IssueCard(
 }
 
 /**
- * Unified app bar for screens with TopAppBar
+ * Unified app bar for screens
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -604,6 +766,8 @@ fun AppTopBar(
     title: String,
     modifier: Modifier = Modifier
 ) {
+    val colors = MaterialTheme.cityFluxColors
+    
     TopAppBar(
         title = {
             Text(
@@ -614,47 +778,33 @@ fun AppTopBar(
         },
         modifier = modifier,
         colors = TopAppBarDefaults.topAppBarColors(
-            containerColor = SurfaceWhite,
-            titleContentColor = TextPrimary
+            containerColor = MaterialTheme.colorScheme.background,
+            titleContentColor = colors.textPrimary
         )
     )
 }
 
 /**
- * Dark card variant (kept for compatibility)
+ * Modern bottom navigation bar with blur background effect
  */
 @Composable
-fun AppCardDark(
+fun CityFluxBottomBar(
     modifier: Modifier = Modifier,
-    onClick: (() -> Unit)? = null,
     content: @Composable RowScope.() -> Unit
 ) {
-    Card(
-        modifier = modifier
-            .shadow(
-                elevation = 6.dp,
-                shape = RoundedCornerShape(14.dp),
-                ambientColor = CardShadow,
-                spotColor = CardShadowMedium
-            ),
-        shape = RoundedCornerShape(14.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = CardBackground
-        ),
-        onClick = onClick ?: {}
+    val colors = MaterialTheme.cityFluxColors
+    
+    NavigationBar(
+        modifier = modifier,
+        containerColor = colors.bottomNavBackground,
+        tonalElevation = 0.dp
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(18.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            content = content
-        )
+        content()
     }
 }
 
 /**
- * Thin circular loading spinner
+ * Thin circular loading spinner - modern minimal style
  */
 @Composable
 fun LoadingSpinner(
@@ -669,7 +819,42 @@ fun LoadingSpinner(
 }
 
 /**
- * Minimal loading indicator
+ * Three-dot typing indicator animation - subtle professional style
+ */
+@Composable
+fun TypingIndicator(
+    modifier: Modifier = Modifier
+) {
+    val infiniteTransition = rememberInfiniteTransition(label = "typing")
+    
+    Row(
+        modifier = modifier,
+        horizontalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        repeat(3) { index ->
+            val delay = index * 150
+            val alpha by infiniteTransition.animateFloat(
+                initialValue = 0.3f,
+                targetValue = 1f,
+                animationSpec = infiniteRepeatable(
+                    animation = tween(600, delayMillis = delay, easing = FastOutSlowInEasing),
+                    repeatMode = RepeatMode.Reverse
+                ),
+                label = "dot$index"
+            )
+            
+            Box(
+                modifier = Modifier
+                    .size(8.dp)
+                    .clip(CircleShape)
+                    .background(PrimaryBlue.copy(alpha = alpha))
+            )
+        }
+    }
+}
+
+/**
+ * Minimal loading indicator (three animated dots)
  */
 @Composable
 fun MinimalLoader(
@@ -696,9 +881,7 @@ fun MinimalLoader(
                     .size(8.dp)
                     .clip(CircleShape)
                     .background(
-                        PrimaryBlue.copy(
-                            alpha = alpha * (1f - (index * 0.15f))
-                        )
+                        PrimaryBlue.copy(alpha = alpha * (1f - (index * 0.15f)))
                     )
             )
         }
@@ -706,7 +889,247 @@ fun MinimalLoader(
 }
 
 /**
- * Gradient button (kept for compatibility)
+ * Chat bubble for sender (current user) - white with light blue border
+ */
+@Composable
+fun SenderBubble(
+    message: String,
+    timestamp: String,
+    isRead: Boolean = false,
+    modifier: Modifier = Modifier
+) {
+    val colors = MaterialTheme.cityFluxColors
+    
+    Column(
+        modifier = modifier.fillMaxWidth(),
+        horizontalAlignment = Alignment.End
+    ) {
+        Surface(
+            modifier = Modifier
+                .widthIn(max = 280.dp)
+                .shadow(
+                    elevation = 2.dp,
+                    shape = RoundedCornerShape(
+                        topStart = 16.dp,
+                        topEnd = 16.dp,
+                        bottomStart = 16.dp,
+                        bottomEnd = 4.dp
+                    )
+                ),
+            shape = RoundedCornerShape(
+                topStart = 16.dp,
+                topEnd = 16.dp,
+                bottomStart = 16.dp,
+                bottomEnd = 4.dp
+            ),
+            color = colors.cardBackground,
+            border = androidx.compose.foundation.BorderStroke(1.dp, PrimaryBlue.copy(alpha = 0.3f))
+        ) {
+            Column(
+                modifier = Modifier.padding(12.dp)
+            ) {
+                Text(
+                    text = message,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = colors.textPrimary
+                )
+                
+                Spacer(modifier = Modifier.height(4.dp))
+                
+                Row(
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = timestamp,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = colors.textTertiary
+                    )
+                    // Read status ticks would go here
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Chat bubble for receiver - pure white
+ */
+@Composable
+fun ReceiverBubble(
+    message: String,
+    timestamp: String,
+    senderName: String? = null,
+    modifier: Modifier = Modifier
+) {
+    val colors = MaterialTheme.cityFluxColors
+    
+    Column(
+        modifier = modifier.fillMaxWidth(),
+        horizontalAlignment = Alignment.Start
+    ) {
+        Surface(
+            modifier = Modifier
+                .widthIn(max = 280.dp)
+                .shadow(
+                    elevation = 2.dp,
+                    shape = RoundedCornerShape(
+                        topStart = 4.dp,
+                        topEnd = 16.dp,
+                        bottomStart = 16.dp,
+                        bottomEnd = 16.dp
+                    )
+                ),
+            shape = RoundedCornerShape(
+                topStart = 4.dp,
+                topEnd = 16.dp,
+                bottomStart = 16.dp,
+                bottomEnd = 16.dp
+            ),
+            color = colors.cardBackground
+        ) {
+            Column(
+                modifier = Modifier.padding(12.dp)
+            ) {
+                if (senderName != null) {
+                    Text(
+                        text = senderName,
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = PrimaryBlue
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                }
+                
+                Text(
+                    text = message,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = colors.textPrimary
+                )
+                
+                Spacer(modifier = Modifier.height(4.dp))
+                
+                Text(
+                    text = timestamp,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = colors.textTertiary
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Circular avatar with thin accent border
+ */
+@Composable
+fun UserAvatar(
+    initials: String,
+    modifier: Modifier = Modifier,
+    size: Dp = 40.dp,
+    accentColor: Color = PrimaryBlue
+) {
+    val colors = MaterialTheme.cityFluxColors
+    
+    Box(
+        modifier = modifier
+            .size(size)
+            .clip(CircleShape)
+            .background(accentColor.copy(alpha = 0.1f))
+            .border(1.5.dp, accentColor.copy(alpha = 0.5f), CircleShape),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = initials.take(2).uppercase(),
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = FontWeight.SemiBold,
+            color = accentColor
+        )
+    }
+}
+
+/**
+ * Floating action button with blur background - for maps
+ */
+@Composable
+fun MapFloatingButton(
+    icon: ImageVector,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    contentDescription: String? = null
+) {
+    FloatingActionButton(
+        onClick = onClick,
+        modifier = modifier
+            .size(48.dp)
+            .shadow(8.dp, CircleShape),
+        shape = CircleShape,
+        containerColor = MaterialTheme.colorScheme.background,
+        contentColor = PrimaryBlue
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = contentDescription,
+            modifier = Modifier.size(24.dp)
+        )
+    }
+}
+
+/**
+ * Transparent bottom sheet for parking/map info
+ */
+@Composable
+fun InfoBottomSheet(
+    modifier: Modifier = Modifier,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    val colors = MaterialTheme.cityFluxColors
+    
+    Surface(
+        modifier = modifier
+            .fillMaxWidth()
+            .shadow(8.dp, RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)),
+        shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
+        color = colors.cardBackground.copy(alpha = 0.95f)
+    ) {
+        Column(
+            modifier = Modifier.padding(Spacing.XLarge)
+        ) {
+            // Handle bar
+            Box(
+                modifier = Modifier
+                    .width(40.dp)
+                    .height(4.dp)
+                    .clip(RoundedCornerShape(2.dp))
+                    .background(colors.divider)
+                    .align(Alignment.CenterHorizontally)
+            )
+            
+            Spacer(modifier = Modifier.height(Spacing.Large))
+            
+            content()
+        }
+    }
+}
+
+/**
+ * Divider - horizontal separator
+ */
+@Composable
+fun AppDivider(
+    modifier: Modifier = Modifier
+) {
+    val colors = MaterialTheme.cityFluxColors
+    HorizontalDivider(
+        modifier = modifier,
+        thickness = 1.dp,
+        color = colors.divider
+    )
+}
+
+/**
+ * Gradient button (kept for compatibility) - now uses solid color
  */
 @Composable
 fun GradientButton(
@@ -716,33 +1139,46 @@ fun GradientButton(
     enabled: Boolean = true,
     loading: Boolean = false
 ) {
-    Button(
+    PrimaryButton(
+        text = text,
         onClick = onClick,
-        modifier = modifier.height(52.dp),
-        enabled = enabled && !loading,
-        shape = RoundedCornerShape(12.dp),
-        colors = ButtonDefaults.buttonColors(
-            containerColor = ButtonPrimary,
-            disabledContainerColor = ButtonDisabled
+        modifier = modifier,
+        enabled = enabled,
+        loading = loading
+    )
+}
+
+/**
+ * Dark card variant (kept for compatibility) - now uses theme colors
+ */
+@Composable
+fun AppCardDark(
+    modifier: Modifier = Modifier,
+    onClick: (() -> Unit)? = null,
+    content: @Composable RowScope.() -> Unit
+) {
+    val colors = MaterialTheme.cityFluxColors
+    
+    Card(
+        modifier = modifier
+            .shadow(
+                elevation = 6.dp,
+                shape = RoundedCornerShape(CornerRadius.Large),
+                ambientColor = colors.cardShadow,
+                spotColor = colors.cardShadow.copy(alpha = 0.5f)
+            ),
+        shape = RoundedCornerShape(CornerRadius.Large),
+        colors = CardDefaults.cardColors(
+            containerColor = colors.cardBackground
         ),
-        elevation = ButtonDefaults.buttonElevation(
-            defaultElevation = 2.dp,
-            pressedElevation = 0.dp
-        )
+        onClick = onClick ?: {}
     ) {
-        if (loading) {
-            CircularProgressIndicator(
-                color = TextOnPrimary,
-                strokeWidth = 2.dp,
-                modifier = Modifier.size(22.dp)
-            )
-        } else {
-            Text(
-                text = text,
-                style = MaterialTheme.typography.labelLarge,
-                fontWeight = FontWeight.SemiBold,
-                color = TextOnPrimary
-            )
-        }
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(18.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            content = content
+        )
     }
 }

@@ -3,19 +3,19 @@ package com.example.cityflux.ui.register
 import android.util.Log
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import com.example.cityflux.ui.login.GlassInputField
+import com.example.cityflux.ui.theme.*
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.FieldValue
@@ -36,123 +36,134 @@ fun RegisterScreen(
 
     val auth = FirebaseAuth.getInstance()
     val firestore = FirebaseFirestore.getInstance()
+    val colors = MaterialTheme.cityFluxColors
 
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(
-                Brush.verticalGradient(
-                    listOf(
-                        Color(0xFF020C2B),
-                        Color(0xFF031A3D),
-                        Color(0xFF020C2B)
-                    )
-                )
-            )
+            .background(MaterialTheme.colorScheme.background)
     ) {
-
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(horizontal = 24.dp),
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = Spacing.XLarge),
             verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
 
+            Spacer(modifier = Modifier.height(Spacing.XXLarge))
+
             Text(
                 text = "CityFlux",
-                color = Color.White,
-                fontSize = 34.sp,
-                fontWeight = FontWeight.SemiBold
+                style = MaterialTheme.typography.headlineLarge,
+                fontWeight = FontWeight.Bold,
+                color = colors.textPrimary
             )
 
             Text(
                 text = "Smart Traffic and Parking Mobility System",
-                color = Color(0xFF9FB3FF),
-                fontSize = 14.sp,
-                modifier = Modifier.padding(bottom = 32.dp)
+                style = MaterialTheme.typography.bodyMedium,
+                color = colors.textSecondary,
+                modifier = Modifier.padding(bottom = Spacing.XLarge)
             )
 
             Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(28.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .shadow(
+                        elevation = 8.dp,
+                        shape = RoundedCornerShape(CornerRadius.XLarge),
+                        ambientColor = colors.cardShadow,
+                        spotColor = colors.cardShadowMedium
+                    ),
+                shape = RoundedCornerShape(CornerRadius.XLarge),
                 colors = CardDefaults.cardColors(
-                    containerColor = Color(0xFF0F1C3F).copy(alpha = 0.65f)
+                    containerColor = colors.cardBackground
                 )
             ) {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(24.dp),
+                        .padding(Spacing.XLarge),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
 
                     Text(
                         text = "Create Account",
-                        color = Color.White,
-                        fontSize = 26.sp,
-                        fontWeight = FontWeight.SemiBold,
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = colors.textPrimary,
                         modifier = Modifier
                             .align(Alignment.Start)
-                            .padding(bottom = 20.dp)
+                            .padding(bottom = Spacing.Large)
                     )
 
-                    GlassInputField(
+                    AppTextField(
                         value = name,
                         onValueChange = { name = it },
-                        placeholder = "Full Name"
+                        label = "Full Name"
                     )
 
-                    Spacer(modifier = Modifier.height(12.dp))
+                    Spacer(modifier = Modifier.height(Spacing.Medium))
 
-                    GlassInputField(
+                    AppTextField(
                         value = email,
                         onValueChange = { email = it },
-                        placeholder = "Email Address"
+                        label = "Email Address"
                     )
 
-                    Spacer(modifier = Modifier.height(12.dp))
+                    Spacer(modifier = Modifier.height(Spacing.Medium))
 
-                    GlassInputField(
+                    AppTextField(
                         value = password,
                         onValueChange = { password = it },
-                        placeholder = "Password",
-                        isPassword = true,
-                        passwordVisible = passwordVisible,
-                        onTogglePassword = { passwordVisible = !passwordVisible }
+                        label = "Password",
+                        visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                        trailingIcon = {
+                            TextButton(onClick = { passwordVisible = !passwordVisible }) {
+                                Text(
+                                    if (passwordVisible) "Hide" else "Show",
+                                    color = PrimaryBlue,
+                                    style = MaterialTheme.typography.labelMedium
+                                )
+                            }
+                        }
                     )
 
-                    Spacer(modifier = Modifier.height(12.dp))
+                    Spacer(modifier = Modifier.height(Spacing.Medium))
 
-                    GlassInputField(
+                    AppTextField(
                         value = confirmPassword,
                         onValueChange = { confirmPassword = it },
-                        placeholder = "Confirm Password",
-                        isPassword = true,
-                        passwordVisible = passwordVisible,
-                        onTogglePassword = { passwordVisible = !passwordVisible }
+                        label = "Confirm Password",
+                        visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation()
                     )
 
                     errorMessage?.let {
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(it, color = Color.Red, fontSize = 14.sp)
+                        Spacer(modifier = Modifier.height(Spacing.Small))
+                        Text(
+                            it, 
+                            color = AccentRed, 
+                            style = MaterialTheme.typography.bodySmall
+                        )
                     }
 
-                    Spacer(modifier = Modifier.height(20.dp))
+                    Spacer(modifier = Modifier.height(Spacing.XLarge))
 
-                    Button(
+                    PrimaryButton(
+                        text = "REGISTER",
                         onClick = {
-
                             errorMessage = null
 
                             if (name.isBlank() || email.isBlank() || password.isBlank()) {
                                 errorMessage = "All fields are required"
-                                return@Button
+                                return@PrimaryButton
                             }
 
                             if (password != confirmPassword) {
                                 errorMessage = "Passwords do not match"
-                                return@Button
+                                return@PrimaryButton
                             }
 
                             loading = true
@@ -160,7 +171,6 @@ fun RegisterScreen(
                             auth.createUserWithEmailAndPassword(email.trim(), password)
                                 .addOnCompleteListener { task ->
                                     if (task.isSuccessful) {
-
                                         val uid = auth.currentUser?.uid
                                         if (uid == null) {
                                             loading = false
@@ -195,44 +205,33 @@ fun RegisterScreen(
                                     }
                                 }
                         },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(54.dp),
-                        shape = RoundedCornerShape(30.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = Color(0xFF4AA3FF)
-                        )
-                    ) {
-                        if (loading) {
-                            CircularProgressIndicator(
-                                color = Color.White,
-                                strokeWidth = 2.dp,
-                                modifier = Modifier.size(20.dp)
-                            )
-                        } else {
-                            Text(
-                                text = "REGISTER",
-                                fontSize = 16.sp,
-                                color = Color.White
-                            )
-                        }
-                    }
+                        enabled = !loading,
+                        loading = loading,
+                        modifier = Modifier.fillMaxWidth()
+                    )
 
-                    Spacer(modifier = Modifier.height(18.dp))
+                    Spacer(modifier = Modifier.height(Spacing.Large))
 
                     Row(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
                             text = "Already have an account? ",
-                            color = Color(0xFFB8C6FF)
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = colors.textSecondary
                         )
                         TextButton(onClick = onLoginClick) {
-                            Text("Login", color = Color(0xFF4AA3FF))
+                            Text(
+                                "Login",
+                                color = PrimaryBlue,
+                                fontWeight = FontWeight.SemiBold
+                            )
                         }
                     }
                 }
             }
+
+            Spacer(modifier = Modifier.height(Spacing.XXLarge))
         }
     }
 }

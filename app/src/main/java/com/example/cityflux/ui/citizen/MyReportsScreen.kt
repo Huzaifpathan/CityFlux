@@ -3,15 +3,19 @@ package com.example.cityflux.ui.citizen
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
+import com.example.cityflux.ui.theme.*
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
@@ -30,8 +34,10 @@ fun MyReportsScreen() {
 
     val auth = FirebaseAuth.getInstance()
     val firestore = FirebaseFirestore.getInstance()
+    val colors = MaterialTheme.cityFluxColors
 
     var issues by remember { mutableStateOf(listOf<CitizenIssue>()) }
+    var loading by remember { mutableStateOf(true) }
 
     DisposableEffect(Unit) {
 
@@ -52,6 +58,7 @@ fun MyReportsScreen() {
                             )
                         }
                     }
+                    loading = false
                 }
 
         onDispose {
@@ -59,44 +66,67 @@ fun MyReportsScreen() {
         }
     }
 
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(
-                Brush.verticalGradient(
-                    listOf(
-                        Color(0xFF020C2B),
-                        Color(0xFF031A3D),
-                        Color(0xFF020C2B)
-                    )
-                )
+    Scaffold(
+        topBar = {
+            CityFluxTopBar(
+                title = "My Reports",
+                showNotification = true,
+                showProfile = true
             )
-    ) {
+        },
+        containerColor = MaterialTheme.colorScheme.background
+    ) { padding ->
+
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(20.dp)
+                .padding(padding)
+                .padding(horizontal = Spacing.XLarge)
         ) {
 
-            Text(
-                text = "My Reports",
-                style = MaterialTheme.typography.headlineMedium,
-                color = Color.White
+            Spacer(modifier = Modifier.height(Spacing.Large))
+
+            ScreenHeader(
+                title = "Your Reports",
+                subtitle = "Track the status of issues you've reported"
             )
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(Spacing.XLarge))
 
-            if (issues.isEmpty()) {
-                Text(
-                    text = "No reports yet",
-                    color = Color(0xFFB8C6FF)
-                )
-            } else {
-                LazyColumn(
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    items(issues) { issue ->
-                        CitizenIssueCard(issue)
+            when {
+                loading -> {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        LoadingSpinner()
+                    }
+                }
+                issues.isEmpty() -> {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "No reports yet",
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = colors.textSecondary
+                        )
+                    }
+                }
+                else -> {
+                    LazyColumn(
+                        verticalArrangement = Arrangement.spacedBy(Spacing.Medium),
+                        contentPadding = PaddingValues(bottom = Spacing.XXLarge)
+                    ) {
+                        itemsIndexed(issues) { index, issue ->
+                            SlideUpFadeIn(
+                                visible = true,
+                                delay = staggeredDelay(index)
+                            ) {
+                                CitizenIssueCard(issue)
+                            }
+                        }
                     }
                 }
             }
@@ -106,40 +136,82 @@ fun MyReportsScreen() {
 
 @Composable
 fun CitizenIssueCard(issue: CitizenIssue) {
+    
+    val colors = MaterialTheme.cityFluxColors
+    
+    // Determine accent color based on status
+    val accentColor = when (issue.status.lowercase()) {
+        "resolved" -> AccentGreen
+        "in progress" -> AccentOrange
+        else -> AccentIssues
+    }
 
     Card(
-        shape = RoundedCornerShape(20.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .shadow(
+                elevation = 6.dp,
+                shape = RoundedCornerShape(CornerRadius.Large),
+                ambientColor = colors.cardShadow,
+                spotColor = colors.cardShadowMedium
+            ),
+        shape = RoundedCornerShape(CornerRadius.Large),
         colors = CardDefaults.cardColors(
-            containerColor = Color(0xFF0F1C3F).copy(alpha = 0.8f)
-        ),
-        modifier = Modifier.fillMaxWidth()
+            containerColor = colors.cardBackground
+        )
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-
-            Text(issue.title, color = Color.White)
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(issue.description, color = Color(0xFFB8C6FF))
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            if (issue.imageUrl.isNotEmpty()) {
-                AsyncImage(
-                    model = issue.imageUrl,
-                    contentDescription = null,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(150.dp)
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-            }
-
-            Text(
-                text = "Status: ${issue.status}",
-                color = if (issue.status == "Resolved")
-                    Color(0xFF4CAF50)
-                else
-                    Color(0xFFFF9800)
+        Row(modifier = Modifier.height(IntrinsicSize.Min)) {
+            // Colored accent bar
+            Box(
+                modifier = Modifier
+                    .width(4.dp)
+                    .fillMaxHeight()
+                    .clip(RoundedCornerShape(topStart = CornerRadius.Large, bottomStart = CornerRadius.Large))
+                    .background(accentColor)
             )
+            
+            Column(modifier = Modifier.padding(Spacing.Large)) {
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.Top
+                ) {
+                    Text(
+                        text = issue.title,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = colors.textPrimary,
+                        modifier = Modifier.weight(1f)
+                    )
+                    
+                    Spacer(modifier = Modifier.width(Spacing.Small))
+                    
+                    StatusChip(status = issue.status)
+                }
+                
+                Spacer(modifier = Modifier.height(Spacing.Small))
+                
+                Text(
+                    text = issue.description,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = colors.textSecondary,
+                    maxLines = 2
+                )
+
+                if (issue.imageUrl.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(Spacing.Medium))
+                    AsyncImage(
+                        model = issue.imageUrl,
+                        contentDescription = "Report image",
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(120.dp)
+                            .clip(RoundedCornerShape(CornerRadius.Medium)),
+                        contentScale = ContentScale.Crop
+                    )
+                }
+            }
         }
     }
 }

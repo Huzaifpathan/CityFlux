@@ -8,16 +8,27 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.AddPhotoAlternate
+import androidx.compose.material.icons.outlined.Description
+import androidx.compose.material.icons.outlined.LocationOn
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.*
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import coil.compose.rememberAsyncImagePainter
+import com.example.cityflux.ui.theme.*
 import com.google.android.gms.location.LocationServices
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
@@ -35,6 +46,7 @@ fun ReportIssueScreen(
     val auth = FirebaseAuth.getInstance()
     val firestore = FirebaseFirestore.getInstance()
     val storage = FirebaseStorage.getInstance()
+    val colors = MaterialTheme.cityFluxColors
 
     var title by remember { mutableStateOf("") }
     var description by remember { mutableStateOf("") }
@@ -72,99 +84,221 @@ fun ReportIssueScreen(
         locationPermissionLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
     }
 
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(
-                Brush.verticalGradient(
-                    listOf(
-                        Color(0xFF020C2B),
-                        Color(0xFF031A3D),
-                        Color(0xFF020C2B)
-                    )
-                )
+    Scaffold(
+        topBar = {
+            CityFluxTopBar(
+                title = "Report Issue",
+                showBack = true,
+                onBackClick = onReportSubmitted
             )
-    ) {
+        },
+        containerColor = MaterialTheme.colorScheme.background
+    ) { padding ->
+
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(20.dp),
-            verticalArrangement = Arrangement.Center
+                .padding(padding)
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = Spacing.XLarge),
+            verticalArrangement = Arrangement.Top
         ) {
 
-            Text(
-                "Report Issue",
-                style = MaterialTheme.typography.headlineMedium,
-                color = Color.White
+            Spacer(modifier = Modifier.height(Spacing.Large))
+
+            ScreenHeader(
+                title = "Report an Issue",
+                subtitle = "Help improve your city by reporting problems"
             )
 
-            Spacer(modifier = Modifier.height(20.dp))
+            Spacer(modifier = Modifier.height(Spacing.XLarge))
 
-            OutlinedTextField(
+            // Issue Title Field
+            AppTextField(
                 value = title,
                 onValueChange = { title = it },
-                label = { Text("Issue Title") },
-                modifier = Modifier.fillMaxWidth()
+                label = "Issue Title"
             )
 
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(Spacing.Medium))
 
+            // Description Field
             OutlinedTextField(
                 value = description,
                 onValueChange = { description = it },
-                label = { Text("Description") },
-                modifier = Modifier.fillMaxWidth()
+                placeholder = { 
+                    Text(
+                        "Describe the issue in detail",
+                        color = colors.textTertiary
+                    ) 
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(120.dp),
+                shape = RoundedCornerShape(CornerRadius.Medium),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedTextColor = colors.textPrimary,
+                    unfocusedTextColor = colors.textPrimary,
+                    focusedBorderColor = PrimaryBlue,
+                    unfocusedBorderColor = colors.divider,
+                    focusedContainerColor = colors.surfaceVariant,
+                    unfocusedContainerColor = colors.surfaceVariant,
+                    cursorColor = PrimaryBlue
+                ),
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Outlined.Description,
+                        contentDescription = null,
+                        tint = colors.textTertiary,
+                        modifier = Modifier.padding(start = 4.dp)
+                    )
+                }
             )
 
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(Spacing.Large))
 
-            Button(
-                onClick = { imageLauncher.launch("image/*") },
-                modifier = Modifier.fillMaxWidth()
+            // Image Upload Section
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(180.dp)
+                    .shadow(
+                        elevation = 4.dp,
+                        shape = RoundedCornerShape(CornerRadius.Large),
+                        ambientColor = colors.cardShadow,
+                        spotColor = colors.cardShadowMedium
+                    )
+                    .clickable { imageLauncher.launch("image/*") },
+                shape = RoundedCornerShape(CornerRadius.Large),
+                colors = CardDefaults.cardColors(
+                    containerColor = colors.cardBackground
+                ),
+                border = CardDefaults.outlinedCardBorder().copy(
+                    width = 2.dp,
+                    brush = androidx.compose.ui.graphics.SolidColor(
+                        if (imageUri != null) AccentParking else colors.divider
+                    )
+                )
             ) {
-                Text("Select Image")
+                if (imageUri != null) {
+                    Image(
+                        painter = rememberAsyncImagePainter(imageUri),
+                        contentDescription = "Selected image",
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop
+                    )
+                } else {
+                    Column(
+                        modifier = Modifier.fillMaxSize(),
+                        verticalArrangement = Arrangement.Center,
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.AddPhotoAlternate,
+                            contentDescription = "Add photo",
+                            modifier = Modifier.size(48.dp),
+                            tint = colors.textTertiary
+                        )
+                        Spacer(modifier = Modifier.height(Spacing.Small))
+                        Text(
+                            "Tap to add a photo",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = colors.textSecondary
+                        )
+                    }
+                }
             }
 
-            imageUri?.let {
-                Spacer(modifier = Modifier.height(12.dp))
-                Image(
-                    painter = rememberAsyncImagePainter(it),
-                    contentDescription = null,
+            Spacer(modifier = Modifier.height(Spacing.Large))
+
+            // Location Info Card
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .shadow(
+                        elevation = 4.dp,
+                        shape = RoundedCornerShape(CornerRadius.Large),
+                        ambientColor = colors.cardShadow,
+                        spotColor = colors.cardShadowMedium
+                    ),
+                shape = RoundedCornerShape(CornerRadius.Large),
+                colors = CardDefaults.cardColors(
+                    containerColor = colors.cardBackground
+                )
+            ) {
+                Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(150.dp)
-                )
+                        .padding(Spacing.Large),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Surface(
+                        modifier = Modifier.size(44.dp),
+                        shape = RoundedCornerShape(CornerRadius.Medium),
+                        color = AccentTraffic.copy(alpha = 0.1f)
+                    ) {
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier = Modifier.fillMaxSize()
+                        ) {
+                            Icon(
+                                imageVector = Icons.Outlined.LocationOn,
+                                contentDescription = "Location",
+                                tint = AccentTraffic,
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
+                    }
+                    
+                    Spacer(modifier = Modifier.width(Spacing.Medium))
+                    
+                    Column {
+                        Text(
+                            "Current Location",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = colors.textPrimary
+                        )
+                        Text(
+                            if (latitude != 0.0) 
+                                "${"%.4f".format(latitude)}, ${"%.4f".format(longitude)}"
+                            else 
+                                "Fetching location...",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = colors.textSecondary
+                        )
+                    }
+                }
             }
 
-            Spacer(modifier = Modifier.height(12.dp))
-
-            Text(
-                "Location: $latitude , $longitude",
-                color = Color.White
-            )
-
+            // Error/Success Message
             message?.let {
-                Spacer(modifier = Modifier.height(10.dp))
+                Spacer(modifier = Modifier.height(Spacing.Medium))
                 Text(
                     text = it,
-                    color = if (it.contains("failed", true)) Color.Red else Color.Green
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = if (it.contains("failed", true) || it.contains("please", true)) 
+                        AccentRed 
+                    else 
+                        AccentGreen
                 )
             }
 
-            Spacer(modifier = Modifier.height(20.dp))
+            Spacer(modifier = Modifier.height(Spacing.XLarge))
 
-            Button(
+            // Submit Button
+            PrimaryButton(
+                text = "Submit Report",
                 onClick = {
-
                     if (title.isBlank() || description.isBlank()) {
                         message = "Please fill all fields"
-                        return@Button
+                        return@PrimaryButton
                     }
 
                     loading = true
                     message = null
 
-                    val uid = auth.currentUser?.uid ?: return@Button
+                    val uid = auth.currentUser?.uid ?: return@PrimaryButton
 
                     fun saveIssue(imageUrl: String?) {
                         val issue = hashMapOf(
@@ -219,18 +353,12 @@ fun ReportIssueScreen(
                         saveIssue(null)
                     }
                 },
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(16.dp)
-            ) {
-                if (loading) {
-                    CircularProgressIndicator(
-                        color = Color.White,
-                        modifier = Modifier.size(20.dp)
-                    )
-                } else {
-                    Text("Submit Report")
-                }
-            }
+                enabled = !loading,
+                loading = loading,
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            Spacer(modifier = Modifier.height(Spacing.XXLarge))
         }
     }
 }

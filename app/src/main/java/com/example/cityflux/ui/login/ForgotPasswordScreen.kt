@@ -1,5 +1,6 @@
 package com.example.cityflux.ui.login
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -7,14 +8,13 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import androidx.compose.foundation.Image
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
 import com.example.cityflux.R
+import com.example.cityflux.ui.theme.*
 import com.google.firebase.auth.FirebaseAuth
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -23,6 +23,7 @@ fun ForgotPasswordScreen(
     onBackToLogin: () -> Unit
 ) {
     val auth = FirebaseAuth.getInstance()
+    val colors = MaterialTheme.cityFluxColors
 
     var email by remember { mutableStateOf("") }
     var message by remember { mutableStateOf<String?>(null) }
@@ -31,20 +32,12 @@ fun ForgotPasswordScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(
-                Brush.verticalGradient(
-                    listOf(
-                        Color(0xFF020C2B),
-                        Color(0xFF031A3D),
-                        Color(0xFF020C2B)
-                    )
-                )
-            )
+            .background(MaterialTheme.colorScheme.background)
     ) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(horizontal = 24.dp),
+                .padding(horizontal = Spacing.XLarge),
             verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
@@ -52,75 +45,81 @@ fun ForgotPasswordScreen(
             Image(
                 painter = painterResource(id = R.drawable.cityflux_logo),
                 contentDescription = "Logo",
-                modifier = Modifier.size(80.dp)
+                modifier = Modifier.size(72.dp)
             )
 
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(Spacing.Medium))
 
             Text(
                 text = "CityFlux",
-                color = Color.White,
-                fontSize = 34.sp,
-                fontWeight = FontWeight.SemiBold
+                style = MaterialTheme.typography.headlineLarge,
+                fontWeight = FontWeight.Bold,
+                color = colors.textPrimary
             )
 
             Text(
                 text = "Smart Traffic & Parking Mobility System",
-                color = Color(0xFF9FB3FF),
-                fontSize = 14.sp,
-                modifier = Modifier.padding(bottom = 32.dp)
+                style = MaterialTheme.typography.bodyMedium,
+                color = colors.textSecondary,
+                modifier = Modifier.padding(bottom = Spacing.XLarge)
             )
 
             Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(28.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .shadow(
+                        elevation = 8.dp,
+                        shape = RoundedCornerShape(CornerRadius.XLarge),
+                        ambientColor = colors.cardShadow,
+                        spotColor = colors.cardShadowMedium
+                    ),
+                shape = RoundedCornerShape(CornerRadius.XLarge),
                 colors = CardDefaults.cardColors(
-                    containerColor = Color(0xFF0F1C3F).copy(alpha = 0.65f)
+                    containerColor = colors.cardBackground
                 )
             ) {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(24.dp),
+                        .padding(Spacing.XLarge),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
 
                     Text(
                         text = "Reset Password",
-                        color = Color.White,
-                        fontSize = 26.sp,
-                        fontWeight = FontWeight.SemiBold,
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = colors.textPrimary,
                         modifier = Modifier
                             .align(Alignment.Start)
-                            .padding(bottom = 20.dp)
+                            .padding(bottom = Spacing.Small)
+                    )
+                    
+                    Text(
+                        text = "Enter your email address and we'll send you a link to reset your password",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = colors.textSecondary,
+                        modifier = Modifier
+                            .align(Alignment.Start)
+                            .padding(bottom = Spacing.Large)
                     )
 
-                    OutlinedTextField(
+                    AppTextField(
                         value = email,
                         onValueChange = { email = it },
-                        placeholder = {
-                            Text("Enter your email", color = Color(0xFF9FB3FF))
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(16.dp),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = Color.White,
-                            unfocusedTextColor = Color.White,
-                            focusedBorderColor = Color(0xFF4AA3FF),
-                            unfocusedBorderColor = Color(0xFF3B4C7A),
-                            cursorColor = Color.White
-                        )
+                        label = "Enter your email"
                     )
 
-                    Spacer(modifier = Modifier.height(16.dp))
+                    Spacer(modifier = Modifier.height(Spacing.Large))
 
-                    Button(
+                    PrimaryButton(
+                        text = "Send Reset Link",
                         onClick = {
                             message = null
 
                             if (email.isBlank()) {
                                 message = "Please enter email"
-                                return@Button
+                                return@PrimaryButton
                             }
 
                             loading = true
@@ -134,45 +133,33 @@ fun ForgotPasswordScreen(
                                     message = it.message ?: "Failed to send reset link"
                                 }
                         },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(54.dp),
-                        shape = RoundedCornerShape(30.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = Color(0xFF4AA3FF)
-                        )
-                    ) {
-                        if (loading) {
-                            CircularProgressIndicator(
-                                color = Color.White,
-                                strokeWidth = 2.dp,
-                                modifier = Modifier.size(20.dp)
-                            )
-                        } else {
-                            Text(
-                                text = "Send Reset Link",
-                                fontSize = 16.sp,
-                                color = Color.White
-                            )
-                        }
-                    }
+                        enabled = !loading,
+                        loading = loading,
+                        modifier = Modifier.fillMaxWidth()
+                    )
 
                     // MESSAGE LABEL
                     message?.let {
-                        Spacer(modifier = Modifier.height(12.dp))
+                        Spacer(modifier = Modifier.height(Spacing.Medium))
                         Text(
                             text = it,
+                            style = MaterialTheme.typography.bodyMedium,
+                            textAlign = TextAlign.Center,
                             color = if (it.contains("sent", true))
-                                Color(0xFF4CAF50)
+                                AccentGreen
                             else
-                                Color(0xFFFF5252)
+                                AccentRed
                         )
                     }
 
-                    Spacer(modifier = Modifier.height(18.dp))
+                    Spacer(modifier = Modifier.height(Spacing.Large))
 
                     TextButton(onClick = onBackToLogin) {
-                        Text("Back to Login", color = Color(0xFF4AA3FF))
+                        Text(
+                            "Back to Login", 
+                            color = PrimaryBlue,
+                            fontWeight = FontWeight.SemiBold
+                        )
                     }
                 }
             }

@@ -1,24 +1,24 @@
 package com.example.cityflux.ui.login
 
 import android.app.Activity
-import androidx.compose.foundation.background
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import androidx.compose.foundation.Image
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.painterResource
 import com.example.cityflux.R
+import com.example.cityflux.ui.theme.*
 import com.google.firebase.FirebaseException
 import com.google.firebase.auth.*
 import com.google.firebase.firestore.FirebaseFirestore
@@ -45,11 +45,13 @@ fun LoginScreen(
     var passwordVisible by remember { mutableStateOf(false) }
     var isOtpSent by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
+    var isLoading by remember { mutableStateOf(false) }
 
     val auth = FirebaseAuth.getInstance()
     val firestore = FirebaseFirestore.getInstance()
     val context = LocalContext.current
     var verificationId by remember { mutableStateOf<String?>(null) }
+    val colors = MaterialTheme.cityFluxColors
 
     fun handlePostLogin() {
         val uid = auth.currentUser?.uid ?: return
@@ -58,6 +60,7 @@ fun LoginScreen(
             .document(uid)
             .get()
             .addOnSuccessListener { doc ->
+                isLoading = false
                 when (doc.getString("role")) {
                     "citizen" -> onCitizenLogin()
                     "admin" -> onAdminLogin()
@@ -66,26 +69,24 @@ fun LoginScreen(
                 }
             }
             .addOnFailureListener {
+                isLoading = false
                 errorMessage = "Failed to load user role"
             }
     }
 
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(
-                Brush.verticalGradient(
-                    listOf(Color(0xFF020C2B), Color(0xFF031A3D), Color(0xFF020C2B))
-                )
-            )
-    ) {
+    GradientBackground {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(horizontal = 24.dp),
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = Spacing.XXLarge)
+                .statusBarsPadding()
+                .navigationBarsPadding(),
             verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
+            
+            Spacer(modifier = Modifier.height(Spacing.Section))
 
             Image(
                 painter = painterResource(id = R.drawable.cityflux_logo),
@@ -93,92 +94,122 @@ fun LoginScreen(
                 modifier = Modifier.size(80.dp)
             )
 
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(Spacing.Medium))
 
             Text(
                 "CityFlux",
-                color = Color.White,
-                fontSize = 34.sp,
-                fontWeight = FontWeight.SemiBold
+                color = colors.textPrimary,
+                style = MaterialTheme.typography.headlineLarge,
+                fontWeight = FontWeight.Bold
             )
 
             Text(
                 "Smart Traffic & Parking Mobility System",
-                color = Color(0xFF9FB3FF),
-                fontSize = 14.sp,
-                modifier = Modifier.padding(bottom = 32.dp)
+                color = colors.textSecondary,
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.padding(bottom = Spacing.Section)
             )
 
             Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(28.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .shadow(
+                        elevation = 8.dp,
+                        shape = RoundedCornerShape(CornerRadius.XLarge),
+                        ambientColor = colors.cardShadow,
+                        spotColor = colors.cardShadow
+                    ),
+                shape = RoundedCornerShape(CornerRadius.XLarge),
                 colors = CardDefaults.cardColors(
-                    containerColor = Color(0xFF0F1C3F).copy(alpha = 0.65f)
+                    containerColor = colors.cardBackground
                 )
             ) {
                 Column(
-                    modifier = Modifier.padding(24.dp),
+                    modifier = Modifier.padding(Spacing.XXLarge),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
 
                     Text(
-                        "Welcome Back !!",
-                        color = Color.White,
-                        fontSize = 26.sp,
+                        "Welcome Back",
+                        color = colors.textPrimary,
+                        style = MaterialTheme.typography.headlineSmall,
                         fontWeight = FontWeight.SemiBold,
                         modifier = Modifier
                             .align(Alignment.Start)
-                            .padding(bottom = 20.dp)
+                            .padding(bottom = Spacing.XLarge)
                     )
 
-                    GlassInputField(
+                    AppTextField(
                         value = input,
                         onValueChange = { input = it },
-                        placeholder = "Email or Phone"
+                        label = "Email or Phone"
                     )
 
-                    Spacer(modifier = Modifier.height(12.dp))
+                    Spacer(modifier = Modifier.height(Spacing.Medium))
 
                     if (isPhoneNumber(input)) {
                         if (isOtpSent) {
-                            GlassInputField(
+                            AppTextField(
                                 value = otp,
                                 onValueChange = { otp = it },
-                                placeholder = "Enter OTP"
+                                label = "Enter OTP"
                             )
                         }
                     } else {
-                        GlassInputField(
+                        AppTextField(
                             value = password,
                             onValueChange = { password = it },
-                            placeholder = "Password",
-                            isPassword = true,
-                            passwordVisible = passwordVisible,
-                            onTogglePassword = { passwordVisible = !passwordVisible }
+                            label = "Password",
+                            visualTransformation = if (passwordVisible) 
+                                VisualTransformation.None 
+                            else 
+                                PasswordVisualTransformation(),
+                            trailingIcon = {
+                                TextButton(onClick = { passwordVisible = !passwordVisible }) {
+                                    Text(
+                                        if (passwordVisible) "Hide" else "Show",
+                                        color = PrimaryBlue,
+                                        style = MaterialTheme.typography.labelMedium
+                                    )
+                                }
+                            }
                         )
                     }
 
-                    Spacer(modifier = Modifier.height(6.dp))
+                    Spacer(modifier = Modifier.height(Spacing.Small))
 
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.End
                     ) {
                         TextButton(onClick = onForgotClick) {
-                            Text("Forgot password?", color = Color(0xFF4AA3FF))
+                            Text(
+                                "Forgot password?", 
+                                color = colors.textAccent,
+                                style = MaterialTheme.typography.labelMedium
+                            )
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(12.dp))
+                    Spacer(modifier = Modifier.height(Spacing.Large))
 
-                    Button(
+                    PrimaryButton(
+                        text = when {
+                            isPhoneNumber(input) && !isOtpSent -> "Send OTP"
+                            isPhoneNumber(input) -> "Verify OTP"
+                            else -> "Sign In"
+                        },
                         onClick = {
                             errorMessage = null
+                            isLoading = true
                             val trimmedInput = input.trim()
 
                             if (isPhoneNumber(trimmedInput)) {
 
-                                val activity = context as? Activity ?: return@Button
+                                val activity = context as? Activity ?: run {
+                                    isLoading = false
+                                    return@PrimaryButton
+                                }
                                 val phone = "+91$trimmedInput"
 
                                 if (!isOtpSent) {
@@ -196,11 +227,13 @@ fun LoginScreen(
                                                     auth.signInWithCredential(credential)
                                                         .addOnSuccessListener { handlePostLogin() }
                                                         .addOnFailureListener {
+                                                            isLoading = false
                                                             errorMessage = "OTP verification failed"
                                                         }
                                                 }
 
                                                 override fun onVerificationFailed(e: FirebaseException) {
+                                                    isLoading = false
                                                     errorMessage = e.message
                                                 }
 
@@ -208,6 +241,7 @@ fun LoginScreen(
                                                     id: String,
                                                     token: PhoneAuthProvider.ForceResendingToken
                                                 ) {
+                                                    isLoading = false
                                                     verificationId = id
                                                     isOtpSent = true
                                                 }
@@ -215,7 +249,10 @@ fun LoginScreen(
                                     )
                                 } else {
                                     val cred = PhoneAuthProvider.getCredential(
-                                        verificationId ?: return@Button,
+                                        verificationId ?: run {
+                                            isLoading = false
+                                            return@PrimaryButton
+                                        },
                                         otp
                                     )
                                     auth.signInWithCredential(cred)
@@ -233,75 +270,38 @@ fun LoginScreen(
                                     }
                             }
                         },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(54.dp),
-                        shape = RoundedCornerShape(30.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = Color(0xFF4AA3FF)
-                        )
-                    ) {
-                        Text(
-                            if (isPhoneNumber(input) && !isOtpSent) "Send OTP"
-                            else if (isPhoneNumber(input)) "Verify OTP"
-                            else "Sign In",
-                            color = Color.White
-                        )
-                    }
+                        loading = isLoading,
+                        enabled = !isLoading,
+                        modifier = Modifier.fillMaxWidth()
+                    )
 
                     errorMessage?.let {
-                        Spacer(modifier = Modifier.height(10.dp))
-                        Text(it, color = Color(0xFFFF5252), fontSize = 14.sp)
+                        Spacer(modifier = Modifier.height(Spacing.Small))
+                        Text(
+                            it, 
+                            color = AccentRed, 
+                            style = MaterialTheme.typography.bodySmall
+                        )
                     }
 
-                    Spacer(modifier = Modifier.height(18.dp))
+                    Spacer(modifier = Modifier.height(Spacing.Large))
 
-                    Text("Don’t have an account?", color = Color(0xFFB8C6FF))
+                    Text(
+                        "Don't have an account?", 
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = colors.textSecondary
+                    )
                     TextButton(onClick = onRegisterClick) {
-                        Text("Create Account", color = Color(0xFF4AA3FF))
+                        Text(
+                            "Create Account", 
+                            color = PrimaryBlue,
+                            fontWeight = FontWeight.SemiBold
+                        )
                     }
                 }
             }
+            
+            Spacer(modifier = Modifier.height(Spacing.Section))
         }
     }
-}
-
-@Composable
-fun GlassInputField(
-    value: String,
-    onValueChange: (String) -> Unit,
-    placeholder: String,
-    isPassword: Boolean = false,
-    passwordVisible: Boolean = false,
-    onTogglePassword: (() -> Unit)? = null
-) {
-    OutlinedTextField(
-        value = value,
-        onValueChange = onValueChange,
-        modifier = Modifier.fillMaxWidth(),
-        placeholder = { Text(placeholder, color = Color(0xFF9FB3FF)) },
-        visualTransformation =
-        if (isPassword && !passwordVisible)
-            PasswordVisualTransformation()
-        else
-            VisualTransformation.None,
-        trailingIcon = {
-            if (isPassword && onTogglePassword != null) {
-                TextButton(onClick = onTogglePassword) {
-                    Text(
-                        if (passwordVisible) "Hide" else "Show",
-                        color = Color(0xFF4AA3FF)
-                    )
-                }
-            }
-        },
-        shape = RoundedCornerShape(16.dp),
-        colors = OutlinedTextFieldDefaults.colors(
-            focusedTextColor = Color.White,
-            unfocusedTextColor = Color.White,
-            focusedBorderColor = Color(0xFF4AA3FF),
-            unfocusedBorderColor = Color(0xFF3B4C7A),
-            cursorColor = Color.White
-        )
-    )
 }

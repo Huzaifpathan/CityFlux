@@ -1,21 +1,25 @@
 package com.example.cityflux.ui.role
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.AccountBalance
+import androidx.compose.material.icons.outlined.LocalPolice
+import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import androidx.compose.foundation.Image
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
 import com.example.cityflux.R
+import com.example.cityflux.ui.theme.*
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 
@@ -28,6 +32,7 @@ fun RoleSelectionScreen(
     val auth = FirebaseAuth.getInstance()
     val firestore = FirebaseFirestore.getInstance()
     val uid = auth.currentUser?.uid
+    val colors = MaterialTheme.cityFluxColors
 
     var loading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -52,21 +57,12 @@ fun RoleSelectionScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(
-                Brush.verticalGradient(
-                    listOf(
-                        Color(0xFF020C2B),
-                        Color(0xFF031A3D),
-                        Color(0xFF020C2B)
-                    )
-                )
-            )
+            .background(MaterialTheme.colorScheme.background)
     ) {
-
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(horizontal = 24.dp),
+                .padding(horizontal = Spacing.XLarge),
             verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
@@ -75,73 +71,95 @@ fun RoleSelectionScreen(
             Image(
                 painter = painterResource(id = R.drawable.cityflux_logo),
                 contentDescription = "Logo",
-                modifier = Modifier.size(80.dp)
+                modifier = Modifier.size(72.dp)
             )
 
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(Spacing.Medium))
 
             Text(
                 text = "CityFlux",
-                color = Color.White,
-                fontSize = 34.sp,
-                fontWeight = FontWeight.SemiBold
+                style = MaterialTheme.typography.headlineLarge,
+                fontWeight = FontWeight.Bold,
+                color = colors.textPrimary
             )
 
             Text(
-                text = "Select your role",
-                color = Color(0xFF9FB3FF),
-                fontSize = 14.sp,
-                modifier = Modifier.padding(bottom = 32.dp)
+                text = "Select your role to continue",
+                style = MaterialTheme.typography.bodyMedium,
+                color = colors.textSecondary,
+                modifier = Modifier.padding(bottom = Spacing.XLarge)
             )
 
+            // Role Cards
             Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(28.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .shadow(
+                        elevation = 8.dp,
+                        shape = RoundedCornerShape(CornerRadius.XLarge),
+                        ambientColor = colors.cardShadow,
+                        spotColor = colors.cardShadowMedium
+                    ),
+                shape = RoundedCornerShape(CornerRadius.XLarge),
                 colors = CardDefaults.cardColors(
-                    containerColor = Color(0xFF0F1C3F).copy(alpha = 0.65f)
+                    containerColor = colors.cardBackground
                 )
             ) {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(24.dp),
+                        .padding(Spacing.XLarge),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
 
                     Text(
-                        text = "Choose Role",
-                        color = Color.White,
-                        fontSize = 26.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        modifier = Modifier
-                            .align(Alignment.Start)
-                            .padding(bottom = 20.dp)
+                        text = "Choose Your Role",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = colors.textPrimary,
+                        modifier = Modifier.padding(bottom = Spacing.XLarge)
                     )
 
-                    RoleButton("Citizen") {
-                        saveRole("citizen", onCitizenClick)
-                    }
+                    RoleOptionCard(
+                        title = "Citizen",
+                        description = "Report issues and track progress",
+                        icon = Icons.Outlined.Person,
+                        accentColor = AccentTraffic,
+                        onClick = { saveRole("citizen", onCitizenClick) }
+                    )
 
-                    Spacer(modifier = Modifier.height(12.dp))
+                    Spacer(modifier = Modifier.height(Spacing.Medium))
 
-                    RoleButton("Admin") {
-                        saveRole("admin", onAdminClick)
-                    }
+                    RoleOptionCard(
+                        title = "Admin",
+                        description = "Manage and resolve city issues",
+                        icon = Icons.Outlined.AccountBalance,
+                        accentColor = AccentParking,
+                        onClick = { saveRole("admin", onAdminClick) }
+                    )
 
-                    Spacer(modifier = Modifier.height(12.dp))
+                    Spacer(modifier = Modifier.height(Spacing.Medium))
 
-                    RoleButton("Police") {
-                        saveRole("police", onPoliceClick)
-                    }
+                    RoleOptionCard(
+                        title = "Police",
+                        description = "Respond to traffic and safety issues",
+                        icon = Icons.Outlined.LocalPolice,
+                        accentColor = AccentIssues,
+                        onClick = { saveRole("police", onPoliceClick) }
+                    )
 
                     if (loading) {
-                        Spacer(modifier = Modifier.height(16.dp))
-                        CircularProgressIndicator(color = Color(0xFF4AA3FF))
+                        Spacer(modifier = Modifier.height(Spacing.Large))
+                        LoadingSpinner()
                     }
 
                     error?.let {
-                        Spacer(modifier = Modifier.height(12.dp))
-                        Text(it, color = Color.Red)
+                        Spacer(modifier = Modifier.height(Spacing.Medium))
+                        Text(
+                            it, 
+                            color = AccentRed,
+                            style = MaterialTheme.typography.bodyMedium
+                        )
                     }
                 }
             }
@@ -149,22 +167,78 @@ fun RoleSelectionScreen(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun RoleButton(text: String, onClick: () -> Unit) {
-    Button(
+fun RoleOptionCard(
+    title: String,
+    description: String,
+    icon: ImageVector,
+    accentColor: androidx.compose.ui.graphics.Color,
+    onClick: () -> Unit
+) {
+    val colors = MaterialTheme.cityFluxColors
+    
+    Card(
         onClick = onClick,
         modifier = Modifier
             .fillMaxWidth()
-            .height(54.dp),
-        shape = RoundedCornerShape(30.dp),
-        colors = ButtonDefaults.buttonColors(
-            containerColor = Color(0xFF4AA3FF)
+            .height(80.dp),
+        shape = RoundedCornerShape(CornerRadius.Large),
+        colors = CardDefaults.cardColors(
+            containerColor = colors.surfaceVariant
+        ),
+        border = CardDefaults.outlinedCardBorder().copy(
+            width = 1.dp,
+            brush = androidx.compose.ui.graphics.SolidColor(colors.divider)
         )
     ) {
-        Text(
-            text = text,
-            fontSize = 16.sp,
-            color = Color.White
-        )
+        Row(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = Spacing.Large),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // Accent Icon Container
+            Surface(
+                modifier = Modifier.size(48.dp),
+                shape = RoundedCornerShape(CornerRadius.Medium),
+                color = accentColor.copy(alpha = 0.1f)
+            ) {
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier.fillMaxSize()
+                ) {
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = title,
+                        tint = accentColor,
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
+            }
+            
+            Spacer(modifier = Modifier.width(Spacing.Large))
+            
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = colors.textPrimary
+                )
+                Text(
+                    text = description,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = colors.textSecondary
+                )
+            }
+            
+            Icon(
+                imageVector = Icons.Outlined.Person,
+                contentDescription = null,
+                tint = colors.textTertiary,
+                modifier = Modifier.size(20.dp)
+            )
+        }
     }
 }

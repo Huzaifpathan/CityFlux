@@ -2,7 +2,6 @@ package com.example.cityflux.ui.police
 
 import androidx.compose.animation.*
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -23,6 +22,7 @@ fun PoliceDashboardScreen() {
     var issues by remember { mutableStateOf<List<Issue>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf(false) }
+    val colors = MaterialTheme.cityFluxColors
 
     LaunchedEffect(Unit) {
         FirebaseFirestore.getInstance()
@@ -55,35 +55,24 @@ fun PoliceDashboardScreen() {
                 showProfile = true
             )
         },
-        containerColor = SurfaceWhite
+        containerColor = MaterialTheme.colorScheme.background
     ) { padding ->
 
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .background(SurfaceWhite)
                 .padding(padding)
-                .padding(horizontal = 20.dp)
+                .padding(horizontal = Spacing.XLarge)
         ) {
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(Spacing.Large))
 
-            Text(
-                text = "Active Issues",
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold,
-                color = TextPrimary
+            ScreenHeader(
+                title = "Active Issues",
+                subtitle = "Monitor and resolve city issues"
             )
 
-            Spacer(modifier = Modifier.height(6.dp))
-
-            Text(
-                text = "Monitor and resolve city issues",
-                style = MaterialTheme.typography.bodyMedium,
-                color = TextSecondary
-            )
-
-            Spacer(modifier = Modifier.height(20.dp))
+            Spacer(modifier = Modifier.height(Spacing.XLarge))
 
             when {
                 loading -> {
@@ -114,23 +103,19 @@ fun PoliceDashboardScreen() {
                         Text(
                             "No issues available",
                             style = MaterialTheme.typography.bodyLarge,
-                            color = TextSecondary
+                            color = colors.textSecondary
                         )
                     }
                 }
                 else -> {
                     LazyColumn(
-                        verticalArrangement = Arrangement.spacedBy(14.dp),
-                        contentPadding = PaddingValues(bottom = 24.dp)
+                        verticalArrangement = Arrangement.spacedBy(Spacing.Medium),
+                        contentPadding = PaddingValues(bottom = Spacing.XXLarge)
                     ) {
                         itemsIndexed(issues) { index, issue ->
-                            AnimatedVisibility(
+                            SlideUpFadeIn(
                                 visible = true,
-                                enter = fadeIn(tween(300, delayMillis = index * 50)) +
-                                        slideInVertically(
-                                            initialOffsetY = { it / 6 },
-                                            animationSpec = tween(300, delayMillis = index * 50)
-                                        )
+                                delay = staggeredDelay(index)
                             ) {
                                 PoliceIssueCard(issue)
                             }
