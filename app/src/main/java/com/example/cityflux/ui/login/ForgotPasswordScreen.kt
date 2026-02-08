@@ -43,7 +43,7 @@ fun ForgotPasswordScreen(
         ) {
 
             Image(
-                painter = painterResource(id = R.drawable.cityflux_logo),
+                painter = painterResource(id = R.drawable.cityflux_icon),
                 contentDescription = "Logo",
                 modifier = Modifier.size(72.dp)
             )
