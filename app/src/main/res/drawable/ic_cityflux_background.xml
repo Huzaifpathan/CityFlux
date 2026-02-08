@@ -4,9 +4,9 @@
     android:viewportWidth="108"
     android:viewportHeight="108">
 
-    <!-- Solid professional blue background for adaptive icon -->
+    <!-- Pure white background for adaptive icon -->
     <path
-        android:fillColor="#2563EB"
+        android:fillColor="#FFFFFF"
         android:pathData="M0,0 h108 v108 h-108 Z" />
 
 </vector>

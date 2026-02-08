@@ -14,62 +14,62 @@
 
     <!-- Building 1 - Left (short) -->
     <path
-        android:fillColor="#FFFFFF"
+        android:fillColor="#2563EB"
         android:pathData="M30,68 L30,52 L35.5,47 L41,52 L41,68 Z" />
 
     <!-- Building 2 - Center (tallest) -->
     <path
-        android:fillColor="#FFFFFF"
+        android:fillColor="#2563EB"
         android:pathData="M45,68 L45,32 L54,24 L63,32 L63,68 Z" />
 
     <!-- Building 3 - Right (medium) -->
     <path
-        android:fillColor="#FFFFFF"
+        android:fillColor="#2563EB"
         android:pathData="M67,68 L67,42 L74,36 L81,42 L81,68 Z" />
 
     <!-- Building windows (subtle) -->
     <path
-        android:fillColor="#93C5FD"
+        android:fillColor="#DBEAFE"
         android:pathData="M32,55 h7 v3 h-7 Z" />
     <path
-        android:fillColor="#93C5FD"
+        android:fillColor="#DBEAFE"
         android:pathData="M32,61 h7 v3 h-7 Z" />
 
     <path
-        android:fillColor="#93C5FD"
+        android:fillColor="#DBEAFE"
         android:pathData="M49,36 h10 v4 h-10 Z" />
     <path
-        android:fillColor="#93C5FD"
+        android:fillColor="#DBEAFE"
         android:pathData="M49,44 h10 v4 h-10 Z" />
     <path
-        android:fillColor="#93C5FD"
+        android:fillColor="#DBEAFE"
         android:pathData="M49,52 h10 v4 h-10 Z" />
     <path
-        android:fillColor="#93C5FD"
+        android:fillColor="#DBEAFE"
         android:pathData="M49,60 h10 v4 h-10 Z" />
 
     <path
-        android:fillColor="#93C5FD"
+        android:fillColor="#DBEAFE"
         android:pathData="M70,45 h8 v3 h-8 Z" />
     <path
-        android:fillColor="#93C5FD"
+        android:fillColor="#DBEAFE"
         android:pathData="M70,51 h8 v3 h-8 Z" />
     <path
-        android:fillColor="#93C5FD"
+        android:fillColor="#DBEAFE"
         android:pathData="M70,57 h8 v3 h-8 Z" />
     <path
-        android:fillColor="#93C5FD"
+        android:fillColor="#DBEAFE"
         android:pathData="M70,63 h8 v3 h-8 Z" />
 
     <!-- Ground line -->
     <path
-        android:fillColor="#FFFFFF"
+        android:fillColor="#2563EB"
         android:pathData="M24,68 L84,68 L84,69.5 L24,69.5 Z" />
 
     <!-- === CURVED ROAD / FLOW LINE === -->
     <path
         android:fillColor="@android:color/transparent"
-        android:strokeColor="#FFFFFF"
+        android:strokeColor="#2563EB"
         android:strokeWidth="2.8"
         android:strokeLineCap="round"
         android:pathData="M24,79 C36,73 44,76 54,75 C64,74 74,78 84,73" />
@@ -83,13 +83,13 @@
 
     <!-- === NETWORK NODES === -->
     <path
-        android:fillColor="#FFFFFF"
+        android:fillColor="#2563EB"
         android:pathData="M36,76 m-2.2,0 a2.2,2.2 0 1,1 4.4,0 a2.2,2.2 0 1,1 -4.4,0" />
     <path
-        android:fillColor="#FFFFFF"
+        android:fillColor="#1D4ED8"
         android:pathData="M54,75 m-2.8,0 a2.8,2.8 0 1,1 5.6,0 a2.8,2.8 0 1,1 -5.6,0" />
     <path
-        android:fillColor="#FFFFFF"
+        android:fillColor="#2563EB"
         android:pathData="M72,76 m-2.2,0 a2.2,2.2 0 1,1 4.4,0 a2.2,2.2 0 1,1 -4.4,0" />
 
     <!-- Signal arcs from center -->
