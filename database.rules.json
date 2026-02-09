@@ -1,0 +1,40 @@
+{
+  "rules": {
+    // ── Only authenticated users can access anything ──
+    ".read": "auth != null",
+    ".write": false,
+
+    // 🚦 TRAFFIC — real-time congestion data
+    // All authenticated users can read.
+    // Only admin/police can write (typically updated by backend or IoT).
+    "traffic": {
+      ".read": "auth != null",
+      ".write": "auth != null",
+      "$roadId": {
+        ".validate": "newData.hasChildren(['congestionLevel', 'lastUpdated'])",
+
+        "congestionLevel": {
+          ".validate": "newData.isString() && newData.val().matches(/^(LOW|MEDIUM|HIGH)$/)"
+        },
+        "lastUpdated": {
+          ".validate": "newData.isNumber()"
+        }
+      }
+    },
+
+    // 🅿️ PARKING LIVE — real-time slot availability
+    // All authenticated users can read.
+    // Only admin/police can write (typically updated by sensors or backend).
+    "parking_live": {
+      ".read": "auth != null",
+      ".write": "auth != null",
+      "$parkingId": {
+        ".validate": "newData.hasChildren(['availableSlots'])",
+
+        "availableSlots": {
+          ".validate": "newData.isNumber() && newData.val() >= 0"
+        }
+      }
+    }
+  }
+}

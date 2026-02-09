@@ -71,7 +71,7 @@ fun CleanBackground(
 }
 
 /**
- * Subtle gradient background for splash/login screens only
+ * Subtle gradient background for login/auth screens — uses blue-tinted whites
  */
 @Composable
 fun GradientBackground(
@@ -87,9 +87,9 @@ fun GradientBackground(
         )
     } else {
         listOf(
-            Color(0xFFF8FAFC),
-            Color(0xFFFFFFFF),
-            Color(0xFFF8FAFC)
+            GradientWhite,      // Very faint blue-tint
+            Color(0xFFFFFFFF),  // Pure white center
+            GradientWhite       // Faint blue-tint
         )
     }
     
@@ -102,7 +102,7 @@ fun GradientBackground(
 }
 
 /**
- * Modern top app bar with notification and profile icons
+ * Modern top app bar with logo, notification and profile icons
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -120,12 +120,18 @@ fun CityFluxTopBar(
     
     TopAppBar(
         title = {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold,
-                color = colors.textPrimary
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (!showBack) {
+                    CityFluxLogo(size = 30.dp)
+                    Spacer(modifier = Modifier.width(10.dp))
+                }
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = colors.textPrimary
+                )
+            }
         },
         navigationIcon = {
             if (showBack) {
@@ -445,7 +451,7 @@ enum class UpdateCategory {
 }
 
 /**
- * Primary button - solid blue with white text - Material ripple effect
+ * Primary button — gradient blue with white text, soft shadow, Material ripple
  */
 @Composable
 fun PrimaryButton(
@@ -461,30 +467,43 @@ fun PrimaryButton(
         enabled = enabled && !loading,
         shape = RoundedCornerShape(CornerRadius.Medium),
         colors = ButtonDefaults.buttonColors(
-            containerColor = PrimaryBlue,
+            containerColor = Color.Transparent,
             contentColor = Color.White,
             disabledContainerColor = ButtonDisabled,
             disabledContentColor = Color.White.copy(alpha = 0.6f)
         ),
+        contentPadding = PaddingValues(),
         elevation = ButtonDefaults.buttonElevation(
-            defaultElevation = 2.dp,
-            pressedElevation = 0.dp,
+            defaultElevation = 3.dp,
+            pressedElevation = 1.dp,
             focusedElevation = 4.dp,
             hoveredElevation = 4.dp
         )
     ) {
-        if (loading) {
-            CircularProgressIndicator(
-                color = Color.White,
-                strokeWidth = 2.dp,
-                modifier = Modifier.size(22.dp)
-            )
-        } else {
-            Text(
-                text = text,
-                style = MaterialTheme.typography.labelLarge,
-                fontWeight = FontWeight.SemiBold
-            )
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(
+                    brush = if (enabled && !loading) BlueGradientHorizontal
+                    else Brush.horizontalGradient(listOf(ButtonDisabled, ButtonDisabled)),
+                    shape = RoundedCornerShape(CornerRadius.Medium)
+                ),
+            contentAlignment = Alignment.Center
+        ) {
+            if (loading) {
+                CircularProgressIndicator(
+                    color = Color.White,
+                    strokeWidth = 2.dp,
+                    modifier = Modifier.size(22.dp)
+                )
+            } else {
+                Text(
+                    text = text,
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    color = Color.White
+                )
+            }
         }
     }
 }
@@ -534,39 +553,55 @@ fun AppTextField(
     singleLine: Boolean = true,
     minLines: Int = 1,
     readOnly: Boolean = false,
+    isError: Boolean = false,
+    errorMessage: String? = null,
     trailingIcon: @Composable (() -> Unit)? = null
 ) {
     val colors = MaterialTheme.cityFluxColors
     
-    OutlinedTextField(
-        value = value,
-        onValueChange = onValueChange,
-        label = { 
-            Text(
-                text = label,
-                style = MaterialTheme.typography.bodyMedium
-            ) 
-        },
-        modifier = modifier.fillMaxWidth(),
-        visualTransformation = visualTransformation,
-        keyboardOptions = keyboardOptions,
-        singleLine = singleLine,
-        minLines = minLines,
-        readOnly = readOnly,
-        trailingIcon = trailingIcon,
-        shape = RoundedCornerShape(CornerRadius.Medium),
-        colors = OutlinedTextFieldDefaults.colors(
-            focusedBorderColor = colors.inputBorderFocused,
-            unfocusedBorderColor = colors.inputBorder,
-            focusedLabelColor = PrimaryBlue,
-            unfocusedLabelColor = colors.textSecondary,
-            cursorColor = PrimaryBlue,
-            focusedContainerColor = colors.inputBackground,
-            unfocusedContainerColor = colors.inputBackground,
-            focusedTextColor = colors.textPrimary,
-            unfocusedTextColor = colors.textPrimary
+    Column(modifier = modifier.fillMaxWidth()) {
+        OutlinedTextField(
+            value = value,
+            onValueChange = onValueChange,
+            label = { 
+                Text(
+                    text = label,
+                    style = MaterialTheme.typography.bodyMedium
+                ) 
+            },
+            modifier = Modifier.fillMaxWidth(),
+            visualTransformation = visualTransformation,
+            keyboardOptions = keyboardOptions,
+            singleLine = singleLine,
+            minLines = minLines,
+            readOnly = readOnly,
+            isError = isError,
+            trailingIcon = trailingIcon,
+            shape = RoundedCornerShape(CornerRadius.Medium),
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedBorderColor = if (isError) AccentRed else colors.inputBorderFocused,
+                unfocusedBorderColor = if (isError) AccentRed else colors.inputBorder,
+                focusedLabelColor = if (isError) AccentRed else PrimaryBlue,
+                unfocusedLabelColor = if (isError) AccentRed else colors.textSecondary,
+                cursorColor = PrimaryBlue,
+                focusedContainerColor = colors.inputBackground,
+                unfocusedContainerColor = colors.inputBackground,
+                focusedTextColor = colors.textPrimary,
+                unfocusedTextColor = colors.textPrimary,
+                errorBorderColor = AccentRed,
+                errorLabelColor = AccentRed,
+                errorCursorColor = AccentRed
+            )
         )
-    )
+        if (isError && errorMessage != null) {
+            Text(
+                text = errorMessage,
+                color = AccentRed,
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.padding(start = 8.dp, top = 4.dp)
+            )
+        }
+    }
 }
 
 /**
@@ -1129,7 +1164,7 @@ fun AppDivider(
 }
 
 /**
- * Gradient button (kept for compatibility) - now uses solid color
+ * Gradient button — real blue gradient background
  */
 @Composable
 fun GradientButton(
@@ -1139,13 +1174,52 @@ fun GradientButton(
     enabled: Boolean = true,
     loading: Boolean = false
 ) {
-    PrimaryButton(
-        text = text,
+    val colors = MaterialTheme.cityFluxColors
+    val gradientBrush = BlueGradientHorizontal
+
+    Button(
         onClick = onClick,
-        modifier = modifier,
-        enabled = enabled,
-        loading = loading
-    )
+        modifier = modifier.height(52.dp),
+        enabled = enabled && !loading,
+        shape = RoundedCornerShape(CornerRadius.Medium),
+        colors = ButtonDefaults.buttonColors(
+            containerColor = Color.Transparent,
+            contentColor = Color.White,
+            disabledContainerColor = ButtonDisabled,
+            disabledContentColor = Color.White.copy(alpha = 0.6f)
+        ),
+        contentPadding = PaddingValues(),
+        elevation = ButtonDefaults.buttonElevation(
+            defaultElevation = 3.dp,
+            pressedElevation = 1.dp
+        )
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(
+                    brush = if (enabled && !loading) gradientBrush
+                    else Brush.horizontalGradient(listOf(ButtonDisabled, ButtonDisabled)),
+                    shape = RoundedCornerShape(CornerRadius.Medium)
+                ),
+            contentAlignment = Alignment.Center
+        ) {
+            if (loading) {
+                CircularProgressIndicator(
+                    color = Color.White,
+                    strokeWidth = 2.dp,
+                    modifier = Modifier.size(22.dp)
+                )
+            } else {
+                Text(
+                    text = text,
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    color = Color.White
+                )
+            }
+        }
+    }
 }
 
 /**

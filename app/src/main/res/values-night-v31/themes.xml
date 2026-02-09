@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <!-- CityFlux Dark Theme — Android 12+ system splash -->
+    <style name="Theme.CityFlux" parent="Theme.Material3.Dark.NoActionBar">
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightNavigationBar">false</item>
+        <item name="colorPrimary">#60A5FA</item>
+        <item name="colorSecondary">#3B82F6</item>
+        <item name="android:colorBackground">#0F172A</item>
+
+        <!-- Android 12+ system splash — dark -->
+        <item name="android:windowSplashScreenBackground">#0F172A</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/cityflux_icon_dark</item>
+        <item name="android:windowSplashScreenAnimationDuration">400</item>
+    </style>
+
+</resources>

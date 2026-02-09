@@ -15,18 +15,11 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
+import com.example.cityflux.model.Report
 import com.example.cityflux.ui.theme.*
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
-
-data class CitizenIssue(
-    val id: String = "",
-    val title: String = "",
-    val description: String = "",
-    val imageUrl: String = "",
-    val status: String = ""
-)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -36,7 +29,7 @@ fun MyReportsScreen() {
     val firestore = FirebaseFirestore.getInstance()
     val colors = MaterialTheme.cityFluxColors
 
-    var issues by remember { mutableStateOf(listOf<CitizenIssue>()) }
+    var issues by remember { mutableStateOf(listOf<Report>()) }
     var loading by remember { mutableStateOf(true) }
 
     DisposableEffect(Unit) {
@@ -44,18 +37,16 @@ fun MyReportsScreen() {
         val uid = auth.currentUser?.uid ?: return@DisposableEffect onDispose { }
 
         val listener: ListenerRegistration =
-            firestore.collection("issues")
+            firestore.collection("reports")
                 .whereEqualTo("userId", uid)
                 .addSnapshotListener { snapshot, _ ->
                     if (snapshot != null) {
-                        issues = snapshot.documents.map {
-                            CitizenIssue(
-                                id = it.id,
-                                title = it.getString("title") ?: "",
-                                description = it.getString("description") ?: "",
-                                imageUrl = it.getString("imageUrl") ?: "",
-                                status = it.getString("status") ?: "Pending"
-                            )
+                        issues = snapshot.documents.mapNotNull { doc ->
+                            try {
+                                doc.toObject(Report::class.java)?.copy(id = doc.id)
+                            } catch (e: Exception) {
+                                null
+                            }
                         }
                     }
                     loading = false
@@ -135,7 +126,7 @@ fun MyReportsScreen() {
 }
 
 @Composable
-fun CitizenIssueCard(issue: CitizenIssue) {
+fun CitizenIssueCard(issue: Report) {
     
     val colors = MaterialTheme.cityFluxColors
     

@@ -1,11 +1,14 @@
 package com.example.cityflux.ui.register
 
 import android.util.Log
-import androidx.compose.foundation.background
+import android.util.Patterns
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.clickable
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -23,36 +26,96 @@ import com.google.firebase.firestore.FieldValue
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun RegisterScreen(
-    onRegisterSuccess: () -> Unit,
+    onCitizenRegistered: () -> Unit,
+    onPoliceRegistered: () -> Unit,
     onLoginClick: () -> Unit = {}
 ) {
     var name by remember { mutableStateOf("") }
     var email by remember { mutableStateOf("") }
+    var mobile by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var confirmPassword by remember { mutableStateOf("") }
     var passwordVisible by remember { mutableStateOf(false) }
+    var confirmPasswordVisible by remember { mutableStateOf(false) }
+    var selectedRole by remember { mutableStateOf("") }
+    var roleDropdownExpanded by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var loading by remember { mutableStateOf(false) }
+
+    // Field-level validation states
+    var nameError by remember { mutableStateOf<String?>(null) }
+    var emailError by remember { mutableStateOf<String?>(null) }
+    var mobileError by remember { mutableStateOf<String?>(null) }
+    var passwordError by remember { mutableStateOf<String?>(null) }
+    var confirmPasswordError by remember { mutableStateOf<String?>(null) }
+    var roleError by remember { mutableStateOf<String?>(null) }
+
+    // Touched states — show errors only after first interaction
+    var nameTouched by remember { mutableStateOf(false) }
+    var emailTouched by remember { mutableStateOf(false) }
+    var mobileTouched by remember { mutableStateOf(false) }
+    var passwordTouched by remember { mutableStateOf(false) }
+    var confirmPasswordTouched by remember { mutableStateOf(false) }
+
+    val roleOptions = listOf("Citizen" to "citizen", "Traffic Police" to "police")
 
     val auth = FirebaseAuth.getInstance()
     val firestore = FirebaseFirestore.getInstance()
     val colors = MaterialTheme.cityFluxColors
 
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
-    ) {
+    // Real-time validation
+    fun validateName() { nameError = if (name.isBlank()) "Full name is required" else null }
+    fun validateEmail() {
+        emailError = when {
+            email.isBlank() -> "Email is required"
+            !Patterns.EMAIL_ADDRESS.matcher(email.trim()).matches() -> "Enter a valid email"
+            else -> null
+        }
+    }
+    fun validateMobile() {
+        mobileError = when {
+            mobile.isBlank() -> "Mobile number is required"
+            mobile.trim().length != 10 || !mobile.trim().all { it.isDigit() } -> "Enter a valid 10-digit number"
+            else -> null
+        }
+    }
+    fun validatePassword() {
+        passwordError = when {
+            password.isBlank() -> "Password is required"
+            password.length < 6 -> "Password must be at least 6 characters"
+            else -> null
+        }
+    }
+    fun validateConfirmPassword() {
+        confirmPasswordError = when {
+            confirmPassword.isBlank() -> "Please confirm your password"
+            confirmPassword != password -> "Passwords do not match"
+            else -> null
+        }
+    }
+    fun validateRole() { roleError = if (selectedRole.isBlank()) "Please select a role" else null }
+
+    fun validateAll(): Boolean {
+        nameTouched = true; emailTouched = true; mobileTouched = true
+        passwordTouched = true; confirmPasswordTouched = true
+        validateName(); validateEmail(); validateMobile()
+        validatePassword(); validateConfirmPassword(); validateRole()
+        return listOf(nameError, emailError, mobileError, passwordError, confirmPasswordError, roleError).all { it == null }
+    }
+
+    GradientBackground {
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = Spacing.XLarge),
+                .padding(horizontal = Spacing.XXLarge)
+                .statusBarsPadding()
+                .navigationBarsPadding(),
             verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
 
-            Spacer(modifier = Modifier.height(Spacing.XXLarge))
+            Spacer(modifier = Modifier.height(Spacing.Section))
 
             Text(
                 text = "CityFlux",
@@ -62,10 +125,10 @@ fun RegisterScreen(
             )
 
             Text(
-                text = "Smart Traffic and Parking Mobility System",
+                text = "Smart Traffic & Parking Mobility System",
                 style = MaterialTheme.typography.bodyMedium,
                 color = colors.textSecondary,
-                modifier = Modifier.padding(bottom = Spacing.XLarge)
+                modifier = Modifier.padding(bottom = Spacing.Section)
             )
 
             Card(
@@ -75,7 +138,7 @@ fun RegisterScreen(
                         elevation = 8.dp,
                         shape = RoundedCornerShape(CornerRadius.XLarge),
                         ambientColor = colors.cardShadow,
-                        spotColor = colors.cardShadowMedium
+                        spotColor = colors.cardShadow
                     ),
                 shape = RoundedCornerShape(CornerRadius.XLarge),
                 colors = CardDefaults.cardColors(
@@ -85,40 +148,75 @@ fun RegisterScreen(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(Spacing.XLarge),
+                        .padding(Spacing.XXLarge),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
 
                     Text(
                         text = "Create Account",
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold,
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.SemiBold,
                         color = colors.textPrimary,
                         modifier = Modifier
                             .align(Alignment.Start)
-                            .padding(bottom = Spacing.Large)
+                            .padding(bottom = Spacing.XLarge)
                     )
 
+                    // ── Full Name ──
                     AppTextField(
                         value = name,
-                        onValueChange = { name = it },
-                        label = "Full Name"
+                        onValueChange = {
+                            name = it
+                            if (nameTouched) validateName()
+                        },
+                        label = "Full Name",
+                        isError = nameTouched && nameError != null,
+                        errorMessage = if (nameTouched) nameError else null
                     )
 
                     Spacer(modifier = Modifier.height(Spacing.Medium))
 
+                    // ── Email ──
                     AppTextField(
                         value = email,
-                        onValueChange = { email = it },
-                        label = "Email Address"
+                        onValueChange = {
+                            email = it
+                            if (emailTouched) validateEmail()
+                        },
+                        label = "Email Address",
+                        isError = emailTouched && emailError != null,
+                        errorMessage = if (emailTouched) emailError else null
                     )
 
                     Spacer(modifier = Modifier.height(Spacing.Medium))
 
+                    // ── Mobile Number ──
+                    AppTextField(
+                        value = mobile,
+                        onValueChange = {
+                            if (it.length <= 10 && it.all { ch -> ch.isDigit() }) {
+                                mobile = it
+                                if (mobileTouched) validateMobile()
+                            }
+                        },
+                        label = "Mobile Number",
+                        isError = mobileTouched && mobileError != null,
+                        errorMessage = if (mobileTouched) mobileError else null
+                    )
+
+                    Spacer(modifier = Modifier.height(Spacing.Medium))
+
+                    // ── Password ──
                     AppTextField(
                         value = password,
-                        onValueChange = { password = it },
+                        onValueChange = {
+                            password = it
+                            if (passwordTouched) validatePassword()
+                            if (confirmPasswordTouched && confirmPassword.isNotEmpty()) validateConfirmPassword()
+                        },
                         label = "Password",
+                        isError = passwordTouched && passwordError != null,
+                        errorMessage = if (passwordTouched) passwordError else null,
                         visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
                         trailingIcon = {
                             TextButton(onClick = { passwordVisible = !passwordVisible }) {
@@ -133,18 +231,109 @@ fun RegisterScreen(
 
                     Spacer(modifier = Modifier.height(Spacing.Medium))
 
+                    // ── Confirm Password ──
                     AppTextField(
                         value = confirmPassword,
-                        onValueChange = { confirmPassword = it },
+                        onValueChange = {
+                            confirmPassword = it
+                            if (confirmPasswordTouched) validateConfirmPassword()
+                        },
                         label = "Confirm Password",
-                        visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation()
+                        isError = confirmPasswordTouched && confirmPasswordError != null,
+                        errorMessage = if (confirmPasswordTouched) confirmPasswordError else null,
+                        visualTransformation = if (confirmPasswordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                        trailingIcon = {
+                            TextButton(onClick = { confirmPasswordVisible = !confirmPasswordVisible }) {
+                                Text(
+                                    if (confirmPasswordVisible) "Hide" else "Show",
+                                    color = PrimaryBlue,
+                                    style = MaterialTheme.typography.labelMedium
+                                )
+                            }
+                        }
                     )
+
+                    Spacer(modifier = Modifier.height(Spacing.Medium))
+
+                    // ── Role Selection Dropdown ──
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { roleDropdownExpanded = !roleDropdownExpanded }
+                    ) {
+                        OutlinedTextField(
+                            value = roleOptions.find { it.second == selectedRole }?.first ?: "",
+                            onValueChange = {},
+                            readOnly = true,
+                            label = { Text("Select Your Role", style = MaterialTheme.typography.bodyMedium) },
+                            modifier = Modifier.fillMaxWidth(),
+                            isError = roleError != null,
+                            trailingIcon = {
+                                IconButton(onClick = { roleDropdownExpanded = !roleDropdownExpanded }) {
+                                    Icon(
+                                        Icons.Filled.ArrowDropDown,
+                                        contentDescription = "Select role",
+                                        tint = if (roleError != null) AccentRed else colors.textSecondary
+                                    )
+                                }
+                            },
+                            shape = RoundedCornerShape(CornerRadius.Medium),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = if (roleError != null) AccentRed else colors.inputBorderFocused,
+                                unfocusedBorderColor = if (roleError != null) AccentRed else colors.inputBorder,
+                                focusedLabelColor = if (roleError != null) AccentRed else PrimaryBlue,
+                                unfocusedLabelColor = if (roleError != null) AccentRed else colors.textSecondary,
+                                cursorColor = PrimaryBlue,
+                                focusedContainerColor = colors.inputBackground,
+                                unfocusedContainerColor = colors.inputBackground,
+                                focusedTextColor = colors.textPrimary,
+                                unfocusedTextColor = colors.textPrimary,
+                                errorBorderColor = AccentRed,
+                                errorLabelColor = AccentRed
+                            )
+                        )
+
+                        DropdownMenu(
+                            expanded = roleDropdownExpanded,
+                            onDismissRequest = { roleDropdownExpanded = false },
+                            modifier = Modifier.fillMaxWidth(0.7f)
+                        ) {
+                            roleOptions.forEach { (displayName, roleValue) ->
+                                DropdownMenuItem(
+                                    text = {
+                                        Text(
+                                            text = displayName,
+                                            style = MaterialTheme.typography.bodyLarge,
+                                            fontWeight = if (selectedRole == roleValue) FontWeight.SemiBold else FontWeight.Normal,
+                                            color = if (selectedRole == roleValue) PrimaryBlue else colors.textPrimary
+                                        )
+                                    },
+                                    onClick = {
+                                        selectedRole = roleValue
+                                        roleError = null
+                                        roleDropdownExpanded = false
+                                    }
+                                )
+                            }
+                        }
+                    }
+
+                    if (roleError != null) {
+                        Text(
+                            text = roleError!!,
+                            color = AccentRed,
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier
+                                .align(Alignment.Start)
+                                .padding(start = 8.dp, top = 4.dp)
+                        )
+                    }
 
                     errorMessage?.let {
                         Spacer(modifier = Modifier.height(Spacing.Small))
                         Text(
-                            it, 
-                            color = AccentRed, 
+                            it,
+                            color = AccentRed,
                             style = MaterialTheme.typography.bodySmall
                         )
                     }
@@ -152,19 +341,11 @@ fun RegisterScreen(
                     Spacer(modifier = Modifier.height(Spacing.XLarge))
 
                     PrimaryButton(
-                        text = "REGISTER",
+                        text = "CREATE ACCOUNT",
                         onClick = {
                             errorMessage = null
 
-                            if (name.isBlank() || email.isBlank() || password.isBlank()) {
-                                errorMessage = "All fields are required"
-                                return@PrimaryButton
-                            }
-
-                            if (password != confirmPassword) {
-                                errorMessage = "Passwords do not match"
-                                return@PrimaryButton
-                            }
+                            if (!validateAll()) return@PrimaryButton
 
                             loading = true
 
@@ -182,7 +363,8 @@ fun RegisterScreen(
                                             "uid" to uid,
                                             "name" to name.trim(),
                                             "email" to email.trim(),
-                                            "role" to "none",
+                                            "phone" to mobile.trim(),
+                                            "role" to selectedRole,
                                             "createdAt" to FieldValue.serverTimestamp()
                                         )
 
@@ -191,8 +373,11 @@ fun RegisterScreen(
                                             .set(userMap)
                                             .addOnSuccessListener {
                                                 loading = false
-                                                Log.d("REGISTER", "User saved in Firestore")
-                                                onRegisterSuccess()
+                                                Log.d("REGISTER", "User saved with role: $selectedRole")
+                                                when (selectedRole) {
+                                                    "citizen" -> onCitizenRegistered()
+                                                    "police" -> onPoliceRegistered()
+                                                }
                                             }
                                             .addOnFailureListener { e ->
                                                 loading = false
@@ -231,7 +416,7 @@ fun RegisterScreen(
                 }
             }
 
-            Spacer(modifier = Modifier.height(Spacing.XXLarge))
+            Spacer(modifier = Modifier.height(Spacing.Section))
         }
     }
 }

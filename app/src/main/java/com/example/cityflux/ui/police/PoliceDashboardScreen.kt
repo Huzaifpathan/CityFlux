@@ -11,7 +11,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.example.cityflux.model.Issue
+import com.example.cityflux.model.Report
 import com.example.cityflux.ui.theme.*
 import com.google.firebase.firestore.FirebaseFirestore
 
@@ -19,14 +19,14 @@ import com.google.firebase.firestore.FirebaseFirestore
 @Composable
 fun PoliceDashboardScreen() {
 
-    var issues by remember { mutableStateOf<List<Issue>>(emptyList()) }
+    var issues by remember { mutableStateOf<List<Report>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf(false) }
     val colors = MaterialTheme.cityFluxColors
 
     LaunchedEffect(Unit) {
         FirebaseFirestore.getInstance()
-            .collection("issues")
+            .collection("reports")
             .addSnapshotListener { snapshot, e ->
                 if (e != null) {
                     error = true
@@ -37,7 +37,7 @@ fun PoliceDashboardScreen() {
                 issues = snapshot?.documents
                     ?.mapNotNull { doc ->
                         try {
-                            doc.toObject(Issue::class.java)?.copy(id = doc.id)
+                            doc.toObject(Report::class.java)?.copy(id = doc.id)
                         } catch (ex: Exception) {
                             null
                         }

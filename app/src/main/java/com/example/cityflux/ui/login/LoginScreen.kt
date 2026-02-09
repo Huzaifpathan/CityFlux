@@ -33,9 +33,7 @@ fun isPhoneNumber(input: String): Boolean {
 @Composable
 fun LoginScreen(
     onCitizenLogin: () -> Unit,
-    onAdminLogin: () -> Unit,
     onPoliceLogin: () -> Unit,
-    onRoleSelection: () -> Unit,
     onRegisterClick: () -> Unit,
     onForgotClick: () -> Unit
 ) {
@@ -47,11 +45,34 @@ fun LoginScreen(
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var isLoading by remember { mutableStateOf(false) }
 
+    // Field-level validation
+    var inputError by remember { mutableStateOf<String?>(null) }
+    var passwordError by remember { mutableStateOf<String?>(null) }
+    var inputTouched by remember { mutableStateOf(false) }
+    var passwordTouched by remember { mutableStateOf(false) }
+
     val auth = FirebaseAuth.getInstance()
     val firestore = FirebaseFirestore.getInstance()
     val context = LocalContext.current
     var verificationId by remember { mutableStateOf<String?>(null) }
     val colors = MaterialTheme.cityFluxColors
+
+    fun validateInput() {
+        inputError = when {
+            input.isBlank() -> "Email or phone is required"
+            else -> null
+        }
+    }
+
+    fun validatePassword() {
+        if (!isPhoneNumber(input.trim())) {
+            passwordError = when {
+                password.isBlank() -> "Password is required"
+                password.length < 6 -> "Password must be at least 6 characters"
+                else -> null
+            }
+        }
+    }
 
     fun handlePostLogin() {
         val uid = auth.currentUser?.uid ?: return
@@ -63,9 +84,11 @@ fun LoginScreen(
                 isLoading = false
                 when (doc.getString("role")) {
                     "citizen" -> onCitizenLogin()
-                    "admin" -> onAdminLogin()
                     "police" -> onPoliceLogin()
-                    else -> onRoleSelection()
+                    else -> {
+                        // Users with "none" or "admin" role — default to citizen
+                        onCitizenLogin()
+                    }
                 }
             }
             .addOnFailureListener {
@@ -141,8 +164,13 @@ fun LoginScreen(
 
                     AppTextField(
                         value = input,
-                        onValueChange = { input = it },
-                        label = "Email or Phone"
+                        onValueChange = {
+                            input = it
+                            if (inputTouched) validateInput()
+                        },
+                        label = "Email or Phone",
+                        isError = inputTouched && inputError != null,
+                        errorMessage = if (inputTouched) inputError else null
                     )
 
                     Spacer(modifier = Modifier.height(Spacing.Medium))
@@ -158,8 +186,13 @@ fun LoginScreen(
                     } else {
                         AppTextField(
                             value = password,
-                            onValueChange = { password = it },
+                            onValueChange = {
+                                password = it
+                                if (passwordTouched) validatePassword()
+                            },
                             label = "Password",
+                            isError = passwordTouched && passwordError != null,
+                            errorMessage = if (passwordTouched) passwordError else null,
                             visualTransformation = if (passwordVisible) 
                                 VisualTransformation.None 
                             else 
@@ -201,6 +234,15 @@ fun LoginScreen(
                         },
                         onClick = {
                             errorMessage = null
+                            inputTouched = true
+                            passwordTouched = true
+                            validateInput()
+                            validatePassword()
+
+                            if (inputError != null || (!isPhoneNumber(input.trim()) && passwordError != null)) {
+                                return@PrimaryButton
+                            }
+
                             isLoading = true
                             val trimmedInput = input.trim()
 
@@ -266,6 +308,7 @@ fun LoginScreen(
                                 auth.signInWithEmailAndPassword(trimmedInput, password)
                                     .addOnSuccessListener { handlePostLogin() }
                                     .addOnFailureListener {
+                                        isLoading = false
                                         errorMessage = "Incorrect email or password"
                                     }
                             }

@@ -1,0 +1,95 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ─────────────────────────────────────────────────────────
+    // Helper: get current user's role from the users collection
+    // ─────────────────────────────────────────────────────────
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function getUserRole() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
+    }
+
+    function isCitizen() {
+      return isAuthenticated() && getUserRole() == 'citizen';
+    }
+
+    function isPolice() {
+      return isAuthenticated() && getUserRole() == 'police';
+    }
+
+    function isAdmin() {
+      return isAuthenticated() && getUserRole() == 'admin';
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // 🔐 USERS COLLECTION
+    // - Only authenticated users can access
+    // - A user can read and write ONLY their own document
+    // - No user can modify another user's profile
+    // ═══════════════════════════════════════════════════════════
+    match /users/{userId} {
+      allow read, write: if isAuthenticated()
+        && request.auth.uid == userId;
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // 📝 REPORTS COLLECTION
+    // - Any authenticated Citizen can create a new report
+    //   (userId field must match their auth uid)
+    // - Citizens can read ALL reports
+    // - Citizens can edit (update) ONLY their own reports
+    // - Traffic Police can read ALL reports
+    // - Traffic Police can update ONLY the status field
+    // - No one can delete reports
+    // ═══════════════════════════════════════════════════════════
+    match /reports/{reportId} {
+      // Citizens and Police can read all reports
+      allow read: if isAuthenticated();
+
+      // Only citizens can create reports; userId must match auth uid
+      allow create: if isCitizen()
+        && request.resource.data.userId == request.auth.uid;
+
+      // Citizens can update their own reports (any field)
+      // Police can update ONLY the status field on any report
+      allow update: if isAuthenticated() && (
+        // Citizen editing own report
+        (isCitizen() && resource.data.userId == request.auth.uid)
+        ||
+        // Police updating status only (no other fields changed)
+        (isPolice()
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']))
+        ||
+        // Admin updating status only (web dashboard)
+        (isAdmin()
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']))
+      );
+
+      // No one can delete reports
+      allow delete: if false;
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // 🅿️ PARKING COLLECTION
+    // - All authenticated users can read parking data
+    // - Only Traffic Police or Admin can modify parking data
+    // ═══════════════════════════════════════════════════════════
+    match /parking/{parkingId} {
+      allow read: if isAuthenticated();
+      allow write: if isPolice() || isAdmin();
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // 🚫 DENY EVERYTHING ELSE BY DEFAULT
+    // Any collection not matched above is blocked
+    // ═══════════════════════════════════════════════════════════
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

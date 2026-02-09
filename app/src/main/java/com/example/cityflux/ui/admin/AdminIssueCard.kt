@@ -10,13 +10,13 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.example.cityflux.model.Issue
+import com.example.cityflux.model.Report
 import com.example.cityflux.ui.theme.*
 import com.google.firebase.firestore.FirebaseFirestore
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AdminIssueCard(issue: Issue) {
+fun AdminIssueCard(issue: Report) {
 
     val db = FirebaseFirestore.getInstance()
     var expanded by remember { mutableStateOf(false) }
@@ -26,9 +26,11 @@ fun AdminIssueCard(issue: Issue) {
     
     // Get accent color based on issue type
     val accentColor = when (issue.type.lowercase()) {
-        "traffic" -> AccentTraffic
-        "parking" -> AccentParking
-        "garbage", "road damage" -> AccentIssues
+        "traffic_violation" -> AccentTraffic
+        "illegal_parking" -> AccentParking
+        "road_damage" -> AccentIssues
+        "accident" -> AccentRed
+        "hawker" -> AccentOrange
         else -> AccentAlerts
     }
 
@@ -133,7 +135,7 @@ fun AdminIssueCard(issue: Issue) {
                                     expanded = false
 
                                     // Update Firestore
-                                    db.collection("issues")
+                                    db.collection("reports")
                                         .document(issue.id)
                                         .update("status", status)
                                 }

@@ -4,62 +4,27 @@
     android:viewportWidth="108"
     android:viewportHeight="108">
 
-    <!-- ====================================================== -->
-    <!-- CityFlux Monochrome Icon for Android 13+ theming        -->
-    <!-- Single color (#000) - system tints automatically        -->
-    <!-- ====================================================== -->
+    <!-- CityFlux Monochrome Icon for Android 13+ themed icons -->
 
-    <!-- Building 1 - Left -->
+    <!-- Pin silhouette -->
     <path
         android:fillColor="#000000"
-        android:pathData="M30,68 L30,52 L35.5,47 L41,52 L41,68 Z" />
+        android:pathData="M54,86 C47,74 30,60 30,40 C30,27 41,16 54,16 C67,16 78,27 78,40 C78,60 61,74 54,86 Z"/>
 
-    <!-- Building 2 - Center (tallest) -->
-    <path
-        android:fillColor="#000000"
-        android:pathData="M45,68 L45,32 L54,24 L63,32 L63,68 Z" />
+    <!-- Building cutouts (transparent = shows background) -->
+    <path android:fillColor="#FFFFFF"
+        android:pathData="M37,55 L37,40 L41,36 L45,40 L45,55 Z"/>
+    <path android:fillColor="#FFFFFF"
+        android:pathData="M48,55 L48,27 L54,22 L60,27 L60,55 Z"/>
+    <path android:fillColor="#FFFFFF"
+        android:pathData="M63,55 L63,38 L67,34 L71,38 L71,55 Z"/>
 
-    <!-- Building 3 - Right -->
-    <path
-        android:fillColor="#000000"
-        android:pathData="M67,68 L67,42 L74,36 L81,42 L81,68 Z" />
+    <!-- Ground -->
+    <path android:fillColor="#FFFFFF"
+        android:pathData="M32,56 L76,56 L76,58 L32,58 Z"/>
 
-    <!-- Ground line -->
-    <path
-        android:fillColor="#000000"
-        android:pathData="M24,68 L84,68 L84,69.5 L24,69.5 Z" />
-
-    <!-- Road flow line -->
-    <path
-        android:fillColor="@android:color/transparent"
-        android:strokeColor="#000000"
-        android:strokeWidth="2.8"
-        android:strokeLineCap="round"
-        android:pathData="M24,79 C36,73 44,76 54,75 C64,74 74,78 84,73" />
-
-    <!-- Network nodes -->
-    <path
-        android:fillColor="#000000"
-        android:pathData="M36,76 m-2.2,0 a2.2,2.2 0 1,1 4.4,0 a2.2,2.2 0 1,1 -4.4,0" />
-    <path
-        android:fillColor="#000000"
-        android:pathData="M54,75 m-2.8,0 a2.8,2.8 0 1,1 5.6,0 a2.8,2.8 0 1,1 -5.6,0" />
-    <path
-        android:fillColor="#000000"
-        android:pathData="M72,76 m-2.2,0 a2.2,2.2 0 1,1 4.4,0 a2.2,2.2 0 1,1 -4.4,0" />
-
-    <!-- Signal arcs -->
-    <path
-        android:fillColor="@android:color/transparent"
-        android:strokeColor="#000000"
-        android:strokeWidth="1.2"
-        android:strokeLineCap="round"
-        android:pathData="M54,70 m-5,-4 a7,7 0 0,1 10,0" />
-    <path
-        android:fillColor="@android:color/transparent"
-        android:strokeColor="#000000"
-        android:strokeWidth="1"
-        android:strokeLineCap="round"
-        android:pathData="M54,70 m-8,-6 a11,11 0 0,1 16,0" />
+    <!-- Road -->
+    <path android:fillColor="#FFFFFF"
+        android:pathData="M43,59 L52,78 L56,78 L65,59 Z"/>
 
 </vector>

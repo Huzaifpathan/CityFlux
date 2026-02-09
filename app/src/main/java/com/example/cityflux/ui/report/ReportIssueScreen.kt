@@ -33,6 +33,8 @@ import com.google.android.gms.location.LocationServices
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.storage.FirebaseStorage
+import com.google.firebase.analytics.ktx.analytics
+import com.google.firebase.ktx.Firebase
 import java.util.*
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -50,9 +52,20 @@ fun ReportIssueScreen(
 
     var title by remember { mutableStateOf("") }
     var description by remember { mutableStateOf("") }
+    var selectedType by remember { mutableStateOf("") }
+    var typeDropdownExpanded by remember { mutableStateOf(false) }
     var imageUri by remember { mutableStateOf<Uri?>(null) }
     var loading by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
+
+    val issueTypes = listOf(
+        "Illegal Parking" to "illegal_parking",
+        "Accident" to "accident",
+        "Hawker" to "hawker",
+        "Traffic Violation" to "traffic_violation",
+        "Road Damage" to "road_damage",
+        "Other" to "other"
+    )
 
     var latitude by remember { mutableStateOf(0.0) }
     var longitude by remember { mutableStateOf(0.0) }
@@ -112,6 +125,66 @@ fun ReportIssueScreen(
             )
 
             Spacer(modifier = Modifier.height(Spacing.XLarge))
+
+            // Issue Type Dropdown
+            Box(modifier = Modifier
+                .fillMaxWidth()
+                .clickable { typeDropdownExpanded = !typeDropdownExpanded }
+            ) {
+                OutlinedTextField(
+                    value = issueTypes.find { it.second == selectedType }?.first ?: "",
+                    onValueChange = {},
+                    readOnly = true,
+                    label = { Text("Issue Type", style = MaterialTheme.typography.bodyMedium) },
+                    modifier = Modifier.fillMaxWidth(),
+                    trailingIcon = {
+                        IconButton(onClick = { typeDropdownExpanded = !typeDropdownExpanded }) {
+                            Icon(
+                                imageVector = Icons.Outlined.Description,
+                                contentDescription = "Select type",
+                                tint = colors.textSecondary
+                            )
+                        }
+                    },
+                    shape = RoundedCornerShape(CornerRadius.Medium),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = PrimaryBlue,
+                        unfocusedBorderColor = colors.divider,
+                        focusedLabelColor = PrimaryBlue,
+                        unfocusedLabelColor = colors.textSecondary,
+                        cursorColor = PrimaryBlue,
+                        focusedContainerColor = colors.surfaceVariant,
+                        unfocusedContainerColor = colors.surfaceVariant,
+                        focusedTextColor = colors.textPrimary,
+                        unfocusedTextColor = colors.textPrimary
+                    )
+                )
+
+                DropdownMenu(
+                    expanded = typeDropdownExpanded,
+                    onDismissRequest = { typeDropdownExpanded = false },
+                    modifier = Modifier.fillMaxWidth(0.7f)
+                ) {
+                    issueTypes.forEach { (displayName, typeValue) ->
+                        DropdownMenuItem(
+                            text = {
+                                Text(
+                                    text = displayName,
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    fontWeight = if (selectedType == typeValue) FontWeight.SemiBold else FontWeight.Normal,
+                                    color = if (selectedType == typeValue) PrimaryBlue else colors.textPrimary
+                                )
+                            },
+                            onClick = {
+                                selectedType = typeValue
+                                typeDropdownExpanded = false
+                            }
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(Spacing.Medium))
 
             // Issue Title Field
             AppTextField(
@@ -290,8 +363,8 @@ fun ReportIssueScreen(
             PrimaryButton(
                 text = "Submit Report",
                 onClick = {
-                    if (title.isBlank() || description.isBlank()) {
-                        message = "Please fill all fields"
+                    if (selectedType.isBlank() || title.isBlank() || description.isBlank()) {
+                        message = "Please fill all fields and select issue type"
                         return@PrimaryButton
                     }
 
@@ -303,16 +376,17 @@ fun ReportIssueScreen(
                     fun saveIssue(imageUrl: String?) {
                         val issue = hashMapOf(
                             "userId" to uid,
+                            "type" to selectedType,
                             "title" to title,
                             "description" to description,
-                            "imageUrl" to imageUrl,
+                            "imageUrl" to (imageUrl ?: ""),
                             "latitude" to latitude,
                             "longitude" to longitude,
                             "status" to "Pending",
-                            "timestamp" to System.currentTimeMillis()
+                            "timestamp" to com.google.firebase.Timestamp.now()
                         )
 
-                        firestore.collection("issues")
+                        firestore.collection("reports")
                             .add(issue)
                             .addOnSuccessListener {
                                 loading = false
@@ -320,6 +394,13 @@ fun ReportIssueScreen(
                                     "Issue submitted, but image upload failed"
                                 else
                                     "Issue submitted successfully"
+
+                                // Log analytics event for report submission (once per successful submit)
+                                try {
+                                    Firebase.analytics.logEvent("report_submitted", null)
+                                } catch (e: Exception) {
+                                    // analytics should not crash the app
+                                }
 
                                 onReportSubmitted()
                             }

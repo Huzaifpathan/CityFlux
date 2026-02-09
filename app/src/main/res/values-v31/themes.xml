@@ -1,16 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
 
+    <!-- CityFlux Light Theme — Android 12+ system splash -->
     <style name="Theme.CityFlux" parent="Theme.Material3.Light.NoActionBar">
-        <item name="android:statusBarColor">#FFFFFF</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
         <item name="android:windowLightStatusBar">true</item>
+        <item name="android:windowLightNavigationBar">true</item>
         <item name="colorPrimary">#2563EB</item>
-        <item name="colorSecondary">#1D4ED8</item>
-        
-        <!-- Disable Android 12+ splash screen icon -->
+        <item name="colorSecondary">#1E40AF</item>
+        <item name="android:colorBackground">#FFFFFF</item>
+
+        <!-- Android 12+ system splash — show logo briefly before Compose loads -->
         <item name="android:windowSplashScreenBackground">#FFFFFF</item>
-        <item name="android:windowSplashScreenAnimatedIcon">@drawable/splash_transparent</item>
-        <item name="android:windowSplashScreenAnimationDuration">1</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/cityflux_icon</item>
+        <item name="android:windowSplashScreenAnimationDuration">400</item>
     </style>
 
 </resources>

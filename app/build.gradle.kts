@@ -55,6 +55,10 @@ dependencies {
     implementation("com.google.firebase:firebase-auth-ktx")
     implementation("com.google.firebase:firebase-firestore-ktx")
     implementation("com.google.firebase:firebase-storage-ktx")   // ✅ ADD THIS
+    implementation("com.google.firebase:firebase-database-ktx")  // Realtime Database
+    implementation("com.google.firebase:firebase-messaging-ktx") // Cloud Messaging (FCM)
+    implementation ("com.google.firebase:firebase-analytics-ktx")
+
 
     // 🎨 Material
     implementation("com.google.android.material:material:1.11.0")

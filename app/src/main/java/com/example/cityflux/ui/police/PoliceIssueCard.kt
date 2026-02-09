@@ -11,20 +11,22 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.example.cityflux.model.Issue
+import com.example.cityflux.model.Report
 import com.example.cityflux.ui.theme.*
 import com.google.firebase.firestore.FirebaseFirestore
 
 @Composable
-fun PoliceIssueCard(issue: Issue) {
+fun PoliceIssueCard(issue: Report) {
     
     val colors = MaterialTheme.cityFluxColors
     
     // Get accent color based on issue type
     val accentColor = when (issue.type.lowercase()) {
-        "traffic" -> AccentTraffic
-        "parking" -> AccentParking
-        "garbage", "road damage" -> AccentIssues
+        "traffic_violation" -> AccentTraffic
+        "illegal_parking" -> AccentParking
+        "road_damage" -> AccentIssues
+        "accident" -> AccentRed
+        "hawker" -> AccentOrange
         else -> AccentAlerts
     }
 
@@ -95,7 +97,7 @@ fun PoliceIssueCard(issue: Issue) {
                     Button(
                         onClick = {
                             FirebaseFirestore.getInstance()
-                                .collection("issues")
+                                .collection("reports")
                                 .document(issue.id)
                                 .update("status", "In Progress")
                         },
@@ -122,7 +124,7 @@ fun PoliceIssueCard(issue: Issue) {
                     Button(
                         onClick = {
                             FirebaseFirestore.getInstance()
-                                .collection("issues")
+                                .collection("reports")
                                 .document(issue.id)
                                 .update("status", "Resolved")
                         },

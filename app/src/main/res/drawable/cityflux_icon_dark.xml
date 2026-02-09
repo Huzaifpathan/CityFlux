@@ -1,129 +1,63 @@
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
     android:width="512dp"
     android:height="512dp"
     android:viewportWidth="512"
     android:viewportHeight="512">
 
-    <!-- ====================================================== -->
-    <!-- CityFlux Icon - Dark Mode Version                       -->
-    <!-- White/light elements on transparent background          -->
-    <!-- For use on dark surfaces                                -->
-    <!-- ====================================================== -->
+    <!-- CityFlux Logo — Dark Mode Variant -->
+    <!-- Brighter blues for visibility on dark backgrounds -->
 
-    <!-- === ABSTRACT CITY SKYLINE === -->
+    <!-- Pin shape (brighter gradient for dark mode) -->
+    <path android:pathData="M256,460 C224,395 88,298 88,186 C88,93 163,18 256,18 C349,18 424,93 424,186 C424,298 288,395 256,460 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:startX="256"
+                android:startY="18"
+                android:endX="256"
+                android:endY="460"
+                android:type="linear">
+                <item android:offset="0" android:color="#FF1E40AF"/>
+                <item android:offset="0.40" android:color="#FF2563EB"/>
+                <item android:offset="0.75" android:color="#FF3B82F6"/>
+                <item android:offset="1" android:color="#FF60A5FA"/>
+            </gradient>
+        </aapt:attr>
+    </path>
 
-    <!-- Building 1 - Left (short) -->
-    <path
-        android:fillColor="#F9FAFB"
-        android:pathData="M128,320 L128,220 L148,200 L168,220 L168,320 Z" />
+    <!-- Buildings -->
+    <path android:fillColor="#F0F9FF"
+        android:pathData="M158,248 L158,172 L178,150 L198,172 L198,248 Z"/>
+    <path android:fillColor="#F0F9FF"
+        android:pathData="M230,248 L230,94 L256,68 L282,94 L282,248 Z"/>
+    <path android:fillColor="#F0F9FF"
+        android:pathData="M314,248 L314,150 L334,128 L354,150 L354,248 Z"/>
 
-    <!-- Building 2 - Center (tallest) -->
-    <path
-        android:fillColor="#F9FAFB"
-        android:pathData="M208,320 L208,148 L236,120 L264,148 L264,320 Z" />
+    <!-- Traffic signal dots -->
+    <path android:fillColor="#DBEAFE"
+        android:pathData="M256,122 m-11,0 a11,11 0 1,0 22,0 a11,11 0 1,0 -22,0"/>
+    <path android:fillColor="#BAE6FD"
+        android:pathData="M256,158 m-11,0 a11,11 0 1,0 22,0 a11,11 0 1,0 -22,0"/>
+    <path android:fillColor="#E0F2FE"
+        android:pathData="M256,194 m-11,0 a11,11 0 1,0 22,0 a11,11 0 1,0 -22,0"/>
 
-    <!-- Building 3 - Right (medium) -->
-    <path
-        android:fillColor="#F9FAFB"
-        android:pathData="M304,320 L304,188 L328,168 L352,188 L352,320 Z" />
+    <!-- Ground -->
+    <path android:fillColor="#F0F9FF"
+        android:pathData="M130,250 L382,250 L382,258 L130,258 Z"/>
 
-    <!-- Building window accents -->
-    <path
-        android:fillColor="#374151"
-        android:pathData="M138,240 h20 v12 h-20 Z" />
-    <path
-        android:fillColor="#374151"
-        android:pathData="M138,264 h20 v12 h-20 Z" />
-    <path
-        android:fillColor="#374151"
-        android:pathData="M138,288 h20 v12 h-20 Z" />
+    <!-- Road -->
+    <path android:fillColor="#F0F9FF"
+        android:pathData="M196,260 L248,400 L264,400 L316,260 Z"/>
 
-    <path
-        android:fillColor="#374151"
-        android:pathData="M220,168 h32 v14 h-32 Z" />
-    <path
-        android:fillColor="#374151"
-        android:pathData="M220,196 h32 v14 h-32 Z" />
-    <path
-        android:fillColor="#374151"
-        android:pathData="M220,224 h32 v14 h-32 Z" />
-    <path
-        android:fillColor="#374151"
-        android:pathData="M220,252 h32 v14 h-32 Z" />
-    <path
-        android:fillColor="#374151"
-        android:pathData="M220,280 h32 v14 h-32 Z" />
-
-    <path
-        android:fillColor="#374151"
-        android:pathData="M316,208 h24 v12 h-24 Z" />
-    <path
-        android:fillColor="#374151"
-        android:pathData="M316,232 h24 v12 h-24 Z" />
-    <path
-        android:fillColor="#374151"
-        android:pathData="M316,256 h24 v12 h-24 Z" />
-    <path
-        android:fillColor="#374151"
-        android:pathData="M316,280 h24 v12 h-24 Z" />
-
-    <!-- Ground line -->
-    <path
-        android:fillColor="#F9FAFB"
-        android:pathData="M80,320 L432,320 L432,328 L80,328 Z" />
-
-    <!-- === CURVED ROAD / TRAFFIC FLOW LINE === -->
-    <path
-        android:fillColor="@android:color/transparent"
-        android:strokeColor="#60A5FA"
-        android:strokeWidth="10"
-        android:strokeLineCap="round"
-        android:pathData="M80,380 C160,340 200,360 256,350 C312,340 360,370 432,340" />
-
-    <path
-        android:fillColor="@android:color/transparent"
-        android:strokeColor="#3B82F6"
-        android:strokeWidth="5"
-        android:strokeLineCap="round"
-        android:pathData="M80,400 C160,365 200,382 256,372 C312,362 360,388 432,362" />
-
-    <!-- === NETWORK NODES === -->
-    <path
-        android:fillColor="#60A5FA"
-        android:pathData="M148,362 m-8,0 a8,8 0 1,1 16,0 a8,8 0 1,1 -16,0" />
-    <path
-        android:fillColor="#93C5FD"
-        android:pathData="M256,350 m-10,0 a10,10 0 1,1 20,0 a10,10 0 1,1 -20,0" />
-    <path
-        android:fillColor="#60A5FA"
-        android:pathData="M364,354 m-8,0 a8,8 0 1,1 16,0 a8,8 0 1,1 -16,0" />
-
-    <!-- Signal wave arcs -->
-    <path
-        android:fillColor="@android:color/transparent"
-        android:strokeColor="#60A5FA"
-        android:strokeWidth="3"
-        android:strokeLineCap="round"
-        android:pathData="M256,336 m-16,-14 a22,22 0 0,1 32,0" />
-    <path
-        android:fillColor="@android:color/transparent"
-        android:strokeColor="#3B82F6"
-        android:strokeWidth="2.5"
-        android:strokeLineCap="round"
-        android:pathData="M256,336 m-26,-22 a34,34 0 0,1 52,0" />
-
-    <!-- Connector lines -->
-    <path
-        android:fillColor="@android:color/transparent"
-        android:strokeColor="#3B82F6"
-        android:strokeWidth="2"
-        android:strokeLineCap="round"
-        android:pathData="M156,362 L246,350" />
-    <path
-        android:fillColor="@android:color/transparent"
-        android:strokeColor="#3B82F6"
-        android:strokeWidth="2"
-        android:strokeLineCap="round"
-        android:pathData="M266,350 L356,354" />
+    <!-- Road dashes -->
+    <path android:fillColor="@android:color/transparent"
+        android:strokeColor="#2563EB" android:strokeWidth="4.5" android:strokeLineCap="round"
+        android:pathData="M256,274 L256,302"/>
+    <path android:fillColor="@android:color/transparent"
+        android:strokeColor="#2563EB" android:strokeWidth="4.5" android:strokeLineCap="round"
+        android:pathData="M256,318 L256,348"/>
+    <path android:fillColor="@android:color/transparent"
+        android:strokeColor="#2563EB" android:strokeWidth="4" android:strokeLineCap="round"
+        android:pathData="M256,364 L256,390"/>
 
 </vector>

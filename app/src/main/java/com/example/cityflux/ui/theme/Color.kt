@@ -1,31 +1,61 @@
 package com.example.cityflux.ui.theme
 
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 
 // ═══════════════════════════════════════════════════════════════════
-// CityFlux Modern Color Palette - Clean Professional Design
+// CityFlux Modern Color Palette — Enhanced Blue Gradient System
+// Clean, professional, smart-city inspired
 // ═══════════════════════════════════════════════════════════════════
 
 // ─────────────────────────────────────────────────────────────────
-// LIGHT THEME COLORS (Primary)
+// BLUE GRADIENT SPECTRUM (deep navy → sky blue)
+// ─────────────────────────────────────────────────────────────────
+val GradientNavyDark = Color(0xFF0A1628)
+val GradientNavy = Color(0xFF0C2461)
+val GradientRoyal = Color(0xFF1E3A8A)
+val GradientMedium = Color(0xFF1E40AF)
+val PrimaryBlue = Color(0xFF2563EB)
+val PrimaryBlueDark = Color(0xFF1D4ED8)
+val GradientBright = Color(0xFF3B82F6)
+val GradientSky = Color(0xFF38BDF8)
+val PrimaryBlueLight = Color(0xFF60A5FA)
+val GradientPale = Color(0xFF7DD3FC)
+val GradientFrost = Color(0xFF93C5FD)
+val GradientIce = Color(0xFFBAE6FD)
+val GradientMist = Color(0xFFDBEAFE)
+val GradientCloud = Color(0xFFE0F2FE)
+val GradientWhite = Color(0xFFF0F9FF)
+
+// ─────────────────────────────────────────────────────────────────
+// GRADIENT BRUSHES (reusable across the app)
+// ─────────────────────────────────────────────────────────────────
+val BlueGradientHorizontal = Brush.horizontalGradient(
+    listOf(GradientMedium, PrimaryBlue, GradientBright)
+)
+val BlueGradientVertical = Brush.verticalGradient(
+    listOf(GradientNavy, GradientRoyal, PrimaryBlue)
+)
+val BlueGradientSubtle = Brush.horizontalGradient(
+    listOf(GradientMist, GradientCloud, GradientWhite)
+)
+
+// ─────────────────────────────────────────────────────────────────
+// LIGHT THEME COLORS
 // ─────────────────────────────────────────────────────────────────
 
-// Background - Pure white for all screens
 val LightBackground = Color(0xFFFFFFFF)
 val LightSurface = Color(0xFFFFFFFF)
 val LightSurfaceVariant = Color(0xFFF8FAFC)
 
-// Text Colors - Dark charcoal spectrum
-val LightTextPrimary = Color(0xFF1F2933)        // Primary text - dark charcoal
-val LightTextSecondary = Color(0xFF6B7280)      // Secondary text - soft grey
-val LightTextTertiary = Color(0xFF9CA3AF)       // Tertiary/hint text
-val LightTextAccent = Color(0xFF2563EB)         // Accent text - deep blue
+val LightTextPrimary = Color(0xFF1F2933)
+val LightTextSecondary = Color(0xFF6B7280)
+val LightTextTertiary = Color(0xFF9CA3AF)
+val LightTextAccent = Color(0xFF2563EB)
 
-// Card Colors - White with soft shadows
 val LightCardBackground = Color(0xFFFFFFFF)
 val LightCardBorder = Color(0xFFE5E7EB)
 
-// Input Colors
 val LightInputBackground = Color(0xFFFFFFFF)
 val LightInputBorder = Color(0xFFD1D5DB)
 val LightInputBorderFocused = Color(0xFF2563EB)
@@ -34,70 +64,59 @@ val LightInputBorderFocused = Color(0xFF2563EB)
 // DARK THEME COLORS
 // ─────────────────────────────────────────────────────────────────
 
-// Background - Deep dark blue-grey
 val DarkBackground = Color(0xFF0F172A)
 val DarkSurface = Color(0xFF1E293B)
 val DarkSurfaceVariant = Color(0xFF334155)
 
-// Text Colors - Light spectrum
-val DarkTextPrimary = Color(0xFFF9FAFB)         // Primary text - almost white
-val DarkTextSecondary = Color(0xFF9CA3AF)       // Secondary text - grey
-val DarkTextTertiary = Color(0xFF6B7280)        // Tertiary/hint text
-val DarkTextAccent = Color(0xFF60A5FA)          // Accent text - lighter blue
+val DarkTextPrimary = Color(0xFFF9FAFB)
+val DarkTextSecondary = Color(0xFF9CA3AF)
+val DarkTextTertiary = Color(0xFF6B7280)
+val DarkTextAccent = Color(0xFF60A5FA)
 
-// Card Colors - Dark with subtle borders
 val DarkCardBackground = Color(0xFF1E293B)
 val DarkCardBorder = Color(0xFF334155)
 
-// Input Colors
 val DarkInputBackground = Color(0xFF1E293B)
 val DarkInputBorder = Color(0xFF334155)
 val DarkInputBorderFocused = Color(0xFF60A5FA)
 
 // ─────────────────────────────────────────────────────────────────
-// SHARED COLORS (Same in both themes)
+// SHARED ACCENT COLORS
 // ─────────────────────────────────────────────────────────────────
 
-// Primary Brand Color - Professional Blue
-val PrimaryBlue = Color(0xFF2563EB)            // Deep professional blue
-val PrimaryBlueDark = Color(0xFF1D4ED8)        // Darker blue for pressed state
-val PrimaryBlueLight = Color(0xFF60A5FA)       // Lighter blue for dark theme
+val AccentTraffic = Color(0xFF2563EB)
+val AccentParking = Color(0xFF10B981)
+val AccentIssues = Color(0xFFEF4444)
+val AccentAlerts = Color(0xFFF59E0B)
 
-// Category Accent Colors (for card borders)
-val AccentTraffic = Color(0xFF2563EB)          // Blue for traffic
-val AccentParking = Color(0xFF10B981)          // Green for parking
-val AccentIssues = Color(0xFFEF4444)           // Red for issues
-val AccentAlerts = Color(0xFFF59E0B)           // Orange for alerts
+val AccentGreen = Color(0xFF10B981)
+val AccentOrange = Color(0xFFF59E0B)
+val AccentRed = Color(0xFFEF4444)
+val AccentYellow = Color(0xFFFBBF24)
 
-// Status Colors
-val AccentGreen = Color(0xFF10B981)            // Success/resolved
-val AccentOrange = Color(0xFFF59E0B)           // Warning/in progress  
-val AccentRed = Color(0xFFEF4444)              // Error/pending
-val AccentYellow = Color(0xFFFBBF24)           // Caution
+// Traffic map overlay
+val TrafficClear = Color(0xFF10B981)
+val TrafficMedium = Color(0xFFFBBF24)
+val TrafficHeavy = Color(0xFFEF4444)
 
-// Traffic Overlay Colors (for map)
-val TrafficClear = Color(0xFF10B981)           // Green - clear
-val TrafficMedium = Color(0xFFFBBF24)          // Yellow - medium
-val TrafficHeavy = Color(0xFFEF4444)           // Red - heavy
-
-// Button Colors
+// Buttons
 val ButtonPrimary = Color(0xFF2563EB)
 val ButtonPrimaryPressed = Color(0xFF1D4ED8)
 val ButtonDisabled = Color(0xFF9CA3AF)
 val ButtonSecondary = Color(0xFFFFFFFF)
 
-// Shadows and Overlays
-val CardShadow = Color(0x14000000)             // 8% black - soft shadow
-val CardShadowMedium = Color(0x0A000000)       // 4% black - very soft
-val BottomNavBlur = Color(0xE6FFFFFF)          // White with blur for bottom nav
-val BottomNavBlurDark = Color(0xE60F172A)      // Dark with blur for bottom nav
+// Shadows & Overlays
+val CardShadow = Color(0x14000000)
+val CardShadowMedium = Color(0x0A000000)
+val BottomNavBlur = Color(0xE6FFFFFF)
+val BottomNavBlurDark = Color(0xE60F172A)
 
 // Divider
 val Divider = Color(0xFFE5E7EB)
 val DividerDark = Color(0xFF334155)
 
 // ─────────────────────────────────────────────────────────────────
-// LEGACY ALIASES (For backward compatibility)
+// LEGACY ALIASES (backward compatibility)
 // ─────────────────────────────────────────────────────────────────
 
 val SurfaceWhite = LightBackground
@@ -112,4 +131,4 @@ val InputFocused = PrimaryBlue
 val InputText = LightTextPrimary
 val InputHint = LightTextTertiary
 val CardBorder = LightCardBorder
-val PrimaryPurple = Color(0xFF7C3AED)          // Kept for any legacy use
+val PrimaryPurple = Color(0xFF7C3AED)
