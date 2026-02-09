@@ -12,5 +12,7 @@ data class User(
     val email: String = "",
     val phone: String = "",
     val role: String = "",          // "citizen" or "police"
+    val profileImageUrl: String = "",
+    val lastLoginAt: Timestamp? = null,
     val createdAt: Timestamp? = null
 )

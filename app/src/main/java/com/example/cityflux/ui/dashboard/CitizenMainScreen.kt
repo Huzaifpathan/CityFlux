@@ -135,7 +135,10 @@ fun CitizenMainScreen(
                     onNavigateToMap = { _, _ -> selectedTab = tabs.indexOf(CitizenTab.MAP) },
                     vm = notificationsVm
                 )
-                CitizenTab.PROFILE -> ProfileContent(onLogout = onLogout)
+                CitizenTab.PROFILE -> com.example.cityflux.ui.profile.ProfileScreen(
+                    onLogout = onLogout,
+                    onNavigateToMap = { _, _ -> selectedTab = tabs.indexOf(CitizenTab.MAP) }
+                )
             }
         }
     }
