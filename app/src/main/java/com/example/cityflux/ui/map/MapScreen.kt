@@ -59,11 +59,14 @@ import kotlinx.coroutines.tasks.await
 @Composable
 fun MapScreen(
     onBack: () -> Unit,
+    onNavigateToReport: () -> Unit = {},
+    onNavigateToParking: () -> Unit = {},
     vm: MapViewModel = viewModel()
 ) {
     val context = LocalContext.current
     val colors = MaterialTheme.cityFluxColors
     val scope = rememberCoroutineScope()
+    val snackbarHostState = remember { SnackbarHostState() }
     val state by vm.uiState.collectAsState()
 
     // ── Analytics ──
@@ -356,7 +359,7 @@ fun MapScreen(
         ) {
             // Report Issue FAB
             SmallFloatingActionButton(
-                onClick = { onBack() },
+                onClick = { onNavigateToReport() },
                 shape = CircleShape,
                 containerColor = AccentIssues,
                 contentColor = Color.White,
@@ -376,10 +379,10 @@ fun MapScreen(
                         spots = state.parkingSpots,
                         live = state.parkingLive
                     )
-                    nearestParking?.let { spot ->
-                        val loc = spot.location ?: return@let
+                    if (nearestParking != null) {
+                        val loc = nearestParking.location ?: return@SmallFloatingActionButton
                         scope.launch {
-                            selectedParking = spot
+                            selectedParking = nearestParking
                             selectedIncident = null
                             cameraPositionState.animate(
                                 CameraUpdateFactory.newLatLngZoom(
@@ -388,6 +391,8 @@ fun MapScreen(
                                 durationMs = 600
                             )
                         }
+                    } else {
+                        onNavigateToParking()
                     }
                 },
                 shape = CircleShape,
@@ -457,6 +462,15 @@ fun MapScreen(
                 )
             }
         }
+
+        // ══════════════════════ Snackbar Host ══════════════════════
+        SnackbarHost(
+            hostState = snackbarHostState,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .navigationBarsPadding()
+                .padding(bottom = 80.dp)
+        )
     }
 }
 

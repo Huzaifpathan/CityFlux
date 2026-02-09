@@ -8,7 +8,6 @@ import com.example.cityflux.model.Report
 import com.google.firebase.Timestamp
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
-import com.google.firebase.firestore.Query
 import com.google.firebase.storage.FirebaseStorage
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -86,7 +85,6 @@ class ReportViewModel : ViewModel() {
 
         firestore.collection("reports")
             .whereEqualTo("userId", uid)
-            .orderBy("timestamp", Query.Direction.DESCENDING)
             .addSnapshotListener { snapshot, error ->
                 if (error != null) {
                     Log.e(TAG, "My reports error", error)
@@ -100,7 +98,7 @@ class ReportViewModel : ViewModel() {
                         Log.w(TAG, "Parse report error: ${doc.id}", e)
                         null
                     }
-                } ?: emptyList()
+                }?.sortedByDescending { it.timestamp } ?: emptyList()
 
                 _uiState.update {
                     it.copy(myReports = reports, isLoadingReports = false, reportsError = null)
@@ -168,6 +166,16 @@ class ReportViewModel : ViewModel() {
         }
 
         _uiState.update { it.copy(isSubmitting = true, uploadProgress = 0f, submitError = null) }
+
+        // Diagnostic: log auth uid + Firestore role for debugging PERMISSION_DENIED
+        Log.d(TAG, "Submitting report — uid=$uid, email=${auth.currentUser?.email}")
+        firestore.collection("users").document(uid).get()
+            .addOnSuccessListener { doc ->
+                Log.d(TAG, "User Firestore role='${doc.getString("role")}', doc exists=${doc.exists()}")
+            }
+            .addOnFailureListener { e ->
+                Log.w(TAG, "Could not read user doc for diagnostics", e)
+            }
 
         viewModelScope.launch {
             try {

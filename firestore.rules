@@ -35,24 +35,37 @@ service cloud.firestore {
     match /users/{userId} {
       allow read, write: if isAuthenticated()
         && request.auth.uid == userId;
+
+      // ── Notifications sub-collection ──
+      // Each user can only read/write their own notifications
+      match /notifications/{notificationId} {
+        allow read, write: if isAuthenticated()
+          && request.auth.uid == userId;
+      }
+
+      // ── Saved Places sub-collection ──
+      // Each user can only read/write their own saved places
+      match /saved_places/{placeId} {
+        allow read, write: if isAuthenticated()
+          && request.auth.uid == userId;
+      }
     }
 
     // ═══════════════════════════════════════════════════════════
     // 📝 REPORTS COLLECTION
-    // - Any authenticated Citizen can create a new report
+    // - Any authenticated user can create a new report
     //   (userId field must match their auth uid)
-    // - Citizens can read ALL reports
+    // - All authenticated users can read reports
     // - Citizens can edit (update) ONLY their own reports
-    // - Traffic Police can read ALL reports
     // - Traffic Police can update ONLY the status field
     // - No one can delete reports
     // ═══════════════════════════════════════════════════════════
     match /reports/{reportId} {
-      // Citizens and Police can read all reports
+      // All authenticated users can read reports
       allow read: if isAuthenticated();
 
-      // Only citizens can create reports; userId must match auth uid
-      allow create: if isCitizen()
+      // Authenticated users can create reports; userId must match auth uid
+      allow create: if isAuthenticated()
         && request.resource.data.userId == request.auth.uid;
 
       // Citizens can update their own reports (any field)

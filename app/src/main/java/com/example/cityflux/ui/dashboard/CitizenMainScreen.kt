@@ -123,7 +123,9 @@ fun CitizenMainScreen(
                     onNavigateToTab = { tab -> selectedTab = tabs.indexOf(tab) }
                 )
                 CitizenTab.MAP -> com.example.cityflux.ui.map.MapScreen(
-                    onBack = { selectedTab = 0 }
+                    onBack = { selectedTab = 0 },
+                    onNavigateToReport = { selectedTab = tabs.indexOf(CitizenTab.REPORT) },
+                    onNavigateToParking = { selectedTab = tabs.indexOf(CitizenTab.PARKING) }
                 )
                 CitizenTab.PARKING -> com.example.cityflux.ui.parking.ParkingScreen(
                     onBack = { selectedTab = 0 }
