@@ -80,8 +80,15 @@ dependencies {
     // 📍 Location
     implementation(libs.play.services.location)
 
-    // 🖼 Image loader for report screen
-    implementation("io.coil-kt:coil-compose:2.5.0")   // ✅ ADD THIS
+    // �️ Google Maps
+    implementation("com.google.maps.android:maps-compose:4.3.3")
+    implementation("com.google.android.gms:play-services-maps:18.2.0")
+
+    // 🧠 ViewModel Compose
+    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.7.0")
+
+    // 🖼 Image loader
+    implementation("io.coil-kt:coil-compose:2.5.0")
 
     // 🧭 Navigation
     implementation("androidx.navigation:navigation-compose:2.7.7")
