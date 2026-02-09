@@ -67,8 +67,37 @@ class CityFluxMessagingService : FirebaseMessagingService() {
             ?: "You have a new notification"
 
         val type = message.data["type"] ?: "general"
+        val latitude = message.data["latitude"]?.toDoubleOrNull() ?: 0.0
+        val longitude = message.data["longitude"]?.toDoubleOrNull() ?: 0.0
+
+        // Save to Firestore for in-app display
+        saveNotificationToFirestore(title, body, type, latitude, longitude)
 
         showNotification(title, body, type)
+    }
+
+    // ── Save notification to Firestore for in-app list ────────
+    private fun saveNotificationToFirestore(
+        title: String, body: String, type: String,
+        latitude: Double, longitude: Double
+    ) {
+        val uid = FirebaseAuth.getInstance().currentUser?.uid ?: return
+        val notification = hashMapOf(
+            "title" to title,
+            "message" to body,
+            "type" to type,
+            "latitude" to latitude,
+            "longitude" to longitude,
+            "read" to false,
+            "pinned" to false,
+            "timestamp" to com.google.firebase.Timestamp.now()
+        )
+        FirebaseFirestore.getInstance()
+            .collection("users").document(uid)
+            .collection("notifications")
+            .add(notification)
+            .addOnSuccessListener { Log.d(TAG, "Notification saved to Firestore") }
+            .addOnFailureListener { Log.e(TAG, "Failed to save notification", it) }
     }
 
     // ── Build and display a system notification ─────────────────
