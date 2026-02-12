@@ -1,38 +1,63 @@
 {
   "rules": {
-    // ── Only authenticated users can access anything ──
-    ".read": "auth != null",
+    ".read": false,
     ".write": false,
 
-    // 🚦 TRAFFIC — real-time congestion data
-    // All authenticated users can read.
-    // Only admin/police can write (typically updated by backend or IoT).
     "traffic": {
       ".read": "auth != null",
       ".write": "auth != null",
+
       "$roadId": {
-        ".validate": "newData.hasChildren(['congestionLevel', 'lastUpdated'])",
+        ".validate": "newData.hasChildren(['congestionLevel','lastUpdated'])",
 
         "congestionLevel": {
-          ".validate": "newData.isString() && newData.val().matches(/^(LOW|MEDIUM|HIGH)$/)"
+          ".validate": "newData.isString() &&
+            newData.val().matches(/^(LOW|MEDIUM|HIGH)$/)"
         },
+
         "lastUpdated": {
-          ".validate": "newData.isNumber()"
+          ".validate": "newData.isNumber() &&
+            newData.val() <= now"
         }
       }
     },
 
-    // 🅿️ PARKING LIVE — real-time slot availability
-    // All authenticated users can read.
-    // Only admin/police can write (typically updated by sensors or backend).
     "parking_live": {
       ".read": "auth != null",
       ".write": "auth != null",
+
       "$parkingId": {
         ".validate": "newData.hasChildren(['availableSlots'])",
 
         "availableSlots": {
-          ".validate": "newData.isNumber() && newData.val() >= 0"
+          ".validate": "newData.isNumber() &&
+            newData.val() >= 0 &&
+            newData.val() <= 1000"
+        }
+      }
+    },
+
+    "incidents": {
+      ".read": "auth != null",
+      ".write": "auth != null",
+
+      "$incidentId": {
+        ".validate": "newData.hasChildren(['title','latitude','longitude','timestamp']) && newData.child('timestamp').isNumber()",
+
+        "title": {
+          ".validate": "newData.isString() && newData.val().matches(/^.{1,200}$/)"
+        },
+
+        "latitude": {
+          ".validate": "newData.isNumber() && newData.val() >= -90 && newData.val() <= 90"
+        },
+
+        "longitude": {
+          ".validate": "newData.isNumber() && newData.val() >= -180 && newData.val() <= 180"
+        },
+
+        "timestamp": {
+          ".validate": "newData.isNumber() && newData.val() <= now"
         }
       }
     }

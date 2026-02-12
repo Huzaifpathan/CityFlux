@@ -13,7 +13,7 @@
 
         <!-- Android 12+ system splash — dark -->
         <item name="android:windowSplashScreenBackground">#0F172A</item>
-        <item name="android:windowSplashScreenAnimatedIcon">@drawable/cityflux_icon_dark</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/cityfluxlogo</item>
         <item name="android:windowSplashScreenAnimationDuration">400</item>
     </style>
 

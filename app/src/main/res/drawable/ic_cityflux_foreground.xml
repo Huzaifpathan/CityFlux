@@ -1,64 +1,8 @@
-<vector xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:aapt="http://schemas.android.com/aapt"
-    android:width="108dp"
-    android:height="108dp"
-    android:viewportWidth="108"
-    android:viewportHeight="108">
-
-    <!-- CityFlux Adaptive Icon Foreground -->
-    <!-- Content fits within 66dp safe zone centered at (54,54) -->
-
-    <!-- Pin shape (gradient) -->
-    <path android:pathData="M54,86 C47,74 30,60 30,40 C30,27 41,16 54,16 C67,16 78,27 78,40 C78,60 61,74 54,86 Z">
-        <aapt:attr name="android:fillColor">
-            <gradient
-                android:startX="54"
-                android:startY="16"
-                android:endX="54"
-                android:endY="86"
-                android:type="linear">
-                <item android:offset="0" android:color="#FF0C2461"/>
-                <item android:offset="0.30" android:color="#FF1E3A8A"/>
-                <item android:offset="0.60" android:color="#FF1E40AF"/>
-                <item android:offset="1" android:color="#FF2563EB"/>
-            </gradient>
-        </aapt:attr>
-    </path>
-
-    <!-- Building Left -->
-    <path android:fillColor="#FFFFFF"
-        android:pathData="M37,55 L37,40 L41,36 L45,40 L45,55 Z"/>
-
-    <!-- Building Center (tallest) -->
-    <path android:fillColor="#FFFFFF"
-        android:pathData="M48,55 L48,27 L54,22 L60,27 L60,55 Z"/>
-
-    <!-- Building Right -->
-    <path android:fillColor="#FFFFFF"
-        android:pathData="M63,55 L63,38 L67,34 L71,38 L71,55 Z"/>
-
-    <!-- Traffic signal dots -->
-    <path android:fillColor="#60A5FA"
-        android:pathData="M54,31 m-2.5,0 a2.5,2.5 0 1,0 5,0 a2.5,2.5 0 1,0 -5,0"/>
-    <path android:fillColor="#38BDF8"
-        android:pathData="M54,38 m-2.5,0 a2.5,2.5 0 1,0 5,0 a2.5,2.5 0 1,0 -5,0"/>
-    <path android:fillColor="#7DD3FC"
-        android:pathData="M54,45 m-2.5,0 a2.5,2.5 0 1,0 5,0 a2.5,2.5 0 1,0 -5,0"/>
-
-    <!-- Ground line -->
-    <path android:fillColor="#FFFFFF"
-        android:pathData="M32,56 L76,56 L76,58 L32,58 Z"/>
-
-    <!-- Road -->
-    <path android:fillColor="#FFFFFF"
-        android:pathData="M43,59 L52,78 L56,78 L65,59 Z"/>
-
-    <!-- Road dashes -->
-    <path android:fillColor="@android:color/transparent"
-        android:strokeColor="#1E3A8A" android:strokeWidth="1.2" android:strokeLineCap="round"
-        android:pathData="M54,62 L54,68"/>
-    <path android:fillColor="@android:color/transparent"
-        android:strokeColor="#1E3A8A" android:strokeWidth="1.2" android:strokeLineCap="round"
-        android:pathData="M54,71 L54,76"/>
-
-</vector>
+<?xml version="1.0" encoding="utf-8"?>
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item
+        android:drawable="@drawable/cityfluxlogo"
+        android:gravity="center"
+        android:width="72dp"
+        android:height="72dp" />
+</layer-list>

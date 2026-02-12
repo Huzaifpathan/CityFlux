@@ -13,7 +13,7 @@
 
         <!-- Android 12+ system splash — show logo briefly before Compose loads -->
         <item name="android:windowSplashScreenBackground">#FFFFFF</item>
-        <item name="android:windowSplashScreenAnimatedIcon">@drawable/cityflux_icon</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/cityfluxlogo</item>
         <item name="android:windowSplashScreenAnimationDuration">400</item>
     </style>
 
