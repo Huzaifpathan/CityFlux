@@ -38,12 +38,14 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -134,7 +136,9 @@ class ParkingControlViewModel : ViewModel() {
     }
 
     private fun observeViolations() {
+        val uid = FirebaseAuth.getInstance().currentUser?.uid ?: return
         firestore.collection("parking_violations")
+            .whereEqualTo("officerId", uid)
             .orderBy("timestamp", Query.Direction.DESCENDING)
             .addSnapshotListener { snap, err ->
                 if (err != null) {
@@ -328,15 +332,30 @@ fun ParkingControlScreen(
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         floatingActionButton = {
+            val infiniteTransition = rememberInfiniteTransition(label = "fab")
+            val fabScale by infiniteTransition.animateFloat(
+                initialValue = 1f, targetValue = 1.06f,
+                animationSpec = infiniteRepeatable(tween(1500, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+                label = "fabPulse"
+            )
             FloatingActionButton(
                 onClick = { showAddViolation = true },
-                shape = CircleShape,
+                shape = RoundedCornerShape(CornerRadius.Large),
                 containerColor = AccentRed,
                 contentColor = Color.White,
-                elevation = FloatingActionButtonDefaults.elevation(8.dp),
-                modifier = Modifier.navigationBarsPadding()
+                elevation = FloatingActionButtonDefaults.elevation(8.dp, 12.dp),
+                modifier = Modifier
+                    .navigationBarsPadding()
+                    .graphicsLayer { scaleX = fabScale; scaleY = fabScale }
             ) {
-                Icon(Icons.Filled.Add, "Add Violation", Modifier.size(26.dp))
+                Row(
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(Icons.Filled.Add, "Add Violation", Modifier.size(22.dp))
+                    Text("Report", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                }
             }
         }
     ) { padding ->
@@ -352,44 +371,78 @@ fun ParkingControlScreen(
             // ══════════════════════ Stats Strip ══════════════════════
             ParkingStatsStrip(state = state, colors = colors)
 
+            // ══════════════════════ Quick Actions ══════════════════════
+            QuickActionsRow(
+                onQuickReport = { showAddViolation = true },
+                onToggleMap = { isMapView = !isMapView },
+                isMapView = isMapView,
+                colors = colors
+            )
+
             // ══════════════════════ Nearby Alert Banner ══════════════════════
             AnimatedVisibility(
                 visible = nearbyActiveViolations > 0,
                 enter = expandVertically() + fadeIn(),
                 exit = shrinkVertically() + fadeOut()
             ) {
+                val alertGradient = Brush.horizontalGradient(
+                    listOf(AccentRed.copy(alpha = 0.12f), AccentRed.copy(alpha = 0.06f), AccentRed.copy(alpha = 0.12f))
+                )
                 Surface(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = Spacing.Large, vertical = Spacing.XSmall),
-                    shape = RoundedCornerShape(CornerRadius.Medium),
-                    color = AccentRed.copy(alpha = 0.1f),
+                    shape = RoundedCornerShape(CornerRadius.Large),
+                    color = Color.Transparent,
                     border = BorderStroke(1.dp, AccentRed.copy(alpha = 0.3f))
                 ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        NearbyPulsingIcon()
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                "$nearbyActiveViolations active violation${if (nearbyActiveViolations > 1) "s" else ""} nearby",
-                                style = MaterialTheme.typography.labelMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = AccentRed
-                            )
-                            Text(
-                                "Within 500m of your location",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = colors.textTertiary
-                            )
+                    Box(Modifier.background(alertGradient)) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Box(
+                                Modifier
+                                    .size(34.dp)
+                                    .clip(CircleShape)
+                                    .background(AccentRed.copy(alpha = 0.15f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                NearbyPulsingIcon()
+                            }
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    "⚠ $nearbyActiveViolations active violation${if (nearbyActiveViolations > 1) "s" else ""} nearby",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = AccentRed
+                                )
+                                Text(
+                                    "Within 500m radius of your patrol location",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = colors.textTertiary
+                                )
+                            }
+                            Surface(
+                                shape = RoundedCornerShape(CornerRadius.Small),
+                                color = AccentRed.copy(alpha = 0.12f)
+                            ) {
+                                Text(
+                                    "VIEW",
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    color = AccentRed,
+                                    letterSpacing = 0.5.sp
+                                )
+                            }
                         }
                     }
                 }
             }
 
-            // ══════════════════════ Search + View Toggle ══════════════════════
+            // ══════════════════════ Search Bar ══════════════════════
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -402,7 +455,7 @@ fun ParkingControlScreen(
                     onValueChange = { searchQuery = it },
                     modifier = Modifier.weight(1f),
                     placeholder = {
-                        Text("Search violations...", style = MaterialTheme.typography.bodyMedium, color = colors.textTertiary)
+                        Text("Search plate, address, type...", style = MaterialTheme.typography.bodyMedium, color = colors.textTertiary)
                     },
                     leadingIcon = {
                         Icon(Icons.Outlined.Search, null, tint = colors.textTertiary, modifier = Modifier.size(20.dp))
@@ -419,29 +472,32 @@ fun ParkingControlScreen(
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedContainerColor = colors.cardBackground,
                         unfocusedContainerColor = colors.cardBackground,
-                        focusedBorderColor = AccentParking,
-                        unfocusedBorderColor = colors.cardBorder.copy(alpha = 0.3f),
-                        cursorColor = AccentParking
+                        focusedBorderColor = PrimaryBlue,
+                        unfocusedBorderColor = colors.cardBorder.copy(alpha = 0.2f),
+                        cursorColor = PrimaryBlue
                     ),
                     textStyle = MaterialTheme.typography.bodyMedium.copy(color = colors.textPrimary),
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                     keyboardActions = KeyboardActions(onSearch = { focusManager.clearFocus() })
                 )
 
-                // View toggle
-                FloatingActionButton(
+                // View toggle — enhanced
+                Surface(
                     onClick = { isMapView = !isMapView },
                     modifier = Modifier.size(48.dp),
                     shape = RoundedCornerShape(CornerRadius.Medium),
-                    containerColor = if (isMapView) AccentParking else colors.cardBackground,
-                    elevation = FloatingActionButtonDefaults.elevation(2.dp)
+                    color = if (isMapView) PrimaryBlue else colors.cardBackground,
+                    border = BorderStroke(1.dp, if (isMapView) PrimaryBlue else colors.cardBorder.copy(alpha = 0.2f)),
+                    shadowElevation = 2.dp
                 ) {
-                    Icon(
-                        if (isMapView) Icons.Outlined.ViewList else Icons.Outlined.Map,
-                        "Toggle View",
-                        tint = if (isMapView) Color.White else colors.textSecondary,
-                        modifier = Modifier.size(20.dp)
-                    )
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Icon(
+                            if (isMapView) Icons.Outlined.ViewList else Icons.Outlined.Map,
+                            "Toggle View",
+                            tint = if (isMapView) Color.White else colors.textSecondary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
                 }
             }
 
@@ -498,11 +554,67 @@ fun ParkingControlScreen(
 
                 filteredViolations.isEmpty() && state.parkingSpots.isEmpty() -> {
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Icon(Icons.Outlined.LocalParking, null, tint = colors.textTertiary.copy(alpha = 0.3f), modifier = Modifier.size(56.dp))
-                            Spacer(Modifier.height(12.dp))
-                            Text("No violations recorded", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, color = colors.textPrimary)
-                            Text("Tap + to report a new violation", style = MaterialTheme.typography.bodySmall, color = colors.textSecondary)
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            modifier = Modifier.padding(horizontal = Spacing.XLarge)
+                        ) {
+                            // Police badge empty state
+                            Box(
+                                Modifier
+                                    .size(80.dp)
+                                    .clip(CircleShape)
+                                    .background(
+                                        if (colors.isDark) Color(0xFF1E293B) else Color(0xFFF1F5F9)
+                                    ),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Box(
+                                    Modifier
+                                        .size(56.dp)
+                                        .clip(CircleShape)
+                                        .background(
+                                            if (colors.isDark) Color(0xFF334155) else Color(0xFFE2E8F0)
+                                        ),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        Icons.Filled.Shield,
+                                        null,
+                                        tint = colors.textTertiary.copy(alpha = 0.5f),
+                                        modifier = Modifier.size(30.dp)
+                                    )
+                                }
+                            }
+                            Spacer(Modifier.height(Spacing.Large))
+                            Text(
+                                "All Clear, Officer",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = colors.textPrimary
+                            )
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                "No violations recorded yet. Tap the + button\nto report a new parking violation.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = colors.textSecondary,
+                                textAlign = TextAlign.Center,
+                                lineHeight = 18.sp
+                            )
+                            Spacer(Modifier.height(Spacing.XLarge))
+                            Surface(
+                                shape = RoundedCornerShape(CornerRadius.Round),
+                                color = AccentRed.copy(alpha = 0.1f),
+                                border = BorderStroke(1.dp, AccentRed.copy(alpha = 0.2f))
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    Icon(Icons.Outlined.Add, null, tint = AccentRed, modifier = Modifier.size(16.dp))
+                                    Text("Report Violation", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = AccentRed)
+                                }
+                            }
                         }
                     }
                 }
@@ -517,6 +629,13 @@ fun ParkingControlScreen(
                             top = Spacing.Small, bottom = 100.dp
                         )
                     ) {
+                        // Enforcement Summary at top
+                        if (state.violations.isNotEmpty()) {
+                            item {
+                                EnforcementSummaryCard(state = state, colors = colors)
+                            }
+                            item { Spacer(Modifier.height(Spacing.Small)) }
+                        }
                         // Illegal parking spots section
                         val illegalSpots = state.parkingSpots.filter { !it.isLegal }
                         if (illegalSpots.isNotEmpty() && selectedFilter in listOf("All", "Active")) {
@@ -621,29 +740,46 @@ fun ParkingControlScreen(
 
 
 // ═══════════════════════════════════════════════════════════════════
-// Top Bar
+// Top Bar — Premium Police-Themed Gradient Header
 // ═══════════════════════════════════════════════════════════════════
 
 @Composable
 private fun ParkingControlTopBar(colors: CityFluxColors, nearbyCount: Int) {
-    Surface(modifier = Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.background) {
+    val infiniteTransition = rememberInfiniteTransition(label = "topbar")
+    val patrolPulse by infiniteTransition.animateFloat(
+        initialValue = 0.6f, targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(1200, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+        label = "patrolPulse"
+    )
+    val headerGradient = if (colors.isDark) {
+        Brush.horizontalGradient(listOf(Color(0xFF0F172A), Color(0xFF1E293B), Color(0xFF0F172A)))
+    } else {
+        Brush.horizontalGradient(listOf(Color(0xFF0C2461), Color(0xFF1E3A8A), Color(0xFF1E40AF)))
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(headerGradient)
+            .statusBarsPadding()
+            .padding(horizontal = Spacing.Large, vertical = Spacing.Medium)
+    ) {
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .statusBarsPadding()
-                .padding(horizontal = Spacing.Large, vertical = Spacing.Medium),
+            modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Surface(
-                    modifier = Modifier.size(40.dp),
-                    shape = RoundedCornerShape(CornerRadius.Medium),
-                    color = AccentParking.copy(alpha = 0.1f)
+                // Police shield badge
+                Box(
+                    modifier = Modifier
+                        .size(44.dp)
+                        .clip(RoundedCornerShape(CornerRadius.Medium))
+                        .background(Color.White.copy(alpha = 0.15f))
+                        .border(1.dp, Color.White.copy(alpha = 0.25f), RoundedCornerShape(CornerRadius.Medium)),
+                    contentAlignment = Alignment.Center
                 ) {
-                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Icon(Icons.Filled.LocalParking, null, tint = AccentParking, modifier = Modifier.size(22.dp))
-                    }
+                    Icon(Icons.Filled.Shield, null, tint = Color.White, modifier = Modifier.size(24.dp))
                 }
                 Spacer(Modifier.width(12.dp))
                 Column {
@@ -651,29 +787,58 @@ private fun ParkingControlTopBar(colors: CityFluxColors, nearbyCount: Int) {
                         "Parking Control",
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
-                        color = colors.textPrimary
+                        color = Color.White
                     )
-                    Text(
-                        "Violations enforcement",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = colors.textSecondary
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Box(
+                            Modifier
+                                .size(7.dp)
+                                .clip(CircleShape)
+                                .background(AccentGreen.copy(alpha = patrolPulse))
+                        )
+                        Text(
+                            "On Patrol · Enforcement Active",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Color.White.copy(alpha = 0.75f),
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
                 }
             }
 
-            if (nearbyCount > 0) {
-                Surface(
-                    shape = RoundedCornerShape(CornerRadius.Round),
-                    color = AccentRed.copy(alpha = 0.12f)
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+            Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                if (nearbyCount > 0) {
+                    Surface(
+                        shape = RoundedCornerShape(CornerRadius.Round),
+                        color = AccentRed.copy(alpha = 0.9f)
                     ) {
-                        NearbyPulsingIcon()
-                        Text("$nearbyCount nearby", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = AccentRed)
+                        Row(
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Box(
+                                Modifier
+                                    .size(6.dp)
+                                    .clip(CircleShape)
+                                    .background(Color.White.copy(alpha = patrolPulse))
+                            )
+                            Text("$nearbyCount ALERT", fontSize = 10.sp, fontWeight = FontWeight.ExtraBold, color = Color.White, letterSpacing = 0.5.sp)
+                        }
                     }
+                }
+                // Timestamp badge
+                Surface(
+                    shape = RoundedCornerShape(4.dp),
+                    color = Color.White.copy(alpha = 0.1f)
+                ) {
+                    Text(
+                        java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()).format(java.util.Date()),
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color.White.copy(alpha = 0.7f)
+                    )
                 }
             }
         }
@@ -682,7 +847,7 @@ private fun ParkingControlTopBar(colors: CityFluxColors, nearbyCount: Int) {
 
 
 // ═══════════════════════════════════════════════════════════════════
-// Stats Strip
+// Stats Strip — Glass-Morphism Cards with Icons
 // ═══════════════════════════════════════════════════════════════════
 
 @Composable
@@ -693,24 +858,259 @@ private fun ParkingStatsStrip(state: ParkingControlViewModel.ParkingControlState
             .padding(horizontal = Spacing.Large, vertical = Spacing.Small),
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        ParkingStatChip("Active", state.activeCount.toString(), AccentRed, Modifier.weight(1f))
-        ParkingStatChip("Cleared", state.clearedCount.toString(), AccentGreen, Modifier.weight(1f))
-        ParkingStatChip("Fines", state.totalFines.toString(), AccentAlerts, Modifier.weight(1f))
-        ParkingStatChip("Warnings", state.totalWarnings.toString(), AccentOrange, Modifier.weight(1f))
+        ParkingStatCard("Active", state.activeCount.toString(), AccentRed, Icons.Filled.ErrorOutline, Modifier.weight(1f))
+        ParkingStatCard("Cleared", state.clearedCount.toString(), AccentGreen, Icons.Filled.CheckCircle, Modifier.weight(1f))
+        ParkingStatCard("Fines", state.totalFines.toString(), AccentAlerts, Icons.Filled.Receipt, Modifier.weight(1f))
+        ParkingStatCard("Warnings", state.totalWarnings.toString(), AccentOrange, Icons.Filled.Warning, Modifier.weight(1f))
     }
 }
 
 @Composable
-private fun ParkingStatChip(label: String, value: String, color: Color, modifier: Modifier) {
+private fun ParkingStatCard(
+    label: String,
+    value: String,
+    color: Color,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    modifier: Modifier
+) {
     val tc = MaterialTheme.cityFluxColors
-    Surface(modifier = modifier, shape = RoundedCornerShape(CornerRadius.Medium), color = color.copy(alpha = 0.08f)) {
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(CornerRadius.Large),
+        color = color.copy(alpha = 0.08f),
+        border = BorderStroke(1.dp, color.copy(alpha = 0.15f))
+    ) {
         Column(
-            modifier = Modifier.padding(vertical = 8.dp, horizontal = 6.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
+            modifier = Modifier.padding(vertical = 10.dp, horizontal = 8.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(2.dp)
         ) {
-            Text(value, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = color)
-            Text(label, fontSize = 10.sp, color = tc.textTertiary, fontWeight = FontWeight.Medium)
+            Box(
+                Modifier
+                    .size(28.dp)
+                    .clip(CircleShape)
+                    .background(color.copy(alpha = 0.12f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(icon, null, tint = color, modifier = Modifier.size(15.dp))
+            }
+            Text(value, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.ExtraBold, color = color)
+            Text(label, fontSize = 10.sp, color = tc.textTertiary, fontWeight = FontWeight.SemiBold, letterSpacing = 0.3.sp)
         }
+    }
+}
+
+
+// ═══════════════════════════════════════════════════════════════════
+// Quick Actions Row — Officer Shortcuts
+// ═══════════════════════════════════════════════════════════════════
+
+@Composable
+private fun QuickActionsRow(
+    onQuickReport: () -> Unit,
+    onToggleMap: () -> Unit,
+    isMapView: Boolean,
+    colors: CityFluxColors
+) {
+    LazyRow(
+        modifier = Modifier.padding(vertical = Spacing.Small),
+        contentPadding = PaddingValues(horizontal = Spacing.Large),
+        horizontalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        item {
+            QuickActionChip(
+                label = "Quick Report",
+                icon = Icons.Filled.AddCircle,
+                color = AccentRed,
+                onClick = onQuickReport
+            )
+        }
+        item {
+            QuickActionChip(
+                label = if (isMapView) "List View" else "Map View",
+                icon = if (isMapView) Icons.Outlined.ViewList else Icons.Outlined.Map,
+                color = AccentParking,
+                onClick = onToggleMap
+            )
+        }
+        item {
+            QuickActionChip(
+                label = "Scan Plate",
+                icon = Icons.Outlined.CameraAlt,
+                color = PrimaryBlue,
+                onClick = { /* Placeholder for plate scanner */ }
+            )
+        }
+        item {
+            QuickActionChip(
+                label = "Shift Log",
+                icon = Icons.Outlined.Assessment,
+                color = AccentAlerts,
+                onClick = { /* Placeholder for shift summary */ }
+            )
+        }
+    }
+}
+
+@Composable
+private fun QuickActionChip(
+    label: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    color: Color,
+    onClick: () -> Unit
+) {
+    val tc = MaterialTheme.cityFluxColors
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(CornerRadius.Round),
+        color = tc.cardBackground,
+        border = BorderStroke(1.dp, color.copy(alpha = 0.25f)),
+        shadowElevation = 2.dp
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 9.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(7.dp)
+        ) {
+            Box(
+                Modifier
+                    .size(24.dp)
+                    .clip(CircleShape)
+                    .background(color.copy(alpha = 0.12f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(icon, null, tint = color, modifier = Modifier.size(14.dp))
+            }
+            Text(label, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold, color = tc.textPrimary)
+        }
+    }
+}
+
+
+// ═══════════════════════════════════════════════════════════════════
+// Enforcement Summary Card — Daily Patrol Overview
+// ═══════════════════════════════════════════════════════════════════
+
+@Composable
+private fun EnforcementSummaryCard(state: ParkingControlViewModel.ParkingControlState, colors: CityFluxColors) {
+    val gradient = if (colors.isDark) {
+        Brush.horizontalGradient(listOf(Color(0xFF1E293B), Color(0xFF162033), Color(0xFF1E293B)))
+    } else {
+        Brush.horizontalGradient(listOf(Color(0xFF0C2461), Color(0xFF1E3A8A), Color(0xFF1E40AF)))
+    }
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .shadow(8.dp, RoundedCornerShape(CornerRadius.XLarge)),
+        shape = RoundedCornerShape(CornerRadius.XLarge),
+        colors = CardDefaults.cardColors(containerColor = Color.Transparent)
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(gradient)
+                .padding(Spacing.Large)
+        ) {
+            Column {
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Icon(Icons.Filled.Assessment, null, tint = Color.White.copy(alpha = 0.9f), modifier = Modifier.size(18.dp))
+                        Text(
+                            "Shift Summary",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White
+                        )
+                    }
+                    Surface(
+                        shape = RoundedCornerShape(4.dp),
+                        color = Color.White.copy(alpha = 0.15f)
+                    ) {
+                        Text(
+                            "TODAY",
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = Color.White.copy(alpha = 0.8f),
+                            letterSpacing = 1.sp
+                        )
+                    }
+                }
+
+                Spacer(Modifier.height(Spacing.Medium))
+
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceEvenly
+                ) {
+                    SummaryMetric("Total", state.violations.size.toString(), Color.White)
+                    Box(
+                        Modifier
+                            .width(1.dp)
+                            .height(36.dp)
+                            .background(Color.White.copy(alpha = 0.15f))
+                    )
+                    SummaryMetric("Active", state.activeCount.toString(), Color(0xFFFCA5A5))
+                    Box(
+                        Modifier
+                            .width(1.dp)
+                            .height(36.dp)
+                            .background(Color.White.copy(alpha = 0.15f))
+                    )
+                    SummaryMetric("Resolved", state.clearedCount.toString(), Color(0xFF6EE7B7))
+                    Box(
+                        Modifier
+                            .width(1.dp)
+                            .height(36.dp)
+                            .background(Color.White.copy(alpha = 0.15f))
+                    )
+                    SummaryMetric("Zones", state.illegalSpots.toString(), Color(0xFFFCD34D))
+                }
+
+                // Enforcement progress bar
+                if (state.violations.isNotEmpty()) {
+                    Spacer(Modifier.height(Spacing.Medium))
+                    val resolvedRatio = if (state.violations.isNotEmpty())
+                        state.clearedCount.toFloat() / state.violations.size.toFloat()
+                    else 0f
+                    Column {
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text("Resolution Rate", fontSize = 10.sp, color = Color.White.copy(alpha = 0.6f))
+                            Text("${(resolvedRatio * 100).toInt()}%", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.White.copy(alpha = 0.9f))
+                        }
+                        Spacer(Modifier.height(4.dp))
+                        Box(
+                            Modifier
+                                .fillMaxWidth()
+                                .height(4.dp)
+                                .clip(RoundedCornerShape(2.dp))
+                                .background(Color.White.copy(alpha = 0.15f))
+                        ) {
+                            Box(
+                                Modifier
+                                    .fillMaxWidth(resolvedRatio)
+                                    .height(4.dp)
+                                    .clip(RoundedCornerShape(2.dp))
+                                    .background(Brush.horizontalGradient(listOf(AccentGreen, Color(0xFF34D399))))
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SummaryMetric(label: String, value: String, valueColor: Color) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(value, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.ExtraBold, color = valueColor)
+        Text(label, fontSize = 9.sp, color = Color.White.copy(alpha = 0.55f), fontWeight = FontWeight.Medium, letterSpacing = 0.3.sp)
     }
 }
 
@@ -725,6 +1125,13 @@ private fun ParkingFilterChip(label: String, count: Int, isSelected: Boolean, on
     val color = when (label) {
         "Active" -> AccentRed; "Cleared" -> AccentGreen; "Fines" -> AccentAlerts; "Warnings" -> AccentOrange; else -> AccentParking
     }
+    val icon = when (label) {
+        "Active" -> Icons.Outlined.ErrorOutline
+        "Cleared" -> Icons.Outlined.CheckCircle
+        "Fines" -> Icons.Outlined.Receipt
+        "Warnings" -> Icons.Outlined.Warning
+        else -> Icons.Outlined.FilterList
+    }
     val bg = if (isSelected) color.copy(alpha = 0.15f) else tc.cardBackground
     val border = if (isSelected) color.copy(alpha = 0.4f) else tc.cardBorder.copy(alpha = 0.2f)
     val content = if (isSelected) color else tc.textSecondary
@@ -734,16 +1141,17 @@ private fun ParkingFilterChip(label: String, count: Int, isSelected: Boolean, on
         shape = RoundedCornerShape(CornerRadius.Round),
         color = bg,
         border = BorderStroke(1.dp, border),
-        modifier = Modifier.height(34.dp)
+        modifier = Modifier.height(36.dp)
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
+            horizontalArrangement = Arrangement.spacedBy(5.dp)
         ) {
+            Icon(icon, null, tint = content, modifier = Modifier.size(14.dp))
             Text(label, style = MaterialTheme.typography.labelMedium, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium, color = content)
             if (count > 0 && isSelected) {
-                Surface(shape = CircleShape, color = content.copy(alpha = 0.2f), modifier = Modifier.size(18.dp)) {
+                Surface(shape = CircleShape, color = content.copy(alpha = 0.2f), modifier = Modifier.size(20.dp)) {
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         Text(count.toString(), fontSize = 9.sp, fontWeight = FontWeight.Bold, color = content)
                     }
@@ -771,9 +1179,24 @@ private fun ParkingSectionHeader(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        Icon(icon, null, tint = color, modifier = Modifier.size(20.dp))
-        Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = tc.textPrimary)
-        Text("· $subtitle", style = MaterialTheme.typography.labelSmall, color = tc.textTertiary)
+        Box(
+            Modifier
+                .size(28.dp)
+                .clip(RoundedCornerShape(7.dp))
+                .background(color.copy(alpha = 0.1f)),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(icon, null, tint = color, modifier = Modifier.size(16.dp))
+        }
+        Column(Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = tc.textPrimary)
+            Text(subtitle, style = MaterialTheme.typography.labelSmall, color = tc.textTertiary)
+        }
+        HorizontalDivider(
+            modifier = Modifier.weight(0.5f),
+            color = color.copy(alpha = 0.15f),
+            thickness = 1.dp
+        )
     }
 }
 
@@ -799,59 +1222,108 @@ private fun IllegalSpotCard(
             .fillMaxWidth()
             .shadow(4.dp, RoundedCornerShape(CornerRadius.Large), ambientColor = colors.cardShadow),
         shape = RoundedCornerShape(CornerRadius.Large),
-        colors = CardDefaults.cardColors(containerColor = colors.cardBackground)
+        colors = CardDefaults.cardColors(containerColor = colors.cardBackground),
+        border = BorderStroke(1.dp, AccentAlerts.copy(alpha = 0.15f))
     ) {
         Row(modifier = Modifier.height(IntrinsicSize.Min)) {
             Box(
                 Modifier
-                    .width(4.dp)
+                    .width(5.dp)
                     .fillMaxHeight()
                     .clip(RoundedCornerShape(topStart = CornerRadius.Large, bottomStart = CornerRadius.Large))
-                    .background(AccentAlerts)
+                    .background(Brush.verticalGradient(listOf(AccentAlerts, AccentRed)))
             )
-            Row(
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(Spacing.Large),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
+                    .padding(Spacing.Large)
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
-                    Surface(Modifier.size(38.dp), shape = RoundedCornerShape(CornerRadius.Medium), color = AccentAlerts.copy(alpha = 0.1f)) {
-                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                        Box(
+                            Modifier
+                                .size(40.dp)
+                                .clip(RoundedCornerShape(CornerRadius.Medium))
+                                .background(AccentAlerts.copy(alpha = 0.1f)),
+                            contentAlignment = Alignment.Center
+                        ) {
                             Icon(Icons.Filled.Warning, null, tint = AccentAlerts, modifier = Modifier.size(20.dp))
                         }
+                        Spacer(Modifier.width(10.dp))
+                        Column {
+                            Text(
+                                spot.address.ifBlank { "Zone ${spot.id.take(6)}" },
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = colors.textPrimary,
+                                maxLines = 1, overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                buildString {
+                                    append("$available / ${spot.totalSlots} occupied")
+                                    if (dist != null) append(" · ${formatDistParking(dist)}")
+                                },
+                                style = MaterialTheme.typography.labelSmall,
+                                color = colors.textTertiary
+                            )
+                        }
                     }
-                    Spacer(Modifier.width(10.dp))
-                    Column {
+                    Surface(
+                        shape = RoundedCornerShape(4.dp),
+                        color = AccentRed.copy(alpha = 0.12f),
+                        border = BorderStroke(0.5.dp, AccentRed.copy(alpha = 0.2f))
+                    ) {
                         Text(
-                            spot.address.ifBlank { "Zone ${spot.id.take(6)}" },
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.Bold,
-                            color = colors.textPrimary,
-                            maxLines = 1, overflow = TextOverflow.Ellipsis
-                        )
-                        Text(
-                            buildString {
-                                append("$available / ${spot.totalSlots} occupied")
-                                if (dist != null) append(" · ${formatDistParking(dist)}")
-                            },
+                            "ILLEGAL",
                             style = MaterialTheme.typography.labelSmall,
-                            color = colors.textTertiary
+                            fontWeight = FontWeight.ExtraBold,
+                            color = AccentRed,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                            letterSpacing = 0.5.sp
                         )
                     }
                 }
-                Surface(
-                    shape = RoundedCornerShape(4.dp),
-                    color = AccentRed.copy(alpha = 0.12f)
-                ) {
-                    Text(
-                        "ILLEGAL",
-                        style = MaterialTheme.typography.labelSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = AccentRed,
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
-                    )
+
+                // Occupancy progress bar
+                if (spot.totalSlots > 0) {
+                    Spacer(Modifier.height(Spacing.Small))
+                    val occupancyRatio = (spot.totalSlots - available).toFloat() / spot.totalSlots.toFloat()
+                    val barColor = when {
+                        occupancyRatio > 0.8f -> AccentRed
+                        occupancyRatio > 0.5f -> AccentAlerts
+                        else -> AccentGreen
+                    }
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Box(
+                            Modifier
+                                .weight(1f)
+                                .height(4.dp)
+                                .clip(RoundedCornerShape(2.dp))
+                                .background(colors.cardBorder.copy(alpha = 0.15f))
+                        ) {
+                            Box(
+                                Modifier
+                                    .fillMaxWidth(occupancyRatio.coerceIn(0f, 1f))
+                                    .height(4.dp)
+                                    .clip(RoundedCornerShape(2.dp))
+                                    .background(barColor)
+                            )
+                        }
+                        Text(
+                            "${(occupancyRatio * 100).toInt()}%",
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = barColor
+                        )
+                    }
                 }
             }
         }
@@ -896,21 +1368,36 @@ private fun ViolationCard(
             ),
         shape = RoundedCornerShape(CornerRadius.Large),
         colors = CardDefaults.cardColors(containerColor = colors.cardBackground),
-        border = if (isExpanded) BorderStroke(1.dp, accentColor.copy(alpha = 0.3f)) else null
+        border = if (isExpanded) BorderStroke(1.5.dp, accentColor.copy(alpha = 0.35f))
+                 else BorderStroke(1.dp, colors.cardBorder.copy(alpha = 0.08f))
     ) {
         Row(modifier = Modifier.height(IntrinsicSize.Min)) {
+            // Accent side bar with gradient
             Box(
                 Modifier
-                    .width(4.dp)
+                    .width(5.dp)
                     .fillMaxHeight()
                     .clip(RoundedCornerShape(topStart = CornerRadius.Large, bottomStart = CornerRadius.Large))
-                    .background(accentColor)
+                    .background(Brush.verticalGradient(listOf(accentColor, accentColor.copy(alpha = 0.5f))))
             )
             Column(modifier = Modifier.padding(Spacing.Large)) {
                 // Header
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Surface(Modifier.size(42.dp), shape = RoundedCornerShape(CornerRadius.Medium), color = accentColor.copy(alpha = 0.1f)) {
-                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    // Icon with double-ring
+                    Box(contentAlignment = Alignment.Center) {
+                        Box(
+                            Modifier
+                                .size(46.dp)
+                                .clip(RoundedCornerShape(CornerRadius.Medium))
+                                .background(accentColor.copy(alpha = 0.06f))
+                        )
+                        Box(
+                            Modifier
+                                .size(42.dp)
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(accentColor.copy(alpha = 0.1f)),
+                            contentAlignment = Alignment.Center
+                        ) {
                             Icon(
                                 when (violation.actionType) {
                                     "fine" -> Icons.Outlined.Receipt
@@ -943,18 +1430,31 @@ private fun ViolationCard(
                             Text("· $timeAgo", style = MaterialTheme.typography.labelSmall, color = colors.textTertiary)
                         }
                     }
-                    // Status chip
+                    // Status chip — enhanced
                     Surface(
                         shape = RoundedCornerShape(CornerRadius.Small),
-                        color = if (isActive) AccentRed.copy(alpha = 0.12f) else AccentGreen.copy(alpha = 0.12f)
+                        color = if (isActive) AccentRed.copy(alpha = 0.12f) else AccentGreen.copy(alpha = 0.12f),
+                        border = BorderStroke(0.5.dp, if (isActive) AccentRed.copy(alpha = 0.2f) else AccentGreen.copy(alpha = 0.2f))
                     ) {
-                        Text(
-                            violation.status,
+                        Row(
                             modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
-                            style = MaterialTheme.typography.labelMedium,
-                            fontWeight = FontWeight.SemiBold,
-                            color = if (isActive) AccentRed else AccentGreen
-                        )
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Box(
+                                Modifier
+                                    .size(6.dp)
+                                    .clip(CircleShape)
+                                    .background(if (isActive) AccentRed else AccentGreen)
+                            )
+                            Text(
+                                violation.status.uppercase(),
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = if (isActive) AccentRed else AccentGreen,
+                                letterSpacing = 0.5.sp
+                            )
+                        }
                     }
                 }
 
@@ -993,9 +1493,21 @@ private fun ViolationCard(
                             Text(violation.address, style = MaterialTheme.typography.labelSmall, color = colors.textTertiary, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }
                     }
-                    Spacer(Modifier.height(4.dp))
+                    Spacer(Modifier.height(6.dp))
                     Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                        Icon(Icons.Filled.ExpandMore, "Expand", tint = colors.textTertiary.copy(alpha = 0.4f), modifier = Modifier.size(20.dp))
+                        Surface(
+                            shape = RoundedCornerShape(4.dp),
+                            color = colors.textTertiary.copy(alpha = 0.06f)
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 3.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Text("Details", fontSize = 9.sp, color = colors.textTertiary.copy(alpha = 0.5f), fontWeight = FontWeight.Medium)
+                                Icon(Icons.Filled.ExpandMore, "Expand", tint = colors.textTertiary.copy(alpha = 0.4f), modifier = Modifier.size(14.dp))
+                            }
+                        }
                     }
                 }
 
@@ -1106,9 +1618,21 @@ private fun ViolationCard(
 @Composable
 private fun ViolationMetaRow(label: String, value: String, icon: androidx.compose.ui.graphics.vector.ImageVector) {
     val c = MaterialTheme.cityFluxColors
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        Icon(icon, null, tint = c.textTertiary, modifier = Modifier.size(16.dp))
-        Text(label, style = MaterialTheme.typography.labelSmall, color = c.textTertiary, modifier = Modifier.width(60.dp))
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        modifier = Modifier.padding(vertical = 1.dp)
+    ) {
+        Box(
+            Modifier
+                .size(26.dp)
+                .clip(RoundedCornerShape(6.dp))
+                .background(c.textTertiary.copy(alpha = 0.06f)),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(icon, null, tint = c.textTertiary, modifier = Modifier.size(14.dp))
+        }
+        Text(label, style = MaterialTheme.typography.labelSmall, color = c.textTertiary, modifier = Modifier.width(58.dp), fontWeight = FontWeight.Medium)
         Text(value, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold, color = c.textPrimary, maxLines = 2, overflow = TextOverflow.Ellipsis)
     }
 }
@@ -1262,15 +1786,34 @@ private fun AddViolationDialog(
                     .verticalScroll(rememberScrollState())
                     .padding(Spacing.Large)
             ) {
-                // Header
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Filled.AddCircle, null, tint = AccentRed, modifier = Modifier.size(24.dp))
-                        Spacer(Modifier.width(8.dp))
-                        Text("New Violation", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = colors.textPrimary)
-                    }
-                    IconButton(onClick = { if (!isSubmitting) onDismiss() }, modifier = Modifier.size(28.dp)) {
-                        Icon(Icons.Filled.Close, "Close", tint = colors.textTertiary, modifier = Modifier.size(18.dp))
+                // Header — Enhanced with gradient
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(CornerRadius.Medium))
+                        .background(AccentRed.copy(alpha = 0.06f))
+                        .padding(Spacing.Medium)
+                ) {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(
+                                Modifier
+                                    .size(36.dp)
+                                    .clip(CircleShape)
+                                    .background(AccentRed.copy(alpha = 0.12f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(Icons.Filled.AddCircle, null, tint = AccentRed, modifier = Modifier.size(20.dp))
+                            }
+                            Spacer(Modifier.width(10.dp))
+                            Column {
+                                Text("New Violation", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = colors.textPrimary)
+                                Text("Record parking offense", style = MaterialTheme.typography.labelSmall, color = colors.textTertiary)
+                            }
+                        }
+                        IconButton(onClick = { if (!isSubmitting) onDismiss() }, modifier = Modifier.size(32.dp)) {
+                            Icon(Icons.Filled.Close, "Close", tint = colors.textTertiary, modifier = Modifier.size(18.dp))
+                        }
                     }
                 }
 
@@ -1525,16 +2068,29 @@ private fun AddViolationDialog(
 private fun NearbyPulsingIcon() {
     val infiniteTransition = rememberInfiniteTransition(label = "nearby")
     val alpha by infiniteTransition.animateFloat(
-        initialValue = 0.4f, targetValue = 1f,
+        initialValue = 0.3f, targetValue = 1f,
         animationSpec = infiniteRepeatable(tween(700, easing = FastOutSlowInEasing), RepeatMode.Reverse),
         label = "nearbyAlpha"
     )
-    Box(
-        Modifier
-            .size(10.dp)
-            .clip(CircleShape)
-            .background(AccentRed.copy(alpha = alpha))
+    val scale by infiniteTransition.animateFloat(
+        initialValue = 0.8f, targetValue = 1.2f,
+        animationSpec = infiniteRepeatable(tween(700, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+        label = "nearbyScale"
     )
+    Box(contentAlignment = Alignment.Center) {
+        Box(
+            Modifier
+                .size((14 * scale).dp)
+                .clip(CircleShape)
+                .background(AccentRed.copy(alpha = alpha * 0.2f))
+        )
+        Box(
+            Modifier
+                .size(10.dp)
+                .clip(CircleShape)
+                .background(AccentRed.copy(alpha = alpha))
+        )
+    }
 }
 
 

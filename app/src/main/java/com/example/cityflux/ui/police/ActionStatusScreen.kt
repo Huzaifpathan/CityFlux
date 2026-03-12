@@ -34,6 +34,8 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -52,6 +54,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.example.cityflux.model.Report
+import com.example.cityflux.model.LocationUtils
 import com.example.cityflux.ui.theme.*
 import com.google.firebase.Timestamp
 import com.google.firebase.auth.FirebaseAuth
@@ -136,6 +139,7 @@ class ActionStatusViewModel : ViewModel() {
 
     init { observeReports() }
 
+    // Load all reports; proximity filtering done in composable
     private fun observeReports() {
         firestore.collection("reports")
             .orderBy("timestamp", Query.Direction.DESCENDING)
@@ -242,39 +246,77 @@ fun ActionStatusScreen(
     val state by vm.uiState.collectAsState()
     val focusManager = LocalFocusManager.current
 
+    // ── Police working location for proximity filtering ──
+    var policeLat by remember { mutableStateOf(0.0) }
+    var policeLon by remember { mutableStateOf(0.0) }
+
+    LaunchedEffect(Unit) {
+        val uid = FirebaseAuth.getInstance().currentUser?.uid ?: return@LaunchedEffect
+        FirebaseFirestore.getInstance().collection("users").document(uid).get()
+            .addOnSuccessListener { doc ->
+                policeLat = doc.getDouble("workingLatitude") ?: 0.0
+                policeLon = doc.getDouble("workingLongitude") ?: 0.0
+            }
+    }
+
+    // Proximity-filtered reports within 4 km, excluding resolved
+    val nearbyReports = remember(state.allReports, policeLat, policeLon) {
+        val proxFiltered = if (policeLat == 0.0 && policeLon == 0.0) state.allReports
+        else state.allReports.filter {
+            LocationUtils.isWithinRadius(policeLat, policeLon, it.latitude, it.longitude)
+        }
+        // Only show pending and in-progress (not resolved)
+        proxFiltered.filter {
+            !it.status.equals("Resolved", true)
+        }
+    }
+
     var selectedTab by remember { mutableIntStateOf(0) }
     var searchQuery by remember { mutableStateOf("") }
     var selectedCase by remember { mutableStateOf<Report?>(null) }
     var showChatFor by remember { mutableStateOf<Report?>(null) }
     var showProofFor by remember { mutableStateOf<Report?>(null) }
     var showDailyReport by remember { mutableStateOf(false) }
+    var selectedTypeFilter by remember { mutableStateOf("All") }
+    var dismissUrgencyBanner by remember { mutableStateOf(false) }
 
     // Auto-select report if navigated from Reports screen
-    LaunchedEffect(initialReportId, state.allReports) {
-        if (initialReportId != null && state.allReports.isNotEmpty()) {
-            val targetReport = state.allReports.find { it.id == initialReportId }
+    LaunchedEffect(initialReportId, nearbyReports) {
+        if (initialReportId != null && nearbyReports.isNotEmpty()) {
+            val targetReport = nearbyReports.find { it.id == initialReportId }
             if (targetReport != null) {
                 selectedCase = targetReport
-                // Switch to the appropriate tab
                 selectedTab = when {
-                    state.assignedCases.any { it.id == initialReportId } -> 0
-                    state.pendingCases.any { it.id == initialReportId } -> 1
-                    state.resolvedCases.any { it.id == initialReportId } -> 2
-                    else -> 3 // All tab
+                    targetReport.status.equals("In Progress", true) ||
+                    targetReport.status.equals("in_progress", true) -> 0
+                    targetReport.status.equals("Pending", true) ||
+                    targetReport.status.equals("submitted", true) -> 1
+                    else -> 2
                 }
                 onReportHandled()
             }
         }
     }
 
-    val tabs = listOf("Assigned", "Pending", "Resolved", "All")
+    // Derived lists from nearby (non-resolved) reports
+    val assignedCases = remember(nearbyReports) {
+        nearbyReports.filter {
+            it.status.equals("In Progress", true) || it.status.equals("in_progress", true)
+        }
+    }
+    val pendingCases = remember(nearbyReports) {
+        nearbyReports.filter {
+            it.status.equals("Pending", true) || it.status.equals("submitted", true)
+        }
+    }
 
-    val displayedReports = remember(state.allReports, selectedTab, searchQuery) {
+    val tabs = listOf("In Progress", "Pending", "All")
+
+    val displayedReports = remember(nearbyReports, selectedTab, searchQuery, selectedTypeFilter, assignedCases, pendingCases) {
         var list = when (selectedTab) {
-            0 -> state.assignedCases
-            1 -> state.pendingCases
-            2 -> state.resolvedCases
-            else -> state.allReports
+            0 -> assignedCases
+            1 -> pendingCases
+            else -> nearbyReports
         }
         if (searchQuery.isNotBlank()) {
             val q = searchQuery.lowercase()
@@ -282,6 +324,22 @@ fun ActionStatusScreen(
                 it.title.lowercase().contains(q) ||
                         it.description.lowercase().contains(q) ||
                         it.type.lowercase().replace("_", " ").contains(q)
+            }
+        }
+        if (selectedTypeFilter != "All") {
+            val typeMapping = mapOf(
+                "Parking" to "illegal_parking",
+                "Accident" to "accident",
+                "Hawker" to "hawker",
+                "Road" to "road_damage",
+                "Traffic" to "traffic_violation"
+            )
+            val mappedType = typeMapping[selectedTypeFilter]
+            list = if (mappedType != null) {
+                list.filter { it.type.equals(mappedType, true) }
+            } else {
+                val knownTypes = typeMapping.values.toSet()
+                list.filter { it.type.lowercase() !in knownTypes }
             }
         }
         list
@@ -295,12 +353,32 @@ fun ActionStatusScreen(
         ) {
             // ══════════════════════ Top Header ══════════════════════
             ActionTopBar(
-                colors = colors, state = state,
-                onDailyReport = { showDailyReport = true }
+                colors = colors,
+                todayCasesCount = nearbyReports.count { r ->
+                    val cal = Calendar.getInstance()
+                    cal.set(Calendar.HOUR_OF_DAY, 0); cal.set(Calendar.MINUTE, 0); cal.set(Calendar.SECOND, 0)
+                    r.timestamp?.toDate()?.after(cal.time) == true
+                },
+                onDailyReport = { showDailyReport = true },
+                onBack = onBack
             )
 
+            // ══════════════════════ Urgency Banner ══════════════════════
+            val urgentCount = nearbyReports.count { it.type.equals("accident", true) }
+            if (urgentCount > 0 && !dismissUrgencyBanner) {
+                UrgencyBanner(
+                    urgentCount = urgentCount,
+                    onDismiss = { dismissUrgencyBanner = true }
+                )
+            }
+
             // ══════════════════════ Stats ══════════════════════
-            ActionStatsRow(state = state)
+            ActionStatsRow(
+                inProgressCount = assignedCases.size,
+                pendingCount = pendingCases.size,
+                totalCount = nearbyReports.size,
+                resolvedCount = state.resolvedCases.size
+            )
 
             // ══════════════════════ Search ══════════════════════
             OutlinedTextField(
@@ -331,6 +409,50 @@ fun ActionStatusScreen(
                 keyboardActions = KeyboardActions(onSearch = { focusManager.clearFocus() })
             )
 
+            // ══════════════════════ Type Filters ══════════════════════
+            val typeFilters = listOf("All", "Parking", "Accident", "Hawker", "Road", "Traffic", "Other")
+            LazyRow(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = Spacing.Large, vertical = Spacing.XSmall),
+                horizontalArrangement = Arrangement.spacedBy(Spacing.Small)
+            ) {
+                items(typeFilters) { filter ->
+                    val isSelected = selectedTypeFilter == filter
+                    val chipColor = when (filter) {
+                        "Parking" -> AccentAlerts
+                        "Accident" -> AccentRed
+                        "Hawker" -> AccentOrange
+                        "Road" -> Color(0xFFEF4444)
+                        "Traffic" -> PrimaryBlue
+                        "Other" -> colors.textTertiary
+                        else -> PrimaryBlue
+                    }
+                    FilterChip(
+                        selected = isSelected,
+                        onClick = { selectedTypeFilter = filter },
+                        label = {
+                            Text(
+                                filter,
+                                fontSize = 12.sp,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
+                            )
+                        },
+                        shape = RoundedCornerShape(CornerRadius.Round),
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = chipColor.copy(alpha = 0.15f),
+                            selectedLabelColor = chipColor
+                        ),
+                        border = FilterChipDefaults.filterChipBorder(
+                            borderColor = colors.cardBorder.copy(alpha = 0.3f),
+                            selectedBorderColor = chipColor.copy(alpha = 0.5f),
+                            enabled = true,
+                            selected = isSelected
+                        )
+                    )
+                }
+            }
+
             // ══════════════════════ Tab Row ══════════════════════
             ScrollableTabRow(
                 selectedTabIndex = selectedTab,
@@ -338,19 +460,26 @@ fun ActionStatusScreen(
                 contentColor = PrimaryBlue,
                 edgePadding = Spacing.Large,
                 divider = {},
-                indicator = {
-                    TabRowDefaults.SecondaryIndicator(
-                        height = 3.dp,
-                        color = PrimaryBlue
-                    )
+                indicator = @Composable { tabPositions ->
+                    if (selectedTab < tabPositions.size) {
+                        val currentTabPosition = tabPositions[selectedTab]
+                        Box(
+                            Modifier
+                                .fillMaxWidth()
+                                .wrapContentSize(Alignment.BottomStart)
+                                .offset(x = currentTabPosition.left)
+                                .width(currentTabPosition.width)
+                                .height(3.dp)
+                                .background(PrimaryBlue, RoundedCornerShape(topStart = 3.dp, topEnd = 3.dp))
+                        )
+                    }
                 }
             ) {
                 tabs.forEachIndexed { index, title ->
                     val count = when (index) {
-                        0 -> state.assignedCases.size
-                        1 -> state.pendingCases.size
-                        2 -> state.resolvedCases.size
-                        else -> state.totalCases
+                        0 -> assignedCases.size
+                        1 -> pendingCases.size
+                        else -> nearbyReports.size
                     }
                     Tab(
                         selected = selectedTab == index,
@@ -387,12 +516,27 @@ fun ActionStatusScreen(
                 }
 
                 displayedReports.isEmpty() -> {
+                    val emptyIcon = when (selectedTab) {
+                        0 -> Icons.Outlined.Engineering
+                        1 -> Icons.Outlined.CheckCircle
+                        else -> Icons.Outlined.Inbox
+                    }
+                    val emptyTitle = when (selectedTab) {
+                        0 -> "No Active Cases"
+                        1 -> "All Caught Up!"
+                        else -> "No Cases Nearby"
+                    }
+                    val emptySubtitle = when (selectedTab) {
+                        0 -> "Pick up pending cases to start working"
+                        1 -> "No pending cases in your area"
+                        else -> "Cases within your patrol area will appear here"
+                    }
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Icon(Icons.Outlined.Inbox, null, tint = colors.textTertiary.copy(alpha = 0.3f), modifier = Modifier.size(56.dp))
+                            Icon(emptyIcon, null, tint = colors.textTertiary.copy(alpha = 0.3f), modifier = Modifier.size(56.dp))
                             Spacer(Modifier.height(12.dp))
-                            Text("No cases found", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, color = colors.textPrimary)
-                            Text("Cases will appear here", style = MaterialTheme.typography.bodySmall, color = colors.textSecondary)
+                            Text(emptyTitle, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, color = colors.textPrimary)
+                            Text(emptySubtitle, style = MaterialTheme.typography.bodySmall, color = colors.textSecondary)
                         }
                     }
                 }
@@ -466,42 +610,88 @@ fun ActionStatusScreen(
 @Composable
 private fun ActionTopBar(
     colors: CityFluxColors,
-    state: ActionStatusViewModel.ActionState,
-    onDailyReport: () -> Unit
+    todayCasesCount: Int,
+    onDailyReport: () -> Unit,
+    onBack: () -> Unit
 ) {
-    Surface(modifier = Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.background) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(
+                Brush.horizontalGradient(
+                    listOf(Color(0xFF0F172A), Color(0xFF1E3A5F))
+                )
+            )
+            .statusBarsPadding()
+            .padding(horizontal = Spacing.Medium, vertical = Spacing.Medium)
+    ) {
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .statusBarsPadding()
-                .padding(horizontal = Spacing.Large, vertical = Spacing.Medium),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Surface(
-                    Modifier.size(40.dp),
-                    shape = RoundedCornerShape(CornerRadius.Medium),
-                    color = PrimaryBlue.copy(alpha = 0.1f)
+            // Back button
+            IconButton(
+                onClick = onBack,
+                modifier = Modifier.size(34.dp)
+            ) {
+                Icon(Icons.Filled.ArrowBack, "Back", tint = Color.White, modifier = Modifier.size(20.dp))
+            }
+            Spacer(Modifier.width(6.dp))
+            // Shield icon
+            Box(
+                modifier = Modifier.size(36.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Box(
+                    Modifier
+                        .size(36.dp)
+                        .background(
+                            Brush.radialGradient(
+                                listOf(PrimaryBlue.copy(alpha = 0.4f), Color.Transparent)
+                            ),
+                            CircleShape
+                        )
+                )
+                Icon(
+                    Icons.Filled.Shield, null,
+                    tint = PrimaryBlue,
+                    modifier = Modifier.size(22.dp)
+                )
+            }
+            Spacer(Modifier.width(8.dp))
+            // Title — takes remaining space
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    "Command Center",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
-                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Icon(Icons.Filled.Assignment, null, tint = PrimaryBlue, modifier = Modifier.size(22.dp))
-                    }
-                }
-                Spacer(Modifier.width(12.dp))
-                Column {
-                    Text("Action Center", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = colors.textPrimary)
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                        ActionLiveDot()
-                        Text("${state.todayCases} today", style = MaterialTheme.typography.bodySmall, color = colors.textSecondary)
-                    }
+                    ActionLiveDot()
+                    Text(
+                        "$todayCasesCount active · On Duty",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Color.White.copy(alpha = 0.7f),
+                        maxLines = 1
+                    )
                 }
             }
+            Spacer(Modifier.width(6.dp))
+            // Daily Report button
             FilledTonalButton(
                 onClick = onDailyReport,
                 shape = RoundedCornerShape(CornerRadius.Round),
-                colors = ButtonDefaults.filledTonalButtonColors(containerColor = AccentAlerts.copy(alpha = 0.12f), contentColor = AccentAlerts),
-                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
+                colors = ButtonDefaults.filledTonalButtonColors(
+                    containerColor = Color.White.copy(alpha = 0.12f),
+                    contentColor = Color.White
+                ),
+                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
             ) {
                 Icon(Icons.Outlined.Summarize, null, Modifier.size(14.dp))
                 Spacer(Modifier.width(4.dp))
@@ -517,25 +707,72 @@ private fun ActionTopBar(
 // ═══════════════════════════════════════════════════════════════════
 
 @Composable
-private fun ActionStatsRow(state: ActionStatusViewModel.ActionState) {
+private fun ActionStatsRow(
+    inProgressCount: Int,
+    pendingCount: Int,
+    totalCount: Int,
+    resolvedCount: Int
+) {
+    val allKnown = totalCount + resolvedCount
+    val resolutionRate = if (allKnown > 0) (resolvedCount * 100f / allKnown) else 0f
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = Spacing.Large, vertical = Spacing.Small),
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        ActionStatChip("Assigned", state.assignedCases.size.toString(), AccentOrange, Modifier.weight(1f))
-        ActionStatChip("Pending", state.pendingCases.size.toString(), AccentAlerts, Modifier.weight(1f))
-        ActionStatChip("Resolved", state.resolvedCases.size.toString(), AccentGreen, Modifier.weight(1f))
-        ActionStatChip("Total", state.totalCases.toString(), PrimaryBlue, Modifier.weight(1f))
+        ActionStatChip("In Progress", inProgressCount.toString(), AccentOrange, Icons.Outlined.PlayCircle, Modifier.weight(1f))
+        ActionStatChip("Pending", pendingCount.toString(), AccentAlerts, Icons.Outlined.Schedule, Modifier.weight(1f))
+        ActionStatChip("Total", totalCount.toString(), PrimaryBlue, Icons.Outlined.FolderOpen, Modifier.weight(1f))
+        // Resolution rate chip with mini ring
+        val tc = MaterialTheme.cityFluxColors
+        Surface(
+            modifier = Modifier.weight(1f),
+            shape = RoundedCornerShape(CornerRadius.Medium),
+            color = AccentGreen.copy(alpha = 0.08f)
+        ) {
+            Column(
+                Modifier.padding(vertical = 8.dp, horizontal = 6.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Box(contentAlignment = Alignment.Center, modifier = Modifier.size(28.dp)) {
+                    Canvas(modifier = Modifier.size(28.dp)) {
+                        val sweep = (resolutionRate / 100f) * 360f
+                        drawArc(
+                            color = AccentGreen.copy(alpha = 0.2f),
+                            startAngle = -90f,
+                            sweepAngle = 360f,
+                            useCenter = false,
+                            style = Stroke(width = 3.dp.toPx(), cap = StrokeCap.Round)
+                        )
+                        drawArc(
+                            color = AccentGreen,
+                            startAngle = -90f,
+                            sweepAngle = sweep,
+                            useCenter = false,
+                            style = Stroke(width = 3.dp.toPx(), cap = StrokeCap.Round)
+                        )
+                    }
+                    Text(
+                        "${resolutionRate.toInt()}%",
+                        fontSize = 7.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = AccentGreen
+                    )
+                }
+                Spacer(Modifier.height(2.dp))
+                Text("Resolved", fontSize = 10.sp, color = tc.textTertiary, fontWeight = FontWeight.Medium)
+            }
+        }
     }
 }
 
 @Composable
-private fun ActionStatChip(label: String, value: String, color: Color, modifier: Modifier) {
+private fun ActionStatChip(label: String, value: String, color: Color, icon: ImageVector, modifier: Modifier) {
     val tc = MaterialTheme.cityFluxColors
     Surface(modifier = modifier, shape = RoundedCornerShape(CornerRadius.Medium), color = color.copy(alpha = 0.08f)) {
         Column(Modifier.padding(vertical = 8.dp, horizontal = 6.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            Icon(icon, null, tint = color, modifier = Modifier.size(18.dp))
             Text(value, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = color)
             Text(label, fontSize = 10.sp, color = tc.textTertiary, fontWeight = FontWeight.Medium)
         }
@@ -577,6 +814,40 @@ private fun ActionCaseCard(
         DateUtils.getRelativeTimeSpanString(it.toDate().time, System.currentTimeMillis(), DateUtils.MINUTE_IN_MILLIS).toString()
     } ?: "Unknown"
 
+    // Priority computation
+    val ageMs = report.timestamp?.let { System.currentTimeMillis() - it.toDate().time } ?: 0L
+    val priority = when {
+        report.type.equals("accident", true) -> "URGENT"
+        (report.status.equals("Pending", true) || report.status.equals("submitted", true)) && ageMs > 24 * 60 * 60 * 1000 -> "HIGH"
+        report.status.equals("In Progress", true) || report.status.equals("in_progress", true) -> "MEDIUM"
+        else -> "NORMAL"
+    }
+    val priorityColor = when (priority) {
+        "URGENT" -> AccentRed
+        "HIGH" -> AccentOrange
+        "MEDIUM" -> AccentAlerts
+        else -> colors.textTertiary
+    }
+    val isUrgent = priority == "URGENT"
+
+    // Urgency pulse animation
+    val urgencyTransition = rememberInfiniteTransition(label = "urgencyPulse")
+    val pulseAlpha by urgencyTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = if (isUrgent) 0.6f else 0f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1000, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "cardPulseAlpha"
+    )
+
+    val cardBorder = when {
+        isUrgent -> BorderStroke(2.dp, AccentRed.copy(alpha = pulseAlpha))
+        isExpanded -> BorderStroke(1.dp, statusColor.copy(alpha = 0.3f))
+        else -> null
+    }
+
     Card(
         onClick = onToggle,
         modifier = Modifier
@@ -588,7 +859,7 @@ private fun ActionCaseCard(
             ),
         shape = RoundedCornerShape(CornerRadius.Large),
         colors = CardDefaults.cardColors(containerColor = colors.cardBackground),
-        border = if (isExpanded) BorderStroke(1.dp, statusColor.copy(alpha = 0.3f)) else null
+        border = cardBorder
     ) {
         Row(modifier = Modifier.height(IntrinsicSize.Min)) {
             // Accent bar
@@ -630,12 +901,30 @@ private fun ActionCaseCard(
                             Surface(shape = RoundedCornerShape(4.dp), color = typeColor.copy(alpha = 0.1f)) {
                                 Text(typeLabel, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold, color = typeColor, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
                             }
-                            Text("· $timeAgo", style = MaterialTheme.typography.labelSmall, color = colors.textTertiary)
+                            Text("\u00B7 $timeAgo", style = MaterialTheme.typography.labelSmall, color = colors.textTertiary)
                         }
                     }
-                    // Status chip
-                    Surface(shape = RoundedCornerShape(CornerRadius.Small), color = statusColor.copy(alpha = 0.12f)) {
-                        Text(report.status, modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp), style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold, color = statusColor)
+                    Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        // Priority badge
+                        if (priority != "NORMAL") {
+                            Surface(
+                                shape = RoundedCornerShape(4.dp),
+                                color = priorityColor.copy(alpha = 0.15f)
+                            ) {
+                                Text(
+                                    priority,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = priorityColor,
+                                    fontSize = 9.sp
+                                )
+                            }
+                        }
+                        // Status chip
+                        Surface(shape = RoundedCornerShape(CornerRadius.Small), color = statusColor.copy(alpha = 0.12f)) {
+                            Text(report.status, modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp), style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold, color = statusColor)
+                        }
                     }
                 }
 
@@ -664,17 +953,71 @@ private fun ActionCaseCard(
                         HorizontalDivider(color = colors.cardBorder.copy(alpha = 0.15f))
                         Spacer(Modifier.height(Spacing.Medium))
 
-                        // Report Image
+                        // ── Info Grid ──
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            InfoGridCell(
+                                icon = Icons.Outlined.LocationOn,
+                                label = "Location",
+                                value = if (report.latitude != 0.0) "%.4f, %.4f".format(report.latitude, report.longitude) else "Unknown",
+                                modifier = Modifier.weight(1f),
+                                colors = colors
+                            )
+                            InfoGridCell(
+                                icon = Icons.Outlined.Person,
+                                label = "Reporter",
+                                value = if (report.userId.isNotBlank()) report.userId.take(8) + "..." else "Anonymous",
+                                modifier = Modifier.weight(1f),
+                                colors = colors
+                            )
+                        }
+                        Spacer(Modifier.height(8.dp))
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            InfoGridCell(
+                                icon = Icons.Outlined.AccessTime,
+                                label = "Time Posted",
+                                value = report.timestamp?.let {
+                                    SimpleDateFormat("dd MMM, hh:mm a", Locale.getDefault()).format(it.toDate())
+                                } ?: "Unknown",
+                                modifier = Modifier.weight(1f),
+                                colors = colors
+                            )
+                            InfoGridCell(
+                                icon = Icons.Outlined.Tag,
+                                label = "Case ID",
+                                value = report.id.take(8) + "...",
+                                modifier = Modifier.weight(1f),
+                                colors = colors
+                            )
+                        }
+
+                        Spacer(Modifier.height(Spacing.Medium))
+
+                        // Report Image with gradient overlay
                         if (report.imageUrl.isNotBlank()) {
-                            AsyncImage(
-                                model = ImageRequest.Builder(LocalContext.current).data(report.imageUrl).crossfade(true).build(),
-                                contentDescription = "Report image",
-                                modifier = Modifier
+                            Box(
+                                Modifier
                                     .fillMaxWidth()
                                     .height(160.dp)
-                                    .clip(RoundedCornerShape(CornerRadius.Medium)),
-                                contentScale = ContentScale.Crop
-                            )
+                                    .clip(RoundedCornerShape(CornerRadius.Medium))
+                            ) {
+                                AsyncImage(
+                                    model = ImageRequest.Builder(LocalContext.current).data(report.imageUrl).crossfade(true).build(),
+                                    contentDescription = "Report image",
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentScale = ContentScale.Crop
+                                )
+                                Box(
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .height(40.dp)
+                                        .align(Alignment.BottomCenter)
+                                        .background(
+                                            Brush.verticalGradient(
+                                                listOf(Color.Transparent, Color.Black.copy(alpha = 0.4f))
+                                            )
+                                        )
+                                )
+                            }
                             Spacer(Modifier.height(Spacing.Medium))
                         }
 
@@ -784,6 +1127,27 @@ private fun StatusTimeline(currentStatus: String, colors: CityFluxColors) {
         else -> 0
     }
 
+    // Pulse animation for the current step
+    val pulseTransition = rememberInfiniteTransition(label = "timelinePulse")
+    val pulseGlow by pulseTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 0.6f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(800, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "timelinePulseGlow"
+    )
+    val pulseScale by pulseTransition.animateFloat(
+        initialValue = 1f,
+        targetValue = 1.15f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(800, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "timelinePulseScale"
+    )
+
     Column(verticalArrangement = Arrangement.spacedBy(0.dp)) {
         steps.forEachIndexed { index, step ->
             val isCompleted = index <= currentIndex
@@ -804,37 +1168,55 @@ private fun StatusTimeline(currentStatus: String, colors: CityFluxColors) {
             ) {
                 // Circle + line
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Box(
-                        modifier = Modifier
-                            .size(if (isCurrent) 28.dp else 22.dp)
-                            .clip(CircleShape)
-                            .background(
-                                if (isCompleted) stepColor
-                                else colors.textTertiary.copy(alpha = 0.1f)
-                            ),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        if (isCompleted && !isCurrent) {
-                            Icon(Icons.Filled.Check, null, tint = Color.White, modifier = Modifier.size(14.dp))
-                        } else if (isCurrent) {
-                            Icon(step.icon, null, tint = Color.White, modifier = Modifier.size(14.dp))
-                        } else {
+                    Box(contentAlignment = Alignment.Center) {
+                        // Pulsing glow for current step
+                        if (isCurrent) {
                             Box(
-                                Modifier
-                                    .size(8.dp)
+                                modifier = Modifier
+                                    .size(28.dp * pulseScale)
                                     .clip(CircleShape)
-                                    .background(colors.textTertiary.copy(alpha = 0.3f))
+                                    .background(stepColor.copy(alpha = pulseGlow * 0.4f))
                             )
+                        }
+                        Box(
+                            modifier = Modifier
+                                .size(if (isCurrent) 28.dp else 22.dp)
+                                .clip(CircleShape)
+                                .background(
+                                    if (isCompleted) stepColor
+                                    else colors.textTertiary.copy(alpha = 0.1f)
+                                ),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            if (isCompleted && !isCurrent) {
+                                Icon(Icons.Filled.Check, null, tint = Color.White, modifier = Modifier.size(14.dp))
+                            } else if (isCurrent) {
+                                Icon(step.icon, null, tint = Color.White, modifier = Modifier.size(14.dp))
+                            } else {
+                                Box(
+                                    Modifier
+                                        .size(8.dp)
+                                        .clip(CircleShape)
+                                        .background(colors.textTertiary.copy(alpha = 0.3f))
+                                )
+                            }
                         }
                     }
                     if (index < steps.lastIndex) {
                         Box(
                             Modifier
-                                .width(2.dp)
+                                .width(3.dp)
                                 .height(28.dp)
                                 .background(
-                                    if (index < currentIndex) AccentGreen
-                                    else colors.textTertiary.copy(alpha = 0.15f)
+                                    if (index < currentIndex) Brush.verticalGradient(
+                                        listOf(AccentGreen, AccentGreen.copy(alpha = 0.6f))
+                                    )
+                                    else Brush.verticalGradient(
+                                        listOf(
+                                            colors.textTertiary.copy(alpha = 0.15f),
+                                            colors.textTertiary.copy(alpha = 0.15f)
+                                        )
+                                    )
                                 )
                         )
                     }
@@ -1607,31 +1989,53 @@ private fun DailyReportDialog(
 
                 Spacer(Modifier.height(Spacing.Large))
 
-                // Resolution rate
+                // Resolution rate ring chart
                 val resolutionRate = if (state.totalCases > 0) (state.resolvedCases.size * 100f / state.totalCases) else 0f
+                val animatedRate by animateFloatAsState(
+                    targetValue = resolutionRate / 100f,
+                    animationSpec = tween(1000, easing = FastOutSlowInEasing),
+                    label = "ringAnimation"
+                )
                 Surface(
                     Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(CornerRadius.Medium),
                     color = AccentGreen.copy(alpha = 0.06f)
                 ) {
-                    Column(Modifier.padding(Spacing.Medium), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Column(Modifier.padding(Spacing.Large), horizontalAlignment = Alignment.CenterHorizontally) {
                         Text("Resolution Rate", style = MaterialTheme.typography.labelSmall, color = colors.textTertiary)
-                        Text(
-                            "%.1f%%".format(resolutionRate),
-                            style = MaterialTheme.typography.headlineSmall,
-                            fontWeight = FontWeight.Bold,
-                            color = AccentGreen
-                        )
-                        Spacer(Modifier.height(6.dp))
-                        LinearProgressIndicator(
-                            progress = { resolutionRate / 100f },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(6.dp)
-                                .clip(RoundedCornerShape(3.dp)),
-                            color = AccentGreen,
-                            trackColor = colors.textTertiary.copy(alpha = 0.1f)
-                        )
+                        Spacer(Modifier.height(Spacing.Medium))
+                        Box(contentAlignment = Alignment.Center, modifier = Modifier.size(120.dp)) {
+                            Canvas(modifier = Modifier.size(120.dp)) {
+                                val strokeWidth = 12.dp.toPx()
+                                drawArc(
+                                    color = AccentGreen.copy(alpha = 0.15f),
+                                    startAngle = -90f,
+                                    sweepAngle = 360f,
+                                    useCenter = false,
+                                    style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
+                                )
+                                drawArc(
+                                    color = AccentGreen,
+                                    startAngle = -90f,
+                                    sweepAngle = animatedRate * 360f,
+                                    useCenter = false,
+                                    style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
+                                )
+                            }
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text(
+                                    "%.1f%%".format(resolutionRate),
+                                    style = MaterialTheme.typography.headlineSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = AccentGreen
+                                )
+                                Text(
+                                    "${state.resolvedCases.size}/${state.totalCases}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = colors.textSecondary
+                                )
+                            }
+                        }
                     }
                 }
 
@@ -1676,12 +2080,103 @@ private fun ActionLiveDot() {
         animationSpec = infiniteRepeatable(tween(700, easing = FastOutSlowInEasing), RepeatMode.Reverse),
         label = "liveAlpha"
     )
-    Box(
-        Modifier
-            .size(8.dp)
-            .clip(CircleShape)
-            .background(AccentGreen.copy(alpha = alpha))
+    val ringScale by inf.animateFloat(
+        initialValue = 1f, targetValue = 2f,
+        animationSpec = infiniteRepeatable(tween(1200, easing = FastOutSlowInEasing), RepeatMode.Restart),
+        label = "liveRingScale"
     )
+    val ringAlpha by inf.animateFloat(
+        initialValue = 0.6f, targetValue = 0f,
+        animationSpec = infiniteRepeatable(tween(1200, easing = FastOutSlowInEasing), RepeatMode.Restart),
+        label = "liveRingAlpha"
+    )
+    Box(contentAlignment = Alignment.Center, modifier = Modifier.size(16.dp)) {
+        // Outer pulsing ring
+        Box(
+            Modifier
+                .size(8.dp * ringScale)
+                .clip(CircleShape)
+                .background(AccentGreen.copy(alpha = ringAlpha))
+        )
+        // Solid dot
+        Box(
+            Modifier
+                .size(8.dp)
+                .clip(CircleShape)
+                .background(AccentGreen.copy(alpha = alpha))
+        )
+    }
+}
+
+@Composable
+private fun UrgencyBanner(urgentCount: Int, onDismiss: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(
+                Brush.horizontalGradient(
+                    listOf(AccentRed, Color(0xFFDC2626))
+                )
+            )
+            .padding(horizontal = Spacing.Large, vertical = Spacing.Medium)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.weight(1f)
+            ) {
+                Icon(Icons.Filled.Warning, null, tint = Color.White, modifier = Modifier.size(20.dp))
+                Text(
+                    "$urgentCount urgent case${if (urgentCount != 1) "s" else ""} require immediate attention",
+                    style = MaterialTheme.typography.bodySmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = Color.White
+                )
+            }
+            IconButton(onClick = onDismiss, modifier = Modifier.size(28.dp)) {
+                Icon(Icons.Filled.Close, "Dismiss", tint = Color.White, modifier = Modifier.size(16.dp))
+            }
+        }
+    }
+}
+
+@Composable
+private fun InfoGridCell(
+    icon: ImageVector,
+    label: String,
+    value: String,
+    modifier: Modifier = Modifier,
+    colors: CityFluxColors
+) {
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(CornerRadius.Small),
+        color = colors.cardBorder.copy(alpha = 0.06f)
+    ) {
+        Row(
+            Modifier.padding(Spacing.Small),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Icon(icon, null, tint = colors.textTertiary, modifier = Modifier.size(14.dp))
+            Column {
+                Text(label, fontSize = 9.sp, color = colors.textTertiary, fontWeight = FontWeight.Medium)
+                Text(
+                    value,
+                    fontSize = 11.sp,
+                    color = colors.textPrimary,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+    }
 }
 
 private fun createActionTempUri(context: Context): Uri {

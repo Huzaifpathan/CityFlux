@@ -19,5 +19,6 @@ data class Report(
     val latitude: Double = 0.0,
     val longitude: Double = 0.0,
     val status: String = "Pending",
+    val assignedTo: String = "",
     val timestamp: Timestamp? = null
 )

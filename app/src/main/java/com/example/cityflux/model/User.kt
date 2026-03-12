@@ -13,6 +13,13 @@ data class User(
     val phone: String = "",
     val role: String = "",          // "citizen" or "police"
     val profileImageUrl: String = "",
+    val workingAreaName: String = "",
+    val workingLatitude: Double = 0.0,
+    val workingLongitude: Double = 0.0,
     val lastLoginAt: Timestamp? = null,
     val createdAt: Timestamp? = null
-)
+) {
+    /** Returns true if this police user has configured their working location. */
+    val hasWorkingLocation: Boolean
+        get() = workingAreaName.isNotBlank() && (workingLatitude != 0.0 || workingLongitude != 0.0)
+}

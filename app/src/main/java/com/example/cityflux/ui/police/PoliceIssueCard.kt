@@ -13,6 +13,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.cityflux.model.Report
 import com.example.cityflux.ui.theme.*
+import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 
 @Composable
@@ -96,10 +97,11 @@ fun PoliceIssueCard(issue: Report) {
 
                     Button(
                         onClick = {
+                            val uid = FirebaseAuth.getInstance().currentUser?.uid ?: ""
                             FirebaseFirestore.getInstance()
                                 .collection("reports")
                                 .document(issue.id)
-                                .update("status", "In Progress")
+                                .update(mapOf("status" to "In Progress", "assignedTo" to uid))
                         },
                         modifier = Modifier
                             .weight(1f)
@@ -123,10 +125,11 @@ fun PoliceIssueCard(issue: Report) {
 
                     Button(
                         onClick = {
+                            val uid = FirebaseAuth.getInstance().currentUser?.uid ?: ""
                             FirebaseFirestore.getInstance()
                                 .collection("reports")
                                 .document(issue.id)
-                                .update("status", "Resolved")
+                                .update(mapOf("status" to "Resolved", "assignedTo" to uid))
                         },
                         modifier = Modifier
                             .weight(1f)

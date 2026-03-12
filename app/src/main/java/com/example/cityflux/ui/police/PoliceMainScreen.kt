@@ -19,6 +19,8 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.cityflux.ui.notifications.NotificationsViewModel
 import com.example.cityflux.ui.theme.*
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.FirebaseFirestore
 
 // ─── Bottom nav tab definitions for Police ─────────────────────
 enum class PoliceTab(
@@ -44,6 +46,35 @@ fun PoliceMainScreen(
     onLogout: () -> Unit
 ) {
     var selectedTab by rememberSaveable { mutableStateOf(PoliceTab.HOME) }
+    // Report ID to pass to ActionStatusScreen when navigating from Reports
+    var pendingActionReportId by remember { mutableStateOf<String?>(null) }
+
+    // ── Police working-area setup check ──
+    var showLocationSetup by remember { mutableStateOf(false) }
+    var locationCheckDone by remember { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) {
+        val uid = FirebaseAuth.getInstance().currentUser?.uid ?: return@LaunchedEffect
+        FirebaseFirestore.getInstance().collection("users").document(uid).get()
+            .addOnSuccessListener { doc ->
+                val areaName = doc.getString("workingAreaName") ?: ""
+                val lat = doc.getDouble("workingLatitude") ?: 0.0
+                val lon = doc.getDouble("workingLongitude") ?: 0.0
+                showLocationSetup = areaName.isBlank() || (lat == 0.0 && lon == 0.0)
+                locationCheckDone = true
+            }
+            .addOnFailureListener {
+                locationCheckDone = true
+            }
+    }
+
+    // Show mandatory location setup dialog
+    if (showLocationSetup && locationCheckDone) {
+        PoliceLocationSetupDialog(
+            onSetupComplete = { showLocationSetup = false }
+        )
+    }
+
     // Bottom navigation should not expose the profile tab,
     // which is accessed from the header on the Home screen.
     val bottomTabs = listOf(
@@ -141,17 +172,34 @@ fun PoliceMainScreen(
                     onBack = { selectedTab = PoliceTab.HOME }
                 )
                 PoliceTab.REPORTS -> ReportsScreen(
-                    onBack = { selectedTab = PoliceTab.HOME }
+                    onBack = { selectedTab = PoliceTab.HOME },
+                    onTakeAction = { report ->
+                        // Assign this report to the officer and set In Progress
+                        val uid = FirebaseAuth.getInstance().currentUser?.uid
+                        if (uid != null) {
+                            FirebaseFirestore.getInstance()
+                                .collection("reports").document(report.id)
+                                .update(
+                                    mapOf(
+                                        "assignedTo" to uid,
+                                        "status" to "In Progress"
+                                    )
+                                )
+                        }
+                        pendingActionReportId = report.id
+                        selectedTab = PoliceTab.ACTIONS
+                    }
                 )
                 PoliceTab.PARKING -> ParkingControlScreen(
                     onBack = { selectedTab = PoliceTab.HOME }
                 )
                 PoliceTab.ACTIONS -> ActionStatusScreen(
-                    onBack = { selectedTab = PoliceTab.HOME }
+                    onBack = { selectedTab = PoliceTab.HOME },
+                    initialReportId = pendingActionReportId,
+                    onReportHandled = { pendingActionReportId = null }
                 )
-                PoliceTab.PROFILE -> com.example.cityflux.ui.profile.ProfileScreen(
-                    onLogout = onLogout,
-                    onNavigateToMap = { _, _ -> selectedTab = PoliceTab.CONGESTION }
+                PoliceTab.PROFILE -> PoliceProfileScreen(
+                    onLogout = onLogout
                 )
             }
         }

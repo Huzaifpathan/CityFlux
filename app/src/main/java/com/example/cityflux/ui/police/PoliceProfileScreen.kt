@@ -38,9 +38,15 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.core.content.ContextCompat
-import androidx.lifecycle.ViewModel
+import android.app.Application
+import android.content.Context
+import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.cityflux.data.CertificateDbHelper
+import com.example.cityflux.data.CertificateEntry
+import com.example.cityflux.model.LocationUtils
+import com.example.cityflux.model.Report
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.example.cityflux.model.User
@@ -70,7 +76,7 @@ data class PoliceOfficer(
     val profileImageUrl: String = "",
     val badgeId: String = "",
     val rank: String = "Constable",
-    val department: String = "Traffic Division",
+    val department: String = "",
     val station: String = "",
     val dutyArea: String = "",
     val joinDate: Timestamp? = null,
@@ -89,24 +95,39 @@ data class PoliceOfficer(
 // Police Profile ViewModel
 // ═══════════════════════════════════════════════════════════════════
 
-class PoliceProfileViewModel : ViewModel() {
+class PoliceProfileViewModel(application: Application) : AndroidViewModel(application) {
 
     companion object {
         private const val TAG = "PoliceProfileVM"
     }
 
+    data class RecentActivity(
+        val title: String,
+        val subtitle: String,
+        val time: String,
+        val type: String // "resolved", "progress", "assigned"
+    )
+
     data class UiState(
         val isLoading: Boolean = true,
         val officer: PoliceOfficer? = null,
+        val totalReports: Int = 0,
         val casesAssignedToday: Int = 0,
         val casesResolvedToday: Int = 0,
         val pendingCases: Int = 0,
+        val inProgressCases: Int = 0,
+        val resolvedCases: Int = 0,
         val weeklyStats: List<Int> = listOf(0, 0, 0, 0, 0, 0, 0),
         val isUploadingImage: Boolean = false,
         val uploadProgress: Float = 0f,
         val error: String? = null,
         val isOffline: Boolean = false,
-        val snackbarMessage: String? = null
+        val snackbarMessage: String? = null,
+        val certificates: List<CertificateEntry> = emptyList(),
+        val recentActivities: List<RecentActivity> = emptyList(),
+        val darkModeEnabled: Boolean = false,
+        val alertSoundEnabled: Boolean = true,
+        val vibrationEnabled: Boolean = true
     )
 
     private val _uiState = MutableStateFlow(UiState())
@@ -115,13 +136,19 @@ class PoliceProfileViewModel : ViewModel() {
     private val auth = FirebaseAuth.getInstance()
     private val firestore = FirebaseFirestore.getInstance()
     private val storage = FirebaseStorage.getInstance()
+    private val certDb = CertificateDbHelper(application.applicationContext)
+    private val prefs = application.getSharedPreferences("police_profile_settings", Context.MODE_PRIVATE)
 
     private var profileListener: ListenerRegistration? = null
     private var statsListener: ListenerRegistration? = null
+    private var activityListener: ListenerRegistration? = null
 
     init {
         loadOfficerProfile()
         loadCaseStatistics()
+        loadCertificates()
+        loadRecentActivity()
+        loadSettings()
     }
 
     private fun loadOfficerProfile() {
@@ -146,9 +173,10 @@ class PoliceProfileViewModel : ViewModel() {
                         profileImageUrl = data["profileImageUrl"] as? String ?: "",
                         badgeId = data["badgeId"] as? String ?: "PO-${uid.take(6).uppercase()}",
                         rank = data["rank"] as? String ?: "Constable",
-                        department = data["department"] as? String ?: "Traffic Division",
-                        station = data["station"] as? String ?: "Central Station",
-                        dutyArea = data["dutyArea"] as? String ?: "Downtown District",
+                        department = data["department"] as? String ?: "",
+                        station = data["station"] as? String ?: "",
+                        dutyArea = data["workingAreaName"] as? String
+                            ?: data["dutyArea"] as? String ?: "",
                         joinDate = data["joinDate"] as? Timestamp ?: data["createdAt"] as? Timestamp,
                         isOnDuty = data["isOnDuty"] as? Boolean ?: false,
                         currentShift = data["currentShift"] as? String ?: "Day",
@@ -169,43 +197,79 @@ class PoliceProfileViewModel : ViewModel() {
     private fun loadCaseStatistics() {
         val uid = auth.currentUser?.uid ?: return
 
-        // Today's date range
-        val calendar = Calendar.getInstance()
-        calendar.set(Calendar.HOUR_OF_DAY, 0)
-        calendar.set(Calendar.MINUTE, 0)
-        calendar.set(Calendar.SECOND, 0)
-        val todayStart = Timestamp(calendar.time)
+        // First get police working location, then listen to all reports
+        firestore.collection("users").document(uid).get()
+            .addOnSuccessListener { userDoc ->
+                val policeLat = userDoc.getDouble("workingLatitude") ?: 0.0
+                val policeLon = userDoc.getDouble("workingLongitude") ?: 0.0
 
-        statsListener?.remove()
-        statsListener = firestore.collection("reports")
-            .whereEqualTo("assignedTo", uid)
-            .addSnapshotListener { snap, _ ->
-                if (snap != null) {
-                    val allCases = snap.documents
-                    val todayCases = allCases.filter { doc ->
-                        val ts = doc.getTimestamp("timestamp")
-                        ts != null && ts >= todayStart
-                    }
-                    val resolvedToday = todayCases.count {
-                        it.getString("status")?.equals("Resolved", true) == true
-                    }
-                    val pending = allCases.count {
-                        val status = it.getString("status") ?: ""
-                        !status.equals("Resolved", true)
-                    }
+                statsListener?.remove()
+                statsListener = firestore.collection("reports")
+                    .orderBy("timestamp", Query.Direction.DESCENDING)
+                    .addSnapshotListener { snap, _ ->
+                        if (snap != null) {
+                            val allReports = snap.documents.mapNotNull { doc ->
+                                doc.toObject(Report::class.java)?.copy(id = doc.id)
+                            }
 
-                    // Generate weekly mock data (in production, calculate from real data)
-                    val weekly = (0..6).map { (5..15).random() }
+                            // Filter by proximity (same as home screen)
+                            val nearbyReports = if (policeLat == 0.0 && policeLon == 0.0) allReports
+                            else allReports.filter {
+                                LocationUtils.isWithinRadius(policeLat, policeLon, it.latitude, it.longitude)
+                            }
 
-                    _uiState.update {
-                        it.copy(
-                            casesAssignedToday = todayCases.size,
-                            casesResolvedToday = resolvedToday,
-                            pendingCases = pending,
-                            weeklyStats = weekly
-                        )
+                            val pending = nearbyReports.count {
+                                it.status.equals("Pending", true) || it.status.equals("submitted", true)
+                            }
+                            val inProgress = nearbyReports.count {
+                                it.status.equals("In Progress", true) || it.status.equals("in_progress", true)
+                            }
+                            val resolved = nearbyReports.count {
+                                it.status.equals("Resolved", true)
+                            }
+
+                            // Weekly stats from nearby reports
+                            val weekCal = Calendar.getInstance().apply {
+                                set(Calendar.DAY_OF_WEEK, Calendar.MONDAY)
+                                set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0)
+                            }
+                            val weekStartMs = weekCal.timeInMillis
+                            val weekly = MutableList(7) { 0 }
+                            nearbyReports.forEach { report ->
+                                val tsMs = report.timestamp?.toDate()?.time ?: 0L
+                                if (tsMs >= weekStartMs) {
+                                    val dayCal = Calendar.getInstance().apply { timeInMillis = tsMs }
+                                    val dow = dayCal.get(Calendar.DAY_OF_WEEK)
+                                    val idx = if (dow == Calendar.SUNDAY) 6 else dow - 2
+                                    if (idx in 0..6) weekly[idx]++
+                                }
+                            }
+
+                            // Today's reports
+                            val todayCal = Calendar.getInstance().apply {
+                                set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0)
+                            }
+                            val todayMs = todayCal.timeInMillis
+                            val todayReports = nearbyReports.filter {
+                                (it.timestamp?.toDate()?.time ?: 0L) >= todayMs
+                            }
+                            val resolvedToday = todayReports.count {
+                                it.status.equals("Resolved", true)
+                            }
+
+                            _uiState.update {
+                                it.copy(
+                                    totalReports = nearbyReports.size,
+                                    casesAssignedToday = todayReports.size,
+                                    casesResolvedToday = resolvedToday,
+                                    pendingCases = pending,
+                                    inProgressCases = inProgress,
+                                    resolvedCases = resolved,
+                                    weeklyStats = weekly
+                                )
+                            }
+                        }
                     }
-                }
             }
     }
 
@@ -298,9 +362,104 @@ class PoliceProfileViewModel : ViewModel() {
         _uiState.update { it.copy(snackbarMessage = null) }
     }
 
+    // ── Certificate Operations ──
+
+    private fun loadCertificates() {
+        viewModelScope.launch {
+            val certs = certDb.getAll()
+            _uiState.update { it.copy(certificates = certs) }
+        }
+    }
+
+    fun addCertificate(name: String, status: String, progress: Float) {
+        viewModelScope.launch {
+            val icon = when {
+                name.contains("Traffic", true) -> "verified"
+                name.contains("First Aid", true) || name.contains("CPR", true) -> "health"
+                name.contains("Crowd", true) -> "groups"
+                name.contains("Cyber", true) || name.contains("Computer", true) -> "computer"
+                else -> "verified"
+            }
+            certDb.insert(CertificateEntry(name = name, status = status, progress = progress, icon = icon))
+            loadCertificates()
+            _uiState.update { it.copy(snackbarMessage = "Certificate added") }
+        }
+    }
+
+    fun deleteCertificate(id: Long) {
+        viewModelScope.launch {
+            certDb.delete(id)
+            loadCertificates()
+            _uiState.update { it.copy(snackbarMessage = "Certificate removed") }
+        }
+    }
+
+    // ── Recent Activity ──
+
+    private fun loadRecentActivity() {
+        val uid = auth.currentUser?.uid ?: return
+        activityListener?.remove()
+        activityListener = firestore.collection("reports")
+            .whereEqualTo("assignedTo", uid)
+            .orderBy("timestamp", Query.Direction.DESCENDING)
+            .limit(5)
+            .addSnapshotListener { snap, _ ->
+                if (snap != null) {
+                    val activities = snap.documents.mapNotNull { doc ->
+                        val status = doc.getString("status") ?: ""
+                        val category = doc.getString("category") ?: "Report"
+                        val address = doc.getString("address") ?: doc.getString("locationName") ?: ""
+                        val timestamp = doc.getTimestamp("timestamp")
+                        val timeStr = timestamp?.let { ts ->
+                            android.text.format.DateUtils.getRelativeTimeSpanString(
+                                ts.toDate().time, System.currentTimeMillis(),
+                                android.text.format.DateUtils.MINUTE_IN_MILLIS
+                            ).toString()
+                        } ?: ""
+
+                        val (title, type) = when {
+                            status.equals("Resolved", true) -> "Report Resolved" to "resolved"
+                            status.equals("In Progress", true) || status.equals("in_progress", true) -> "In Progress" to "progress"
+                            else -> "New Assignment" to "assigned"
+                        }
+
+                        RecentActivity(
+                            title = title,
+                            subtitle = "$category • $address".take(50),
+                            time = timeStr,
+                            type = type
+                        )
+                    }
+                    _uiState.update { it.copy(recentActivities = activities) }
+                }
+            }
+    }
+
+    // ── Settings ──
+
+    private fun loadSettings() {
+        _uiState.update {
+            it.copy(
+                darkModeEnabled = prefs.getBoolean("dark_mode", false),
+                alertSoundEnabled = prefs.getBoolean("alert_sound", true),
+                vibrationEnabled = prefs.getBoolean("vibration", true)
+            )
+        }
+    }
+
+    fun updateSetting(key: String, value: Boolean) {
+        prefs.edit().putBoolean(key, value).apply()
+        when (key) {
+            "dark_mode" -> _uiState.update { it.copy(darkModeEnabled = value) }
+            "alert_sound" -> _uiState.update { it.copy(alertSoundEnabled = value) }
+            "vibration" -> _uiState.update { it.copy(vibrationEnabled = value) }
+        }
+    }
+
     override fun onCleared() {
         profileListener?.remove()
         statsListener?.remove()
+        activityListener?.remove()
         super.onCleared()
     }
 }
@@ -343,6 +502,19 @@ fun PoliceProfileScreen(
     val imagePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri -> uri?.let { vm.uploadProfileImage(it) } }
+
+    // Permission launchers
+    val locationPermLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted -> locationGranted = granted }
+
+    val cameraPermLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted -> cameraGranted = granted }
+
+    val notifPermLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted -> notificationGranted = granted }
 
     // Check permissions
     LaunchedEffect(Unit) {
@@ -409,9 +581,12 @@ fun PoliceProfileScreen(
                 item {
                     PerformanceStatsCard(
                         officer = state.officer,
+                        totalReports = state.totalReports,
+                        pendingCases = state.pendingCases,
+                        inProgressCases = state.inProgressCases,
+                        resolvedCases = state.resolvedCases,
                         casesAssignedToday = state.casesAssignedToday,
                         casesResolvedToday = state.casesResolvedToday,
-                        pendingCases = state.pendingCases,
                         weeklyStats = state.weeklyStats
                     )
                 }
@@ -421,7 +596,10 @@ fun PoliceProfileScreen(
                     QuickActionsCard(
                         onSOS = { showSOSDialog = true },
                         onRadio = { Toast.makeText(context, "Radio channel opened", Toast.LENGTH_SHORT).show() },
-                        onBackup = { Toast.makeText(context, "Backup request sent", Toast.LENGTH_SHORT).show() }
+                        onCallDispatch = {
+                            val intent = Intent(Intent.ACTION_DIAL, Uri.parse("tel:100"))
+                            context.startActivity(intent)
+                        }
                     )
                 }
 
@@ -431,6 +609,13 @@ fun PoliceProfileScreen(
                         locationGranted = locationGranted,
                         cameraGranted = cameraGranted,
                         notificationGranted = notificationGranted,
+                        onRequestLocation = { locationPermLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION) },
+                        onRequestCamera = { cameraPermLauncher.launch(Manifest.permission.CAMERA) },
+                        onRequestNotification = {
+                            if (android.os.Build.VERSION.SDK_INT >= 33) {
+                                notifPermLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                            }
+                        },
                         onOpenSettings = {
                             val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
                                 data = Uri.fromParts("package", context.packageName, null)
@@ -440,9 +625,39 @@ fun PoliceProfileScreen(
                     )
                 }
 
+                // ═══════════════════════ Emergency Contacts ═══════════════════════
+                item {
+                    EmergencyContactsCard(context = context)
+                }
+
+                // ═══════════════════════ Recent Activity ═══════════════════════
+                item {
+                    RecentActivityCard(activities = state.recentActivities)
+                }
+
+                // ═══════════════════════ Training & Certifications ═══════════════════════
+                item {
+                    TrainingCertificationsCard(
+                        certificates = state.certificates,
+                        onAdd = { name, status, progress -> vm.addCertificate(name, status, progress) },
+                        onDelete = { id -> vm.deleteCertificate(id) }
+                    )
+                }
+
                 // ═══════════════════════ App Settings ═══════════════════════
                 item {
-                    AppSettingsCard(colors = colors)
+                    AppSettingsCard(
+                        colors = colors,
+                        darkModeEnabled = state.darkModeEnabled,
+                        alertSoundEnabled = state.alertSoundEnabled,
+                        vibrationEnabled = state.vibrationEnabled,
+                        onSettingChanged = { key, value -> vm.updateSetting(key, value) }
+                    )
+                }
+
+                // ═══════════════════════ Data & Storage ═══════════════════════
+                item {
+                    DataStorageCard(context = context)
                 }
 
                 // ═══════════════════════ Account Section ═══════════════════════
@@ -718,12 +933,18 @@ private fun PoliceHeroHeader(
 
             Spacer(Modifier.height(Spacing.Small))
 
-            // Department & Station
-            Text(
-                "${officer?.department ?: ""} • ${officer?.station ?: ""}",
-                style = MaterialTheme.typography.bodySmall,
-                color = Color.White.copy(alpha = 0.85f)
-            )
+            // Department & Station (only if set)
+            val deptStation = listOfNotNull(
+                officer?.department?.takeIf { it.isNotBlank() },
+                officer?.station?.takeIf { it.isNotBlank() }
+            ).joinToString(" • ")
+            if (deptStation.isNotBlank()) {
+                Text(
+                    deptStation,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color.White.copy(alpha = 0.85f)
+                )
+            }
 
             // Join date
             officer?.joinDate?.let { ts ->
@@ -917,9 +1138,12 @@ private fun DutyInfoItem(
 @Composable
 private fun PerformanceStatsCard(
     officer: PoliceOfficer?,
+    totalReports: Int,
+    pendingCases: Int,
+    inProgressCases: Int,
+    resolvedCases: Int,
     casesAssignedToday: Int,
     casesResolvedToday: Int,
-    pendingCases: Int,
     weeklyStats: List<Int>
 ) {
     val colors = MaterialTheme.cityFluxColors
@@ -955,55 +1179,44 @@ private fun PerformanceStatsCard(
                     )
                 }
 
-                // Rating badge
+                // Total reports badge
                 Surface(
                     shape = RoundedCornerShape(CornerRadius.Round),
-                    color = AccentOrange.copy(alpha = 0.12f)
+                    color = PrimaryBlue.copy(alpha = 0.12f)
                 ) {
-                    Row(
+                    Text(
+                        "$totalReports Reports",
                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            Icons.Filled.Star,
-                            null,
-                            tint = AccentOrange,
-                            modifier = Modifier.size(14.dp)
-                        )
-                        Spacer(Modifier.width(2.dp))
-                        Text(
-                            String.format("%.1f", officer?.citizenRating ?: 4.5f),
-                            style = MaterialTheme.typography.labelMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = AccentOrange
-                        )
-                    }
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = PrimaryBlue
+                    )
                 }
             }
 
             Spacer(Modifier.height(Spacing.Medium))
 
-            // Stats grid
+            // Stats grid — Pending / In Progress / Resolved (matching home dashboard)
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 StatBox(
-                    value = casesAssignedToday.toString(),
-                    label = "Today",
+                    value = pendingCases.toString(),
+                    label = "Pending",
+                    color = AccentOrange,
+                    modifier = Modifier.weight(1f)
+                )
+                StatBox(
+                    value = inProgressCases.toString(),
+                    label = "In Progress",
                     color = PrimaryBlue,
                     modifier = Modifier.weight(1f)
                 )
                 StatBox(
-                    value = casesResolvedToday.toString(),
+                    value = resolvedCases.toString(),
                     label = "Resolved",
                     color = AccentGreen,
-                    modifier = Modifier.weight(1f)
-                )
-                StatBox(
-                    value = pendingCases.toString(),
-                    label = "Pending",
-                    color = AccentOrange,
                     modifier = Modifier.weight(1f)
                 )
             }
@@ -1062,25 +1275,25 @@ private fun PerformanceStatsCard(
 
             Spacer(Modifier.height(Spacing.Medium))
 
-            // Bottom stats
+            // Bottom stats — today's snapshot
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceAround
             ) {
                 MiniStat(
-                    label = "Total Cases",
-                    value = officer?.totalCasesHandled?.toString() ?: "0",
-                    icon = Icons.Outlined.Folder
+                    label = "Today",
+                    value = casesAssignedToday.toString(),
+                    icon = Icons.Outlined.Today
                 )
                 MiniStat(
-                    label = "Avg Response",
-                    value = "${officer?.avgResponseTime ?: 12} min",
-                    icon = Icons.Outlined.Speed
+                    label = "Resolved Today",
+                    value = casesResolvedToday.toString(),
+                    icon = Icons.Outlined.CheckCircle
                 )
                 MiniStat(
-                    label = "This Month",
-                    value = officer?.casesThisMonth?.toString() ?: "0",
-                    icon = Icons.Outlined.CalendarMonth
+                    label = "Rating",
+                    value = String.format("%.1f ★", officer?.citizenRating ?: 0f),
+                    icon = Icons.Outlined.Star
                 )
             }
         }
@@ -1156,7 +1369,7 @@ private fun MiniStat(
 private fun QuickActionsCard(
     onSOS: () -> Unit,
     onRadio: () -> Unit,
-    onBackup: () -> Unit
+    onCallDispatch: () -> Unit
 ) {
     val colors = MaterialTheme.cityFluxColors
 
@@ -1209,12 +1422,12 @@ private fun QuickActionsCard(
                     modifier = Modifier.weight(1f)
                 )
 
-                // Backup Button
+                // Call Dispatch Button
                 QuickActionButton(
-                    icon = Icons.Filled.Groups,
-                    label = "Backup",
+                    icon = Icons.Filled.Phone,
+                    label = "Dispatch",
                     color = AccentOrange,
-                    onClick = onBackup,
+                    onClick = onCallDispatch,
                     modifier = Modifier.weight(1f)
                 )
             }
@@ -1263,6 +1476,9 @@ private fun PermissionsCard(
     locationGranted: Boolean,
     cameraGranted: Boolean,
     notificationGranted: Boolean,
+    onRequestLocation: () -> Unit,
+    onRequestCamera: () -> Unit,
+    onRequestNotification: () -> Unit,
     onOpenSettings: () -> Unit
 ) {
     val colors = MaterialTheme.cityFluxColors
@@ -1319,7 +1535,8 @@ private fun PermissionsCard(
                 icon = Icons.Outlined.LocationOn,
                 name = "Location",
                 description = "Required for duty tracking",
-                isGranted = locationGranted
+                isGranted = locationGranted,
+                onRequest = onRequestLocation
             )
 
             HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp), color = colors.divider)
@@ -1328,7 +1545,8 @@ private fun PermissionsCard(
                 icon = Icons.Outlined.CameraAlt,
                 name = "Camera",
                 description = "Required for evidence capture",
-                isGranted = cameraGranted
+                isGranted = cameraGranted,
+                onRequest = onRequestCamera
             )
 
             HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp), color = colors.divider)
@@ -1337,7 +1555,8 @@ private fun PermissionsCard(
                 icon = Icons.Outlined.Notifications,
                 name = "Notifications",
                 description = "Required for alerts",
-                isGranted = notificationGranted
+                isGranted = notificationGranted,
+                onRequest = onRequestNotification
             )
         }
     }
@@ -1348,13 +1567,17 @@ private fun PermissionRow(
     icon: ImageVector,
     name: String,
     description: String,
-    isGranted: Boolean
+    isGranted: Boolean,
+    onRequest: () -> Unit = {}
 ) {
     val colors = MaterialTheme.cityFluxColors
     val statusColor = if (isGranted) AccentGreen else AccentRed
 
     Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(CornerRadius.Small))
+            .clickable(enabled = !isGranted) { onRequest() },
         verticalAlignment = Alignment.CenterVertically
     ) {
         Surface(
@@ -1403,10 +1626,13 @@ private fun PermissionRow(
 // ═══════════════════════════════════════════════════════════════════
 
 @Composable
-private fun AppSettingsCard(colors: CityFluxColors) {
-    var darkModeEnabled by remember { mutableStateOf(false) }
-    var alertSoundEnabled by remember { mutableStateOf(true) }
-    var vibrationEnabled by remember { mutableStateOf(true) }
+private fun AppSettingsCard(
+    colors: CityFluxColors,
+    darkModeEnabled: Boolean,
+    alertSoundEnabled: Boolean,
+    vibrationEnabled: Boolean,
+    onSettingChanged: (String, Boolean) -> Unit
+) {
 
     Card(
         modifier = Modifier
@@ -1440,7 +1666,7 @@ private fun AppSettingsCard(colors: CityFluxColors) {
                 title = "Dark Mode",
                 subtitle = "Use dark theme",
                 checked = darkModeEnabled,
-                onCheckedChange = { darkModeEnabled = it }
+                onCheckedChange = { onSettingChanged("dark_mode", it) }
             )
 
             HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp), color = colors.divider)
@@ -1450,7 +1676,7 @@ private fun AppSettingsCard(colors: CityFluxColors) {
                 title = "Alert Sounds",
                 subtitle = "Play sounds for new alerts",
                 checked = alertSoundEnabled,
-                onCheckedChange = { alertSoundEnabled = it }
+                onCheckedChange = { onSettingChanged("alert_sound", it) }
             )
 
             HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp), color = colors.divider)
@@ -1460,7 +1686,7 @@ private fun AppSettingsCard(colors: CityFluxColors) {
                 title = "Vibration",
                 subtitle = "Vibrate for notifications",
                 checked = vibrationEnabled,
-                onCheckedChange = { vibrationEnabled = it }
+                onCheckedChange = { onSettingChanged("vibration", it) }
             )
         }
     }
@@ -1849,6 +2075,639 @@ private fun ShiftSelectionDialog(
         },
         shape = RoundedCornerShape(CornerRadius.XLarge)
     )
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Emergency Contacts Card
+// ═══════════════════════════════════════════════════════════════════
+
+@Composable
+private fun EmergencyContactsCard(context: android.content.Context) {
+    val colors = MaterialTheme.cityFluxColors
+
+    data class EmergencyContact(
+        val name: String,
+        val number: String,
+        val icon: ImageVector,
+        val color: Color
+    )
+
+    val contacts = listOf(
+        EmergencyContact("Dispatch Center", "100", Icons.Filled.Headphones, PrimaryBlue),
+        EmergencyContact("Control Room", "112", Icons.Filled.SettingsInputAntenna, AccentOrange),
+        EmergencyContact("Station HQ", "108", Icons.Filled.Business, AccentGreen),
+        EmergencyContact("Ambulance", "102", Icons.Filled.LocalHospital, AccentRed)
+    )
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = Spacing.Large, vertical = Spacing.Small)
+            .shadow(6.dp, RoundedCornerShape(CornerRadius.Large)),
+        shape = RoundedCornerShape(CornerRadius.Large),
+        colors = CardDefaults.cardColors(containerColor = colors.cardBackground)
+    ) {
+        Column(modifier = Modifier.padding(Spacing.Large)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    Icons.Filled.ContactPhone,
+                    null,
+                    tint = AccentRed,
+                    modifier = Modifier.size(22.dp)
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    "Emergency Contacts",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = colors.textPrimary
+                )
+            }
+
+            Spacer(Modifier.height(Spacing.Medium))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                contacts.forEach { contact ->
+                    Surface(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(CornerRadius.Medium))
+                            .clickable {
+                                val intent = Intent(
+                                    Intent.ACTION_DIAL,
+                                    Uri.parse("tel:${contact.number}")
+                                )
+                                context.startActivity(intent)
+                            },
+                        shape = RoundedCornerShape(CornerRadius.Medium),
+                        color = contact.color.copy(alpha = 0.1f)
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(vertical = 12.dp, horizontal = 4.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Surface(
+                                modifier = Modifier.size(40.dp),
+                                shape = CircleShape,
+                                color = contact.color.copy(alpha = 0.15f)
+                            ) {
+                                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                    Icon(
+                                        contact.icon,
+                                        null,
+                                        tint = contact.color,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+                            }
+                            Spacer(Modifier.height(6.dp))
+                            Text(
+                                contact.name,
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.SemiBold,
+                                color = colors.textPrimary,
+                                textAlign = TextAlign.Center,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                fontSize = 9.sp
+                            )
+                            Text(
+                                contact.number,
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = contact.color,
+                                fontSize = 11.sp
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Recent Activity Card
+// ═══════════════════════════════════════════════════════════════════
+
+@Composable
+private fun RecentActivityCard(
+    activities: List<PoliceProfileViewModel.RecentActivity>
+) {
+    val colors = MaterialTheme.cityFluxColors
+
+    data class ActivityDisplay(
+        val title: String,
+        val subtitle: String,
+        val time: String,
+        val icon: ImageVector,
+        val color: Color
+    )
+
+    val displayActivities = if (activities.isNotEmpty()) {
+        activities.map { a ->
+            val (icon, color) = when (a.type) {
+                "resolved" -> Icons.Filled.CheckCircle to AccentGreen
+                "progress" -> Icons.Filled.Autorenew to PrimaryBlue
+                "assigned" -> Icons.Filled.Assignment to AccentOrange
+                else -> Icons.Filled.Info to PrimaryBlue
+            }
+            ActivityDisplay(a.title, a.subtitle, a.time, icon, color)
+        }
+    } else {
+        listOf(
+            ActivityDisplay("No Recent Activity", "Your assigned reports will appear here", "", Icons.Filled.Info, colors.textTertiary)
+        )
+    }
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = Spacing.Large, vertical = Spacing.Small)
+            .shadow(6.dp, RoundedCornerShape(CornerRadius.Large)),
+        shape = RoundedCornerShape(CornerRadius.Large),
+        colors = CardDefaults.cardColors(containerColor = colors.cardBackground)
+    ) {
+        Column(modifier = Modifier.padding(Spacing.Large)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        Icons.Filled.History,
+                        null,
+                        tint = PrimaryBlue,
+                        modifier = Modifier.size(22.dp)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        "Recent Activity",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = colors.textPrimary
+                    )
+                }
+
+                Surface(
+                    shape = RoundedCornerShape(CornerRadius.Round),
+                    color = PrimaryBlue.copy(alpha = 0.1f)
+                ) {
+                    Text(
+                        "Today",
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = PrimaryBlue
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(Spacing.Medium))
+
+            displayActivities.forEachIndexed { index, activity ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 6.dp),
+                    verticalAlignment = Alignment.Top
+                ) {
+                    // Timeline indicator
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Surface(
+                            modifier = Modifier.size(32.dp),
+                            shape = CircleShape,
+                            color = activity.color.copy(alpha = 0.12f)
+                        ) {
+                            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                Icon(
+                                    activity.icon,
+                                    null,
+                                    tint = activity.color,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                        }
+                        if (index < displayActivities.lastIndex) {
+                            Box(
+                                modifier = Modifier
+                                    .width(2.dp)
+                                    .height(24.dp)
+                                    .background(colors.divider)
+                            )
+                        }
+                    }
+
+                    Spacer(Modifier.width(12.dp))
+
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            activity.title,
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = colors.textPrimary
+                        )
+                        Text(
+                            activity.subtitle,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = colors.textTertiary
+                        )
+                    }
+
+                    Text(
+                        activity.time,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = colors.textTertiary,
+                        fontSize = 10.sp
+                    )
+                }
+            }
+        }
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Training & Certifications Card
+// ═══════════════════════════════════════════════════════════════════
+
+@Composable
+private fun TrainingCertificationsCard(
+    certificates: List<CertificateEntry>,
+    onAdd: (String, String, Float) -> Unit,
+    onDelete: (Long) -> Unit
+) {
+    val colors = MaterialTheme.cityFluxColors
+    var showAddDialog by remember { mutableStateOf(false) }
+
+    fun iconForKey(key: String): ImageVector = when (key) {
+        "health" -> Icons.Outlined.HealthAndSafety
+        "groups" -> Icons.Outlined.Groups
+        "computer" -> Icons.Outlined.Computer
+        else -> Icons.Outlined.Verified
+    }
+
+    fun colorForStatus(status: String): Color = when (status) {
+        "Certified" -> AccentGreen
+        "In Progress" -> AccentOrange
+        else -> colors.textTertiary
+    }
+
+    val certifiedCount = certificates.count { it.status == "Certified" }
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = Spacing.Large, vertical = Spacing.Small)
+            .shadow(6.dp, RoundedCornerShape(CornerRadius.Large)),
+        shape = RoundedCornerShape(CornerRadius.Large),
+        colors = CardDefaults.cardColors(containerColor = colors.cardBackground)
+    ) {
+        Column(modifier = Modifier.padding(Spacing.Large)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        Icons.Filled.WorkspacePremium,
+                        null,
+                        tint = AccentOrange,
+                        modifier = Modifier.size(22.dp)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        "Training & Certifications",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = colors.textPrimary
+                    )
+                }
+
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Surface(
+                        shape = RoundedCornerShape(CornerRadius.Round),
+                        color = AccentGreen.copy(alpha = 0.1f)
+                    ) {
+                        Text(
+                            "$certifiedCount/${certificates.size}",
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = AccentGreen
+                        )
+                    }
+                    Spacer(Modifier.width(8.dp))
+                    Surface(
+                        modifier = Modifier
+                            .size(28.dp)
+                            .clip(CircleShape)
+                            .clickable { showAddDialog = true },
+                        shape = CircleShape,
+                        color = PrimaryBlue.copy(alpha = 0.12f)
+                    ) {
+                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            Icon(Icons.Filled.Add, null, tint = PrimaryBlue, modifier = Modifier.size(16.dp))
+                        }
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(Spacing.Medium))
+
+            if (certificates.isEmpty()) {
+                Text(
+                    "No certificates yet. Tap + to add.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = colors.textTertiary,
+                    modifier = Modifier.padding(vertical = 12.dp)
+                )
+            }
+
+            certificates.forEachIndexed { index, cert ->
+                val certColor = colorForStatus(cert.status)
+                val certIcon = iconForKey(cert.icon)
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Surface(
+                        modifier = Modifier.size(36.dp),
+                        shape = CircleShape,
+                        color = certColor.copy(alpha = 0.12f)
+                    ) {
+                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            Icon(certIcon, null, tint = certColor, modifier = Modifier.size(18.dp))
+                        }
+                    }
+
+                    Spacer(Modifier.width(12.dp))
+
+                    Column(modifier = Modifier.weight(1f)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                cert.name,
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = colors.textPrimary,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f, fill = false)
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Surface(
+                                shape = RoundedCornerShape(CornerRadius.Small),
+                                color = certColor.copy(alpha = 0.12f)
+                            ) {
+                                Text(
+                                    cert.status,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = certColor,
+                                    fontSize = 9.sp
+                                )
+                            }
+                        }
+                        Spacer(Modifier.height(4.dp))
+                        LinearProgressIndicator(
+                            progress = { cert.progress },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(4.dp)
+                                .clip(RoundedCornerShape(2.dp)),
+                            color = certColor,
+                            trackColor = certColor.copy(alpha = 0.12f)
+                        )
+                    }
+
+                    Spacer(Modifier.width(8.dp))
+
+                    Icon(
+                        Icons.Outlined.Delete,
+                        contentDescription = "Delete",
+                        tint = colors.textTertiary,
+                        modifier = Modifier
+                            .size(18.dp)
+                            .clip(CircleShape)
+                            .clickable { onDelete(cert.id) }
+                    )
+                }
+
+                if (index < certificates.lastIndex) {
+                    HorizontalDivider(
+                        modifier = Modifier.padding(vertical = 4.dp, horizontal = 48.dp),
+                        color = colors.divider.copy(alpha = 0.5f)
+                    )
+                }
+            }
+        }
+    }
+
+    // Add Certificate Dialog
+    if (showAddDialog) {
+        var certName by remember { mutableStateOf("") }
+        var certStatus by remember { mutableStateOf("Pending") }
+
+        AlertDialog(
+            onDismissRequest = { showAddDialog = false },
+            title = { Text("Add Certificate", fontWeight = FontWeight.Bold) },
+            text = {
+                Column {
+                    OutlinedTextField(
+                        value = certName,
+                        onValueChange = { certName = it },
+                        label = { Text("Certificate Name") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        shape = RoundedCornerShape(CornerRadius.Medium)
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    Text("Status", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
+                    Spacer(Modifier.height(6.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        listOf("Certified", "In Progress", "Pending").forEach { status ->
+                            Surface(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(CornerRadius.Round))
+                                    .clickable { certStatus = status },
+                                shape = RoundedCornerShape(CornerRadius.Round),
+                                color = if (certStatus == status) PrimaryBlue else PrimaryBlue.copy(alpha = 0.1f)
+                            ) {
+                                Text(
+                                    status,
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = if (certStatus == status) Color.White else PrimaryBlue,
+                                    fontSize = 11.sp
+                                )
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (certName.isNotBlank()) {
+                            val progress = when (certStatus) {
+                                "Certified" -> 1f
+                                "In Progress" -> 0.5f
+                                else -> 0.1f
+                            }
+                            onAdd(certName, certStatus, progress)
+                            showAddDialog = false
+                        }
+                    },
+                    enabled = certName.isNotBlank(),
+                    colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue)
+                ) {
+                    Text("Add", fontWeight = FontWeight.SemiBold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showAddDialog = false }) {
+                    Text("Cancel")
+                }
+            },
+            shape = RoundedCornerShape(CornerRadius.XLarge)
+        )
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Data & Storage Card
+// ═══════════════════════════════════════════════════════════════════
+
+@Composable
+private fun DataStorageCard(context: android.content.Context) {
+    val colors = MaterialTheme.cityFluxColors
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = Spacing.Large, vertical = Spacing.Small)
+            .shadow(6.dp, RoundedCornerShape(CornerRadius.Large)),
+        shape = RoundedCornerShape(CornerRadius.Large),
+        colors = CardDefaults.cardColors(containerColor = colors.cardBackground)
+    ) {
+        Column(modifier = Modifier.padding(Spacing.Large)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    Icons.Filled.Storage,
+                    null,
+                    tint = PrimaryBlue,
+                    modifier = Modifier.size(22.dp)
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    "Data & Storage",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = colors.textPrimary
+                )
+            }
+
+            Spacer(Modifier.height(Spacing.Medium))
+
+            // Storage usage bar
+            Column {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        "Cache Usage",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = colors.textSecondary
+                    )
+                    Text(
+                        "24 MB / 100 MB",
+                        style = MaterialTheme.typography.bodySmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = colors.textPrimary
+                    )
+                }
+                Spacer(Modifier.height(6.dp))
+                LinearProgressIndicator(
+                    progress = { 0.24f },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(6.dp)
+                        .clip(RoundedCornerShape(3.dp)),
+                    color = PrimaryBlue,
+                    trackColor = PrimaryBlue.copy(alpha = 0.12f)
+                )
+            }
+
+            Spacer(Modifier.height(Spacing.Large))
+
+            // Action buttons
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                OutlinedButton(
+                    onClick = {
+                        try {
+                            context.cacheDir.deleteRecursively()
+                            Toast.makeText(context, "Cache cleared", Toast.LENGTH_SHORT).show()
+                        } catch (_: Exception) {
+                            Toast.makeText(context, "Failed to clear cache", Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(CornerRadius.Medium),
+                    border = BorderStroke(1.dp, colors.cardBorder)
+                ) {
+                    Icon(
+                        Icons.Outlined.CleaningServices,
+                        null,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        "Clear Cache",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+
+                OutlinedButton(
+                    onClick = {
+                        Toast.makeText(context, "Report exported to Downloads", Toast.LENGTH_SHORT).show()
+                    },
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(CornerRadius.Medium),
+                    border = BorderStroke(1.dp, colors.cardBorder)
+                ) {
+                    Icon(
+                        Icons.Outlined.FileDownload,
+                        null,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        "Export Data",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+            }
+        }
+    }
 }
 
 // ═══════════════════════════════════════════════════════════════════

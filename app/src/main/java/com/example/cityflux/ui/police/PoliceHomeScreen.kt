@@ -5,8 +5,6 @@ import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -19,8 +17,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -32,10 +33,12 @@ import com.example.cityflux.data.RealtimeDbService
 import com.example.cityflux.model.ParkingLive
 import com.example.cityflux.model.Report
 import com.example.cityflux.model.TrafficStatus
+import com.example.cityflux.model.LocationUtils
 import com.example.cityflux.ui.theme.*
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
+import com.google.firebase.Timestamp
 
 // ═══════════════════════════════════════════════════════════════════
 // Police Home Screen — Premium Command Center Dashboard
@@ -53,12 +56,19 @@ fun PoliceHomeScreen(
     // ── User profile ──
     var userName by remember { mutableStateOf<String?>(null) }
     var userLoading by remember { mutableStateOf(true) }
+    // ── Police working location for proximity filtering ──
+    var policeLat by remember { mutableStateOf(0.0) }
+    var policeLon by remember { mutableStateOf(0.0) }
+    var policeAreaName by remember { mutableStateOf("") }
 
     LaunchedEffect(auth.currentUser?.uid) {
         val uid = auth.currentUser?.uid ?: return@LaunchedEffect
         firestore.collection("users").document(uid).get()
             .addOnSuccessListener { doc ->
                 userName = doc.getString("name") ?: "Officer"
+                policeLat = doc.getDouble("workingLatitude") ?: 0.0
+                policeLon = doc.getDouble("workingLongitude") ?: 0.0
+                policeAreaName = doc.getString("workingAreaName") ?: ""
                 userLoading = false
             }
             .addOnFailureListener {
@@ -103,20 +113,69 @@ fun PoliceHomeScreen(
             }
     }
 
-    // ── Derived Stats ──
-    val totalComplaints = allReports.size
-    val pendingReports = remember(allReports) {
-        allReports.filter {
+    // ── Real-time parking violations from Firestore (police-specific) ──
+    var allViolations by remember { mutableStateOf<List<ParkingViolationSummary>>(emptyList()) }
+    LaunchedEffect(auth.currentUser?.uid) {
+        val uid = auth.currentUser?.uid ?: return@LaunchedEffect
+        firestore.collection("parking_violations")
+            .whereEqualTo("officerId", uid)
+            .orderBy("timestamp", Query.Direction.DESCENDING)
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) return@addSnapshotListener
+                allViolations = snapshot?.documents?.mapNotNull { doc ->
+                    try {
+                        ParkingViolationSummary(
+                            actionType = doc.getString("actionType") ?: "warning",
+                            status = doc.getString("status") ?: "Active",
+                            vehicleInfo = doc.getString("vehicleInfo") ?: "",
+                            violationType = doc.getString("violationType") ?: "",
+                            address = doc.getString("address") ?: "",
+                            timestamp = doc.getTimestamp("timestamp")
+                        )
+                    } catch (_: Exception) { null }
+                } ?: emptyList()
+            }
+    }
+
+    // ── Derived: violation stats ──
+    val activeViolations = remember(allViolations) {
+        allViolations.count { it.status.equals("Active", true) }
+    }
+    val clearedViolations = remember(allViolations) {
+        allViolations.count { it.status.equals("Cleared", true) }
+    }
+    val warningCount = remember(allViolations) {
+        allViolations.count { it.actionType.equals("warning", true) }
+    }
+    val fineCount = remember(allViolations) {
+        allViolations.count { it.actionType.equals("fine", true) }
+    }
+    val towCount = remember(allViolations) {
+        allViolations.count { it.actionType.equals("tow", true) }
+    }
+
+    // ── Proximity-filtered reports (within 4 km of police working location) ──
+    val nearbyReports = remember(allReports, policeLat, policeLon) {
+        if (policeLat == 0.0 && policeLon == 0.0) allReports
+        else allReports.filter {
+            LocationUtils.isWithinRadius(policeLat, policeLon, it.latitude, it.longitude)
+        }
+    }
+
+    // ── Derived Stats (area-specific) ──
+    val totalComplaints = nearbyReports.size
+    val pendingReports = remember(nearbyReports) {
+        nearbyReports.filter {
             it.status.equals("Pending", true) || it.status.equals("submitted", true)
         }
     }
-    val inProgressReports = remember(allReports) {
-        allReports.filter {
+    val inProgressReports = remember(nearbyReports) {
+        nearbyReports.filter {
             it.status.equals("In Progress", true) || it.status.equals("in_progress", true)
         }
     }
-    val resolvedReports = remember(allReports) {
-        allReports.filter { it.status.equals("Resolved", true) }
+    val resolvedReports = remember(nearbyReports) {
+        nearbyReports.filter { it.status.equals("Resolved", true) }
     }
 
     // ── Derived: congestion breakdown ──
@@ -135,19 +194,14 @@ fun PoliceHomeScreen(
         }
     }
 
-    // ── Type breakdown ──
-    val typeBreakdown = remember(allReports) {
-        allReports.groupBy { it.type.lowercase() }
-            .mapValues { it.value.size }
-            .entries
-            .sortedByDescending { it.value }
-    }
-
     // ── Parking stats ──
     val totalSlots = remember(parkingMap) { parkingMap.values.sumOf { it.availableSlots } }
 
-    // Recent 5 reports
-    val recentReports = remember(allReports) { allReports.take(5) }
+    // Recent 5 parking violations by this officer
+    val recentViolations = remember(allViolations) { allViolations.take(5) }
+
+    // Recent 5 reports (from nearby area)
+    val recentReports = remember(nearbyReports) { nearbyReports.take(5) }
 
     // ── UI ──
     Column(
@@ -161,6 +215,7 @@ fun PoliceHomeScreen(
             userName = userName,
             userLoading = userLoading,
             unreadCount = unreadCount,
+            areaName = policeAreaName,
             onNotificationClick = { onNavigateToTab(PoliceTab.REPORTS) },
             onProfileClick = { onNavigateToTab(PoliceTab.PROFILE) }
         )
@@ -177,13 +232,15 @@ fun PoliceHomeScreen(
                 pendingCount = pendingReports.size
             )
 
-            // ──────── LIVE CONGESTION SUMMARY ────────
+            // ──────── LIVE CONGESTION ACTIVITY (compact card) ────────
             PoliceSectionHeader(
                 title = "Live Congestion",
-                icon = Icons.Outlined.Traffic
+                icon = Icons.Outlined.Traffic,
+                actionLabel = "View Map",
+                onAction = { onNavigateToTab(PoliceTab.CONGESTION) }
             )
 
-            LiveCongestionSummary(
+            LiveCongestionActivityCard(
                 totalRoads = trafficMap.size,
                 highCount = highTrafficZones.size,
                 mediumCount = mediumTrafficZones.size,
@@ -191,174 +248,130 @@ fun PoliceHomeScreen(
                 isLoading = trafficMap.isEmpty()
             )
 
-            // ── High traffic zones carousel ──
-            if (highTrafficZones.isNotEmpty() || mediumTrafficZones.isNotEmpty()) {
-                val topZones = (highTrafficZones + mediumTrafficZones).take(8)
-                LazyRow(
-                    horizontalArrangement = Arrangement.spacedBy(Spacing.Medium),
-                    contentPadding = PaddingValues(end = Spacing.Medium)
-                ) {
-                    items(topZones) { (roadId, status) ->
-                        TrafficZoneChip(roadId = roadId, status = status)
-                    }
-                }
-            }
-
-            // ──────── QUICK STATS ────────
+            // ──────── HIGH-TRAFFIC ZONES (premium grid) ────────
             PoliceSectionHeader(
-                title = "Quick Stats",
-                icon = Icons.Outlined.Analytics
-            )
-
-            // Primary stat row
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(Spacing.Medium)
-            ) {
-                AnimatedStatCard(
-                    title = "Active\nComplaints",
-                    value = totalComplaints.toString(),
-                    icon = Icons.Outlined.Report,
-                    accentColor = AccentTraffic,
-                    modifier = Modifier.weight(1f)
-                )
-                AnimatedStatCard(
-                    title = "Pending\nReports",
-                    value = pendingReports.size.toString(),
-                    icon = Icons.Outlined.Pending,
-                    accentColor = AccentOrange,
-                    modifier = Modifier.weight(1f)
-                )
-            }
-
-            // Secondary stat row
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(Spacing.Medium)
-            ) {
-                AnimatedStatCard(
-                    title = "In\nProgress",
-                    value = inProgressReports.size.toString(),
-                    icon = Icons.Outlined.Autorenew,
-                    accentColor = PrimaryBlue,
-                    modifier = Modifier.weight(1f)
-                )
-                AnimatedStatCard(
-                    title = "Resolved",
-                    value = resolvedReports.size.toString(),
-                    icon = Icons.Outlined.CheckCircle,
-                    accentColor = AccentGreen,
-                    modifier = Modifier.weight(1f)
-                )
-            }
-
-            // ──────── COMPLAINTS BY TYPE ────────
-            if (typeBreakdown.isNotEmpty()) {
-                PoliceSectionHeader(
-                    title = "Complaints by Type",
-                    icon = Icons.Outlined.PieChart
-                )
-
-                LazyRow(
-                    horizontalArrangement = Arrangement.spacedBy(Spacing.Medium),
-                    contentPadding = PaddingValues(end = Spacing.Medium)
-                ) {
-                    items(typeBreakdown) { (type, count) ->
-                        ComplaintTypeChip(type = type, count = count)
-                    }
-                }
-            }
-
-            // ──────── HIGH-TRAFFIC ZONES ────────
-            PoliceSectionHeader(
-                title = "High-Traffic Zones",
+                title = "High Traffic Zones",
                 icon = Icons.Outlined.LocationOn
             )
 
-            if (highTrafficZones.isEmpty() && mediumTrafficZones.isEmpty()) {
-                PoliceEmptyCard(
-                    icon = Icons.Outlined.CheckCircle,
-                    message = "All zones clear — no congestion detected"
-                )
-            } else {
-                HighTrafficZoneCards(
-                    highZones = highTrafficZones,
-                    mediumZones = mediumTrafficZones
-                )
-            }
-
-            // ──────── PENDING REPORTS ────────
-            PoliceSectionHeader(
-                title = "Pending Reports",
-                icon = Icons.Outlined.Assignment,
-                actionLabel = "View All",
-                onAction = { onNavigateToTab(PoliceTab.REPORTS) }
+            HighTrafficZonesGrid(
+                highZones = highTrafficZones,
+                mediumZones = mediumTrafficZones
             )
 
-            if (reportsLoading) {
-                repeat(3) { PoliceShimmerCard() }
-            } else if (pendingReports.isEmpty()) {
+            // ──────── QUICK STATISTICS (chart cards) ────────
+            PoliceSectionHeader(
+                title = "Quick Statistics",
+                icon = Icons.Outlined.Analytics
+            )
+
+            // Reports pie chart card
+            PieChartCard(
+                title = "Reports Overview",
+                icon = Icons.Outlined.Assignment,
+                accentColor = PrimaryBlue,
+                items = listOf(
+                    ChartItem("Pending", pendingReports.size, AccentOrange),
+                    ChartItem("In Progress", inProgressReports.size, PrimaryBlue),
+                    ChartItem("Resolved", resolvedReports.size, AccentGreen)
+                ),
+                total = totalComplaints,
+                centerLabel = "Reports"
+            )
+
+            Spacer(modifier = Modifier.height(Spacing.Small))
+
+            // Parking control pie chart card (police-specific violations)
+            PieChartCard(
+                title = "My Violations",
+                icon = Icons.Outlined.LocalParking,
+                accentColor = AccentParking,
+                items = listOf(
+                    ChartItem("Active", activeViolations, AccentRed),
+                    ChartItem("Cleared", clearedViolations, AccentGreen),
+                    ChartItem("Warnings", warningCount, AccentOrange),
+                    ChartItem("Fines", fineCount, PrimaryBlue),
+                    ChartItem("Towed", towCount, Color(0xFF8B5CF6))
+                ),
+                total = allViolations.size,
+                centerLabel = "Violations"
+            )
+
+            // ──────── RECENT PARKING VIOLATIONS (police-specific) ────────
+            PoliceSectionHeader(
+                title = "My Recent Violations",
+                icon = Icons.Outlined.LocalParking,
+                actionLabel = "View All",
+                onAction = { onNavigateToTab(PoliceTab.PARKING) }
+            )
+
+            if (recentViolations.isEmpty()) {
                 PoliceEmptyCard(
-                    icon = Icons.Outlined.Verified,
-                    message = "No pending reports — great work!"
+                    icon = Icons.Outlined.LocalParking,
+                    message = "No violations issued yet"
                 )
             } else {
-                pendingReports.take(5).forEach { report ->
-                    PendingReportCard(report = report)
-                    Spacer(modifier = Modifier.height(Spacing.Small))
-                }
+                RecentViolationsCard(violations = recentViolations)
             }
 
-            // ──────── QUICK ACTION BUTTONS ────────
+            // ──────── QUICK ACTIONS (expanded) ────────
             PoliceSectionHeader(
                 title = "Quick Actions",
                 icon = Icons.Outlined.FlashOn
             )
 
+            // Row 1: Congestion Reports, Parking Control
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(Spacing.Medium)
             ) {
-                PoliceActionButton(
-                    label = "View Reports",
-                    icon = Icons.Outlined.Assignment,
-                    accentColor = AccentIssues,
-                    modifier = Modifier.weight(1f),
-                    onClick = { onNavigateToTab(PoliceTab.REPORTS) }
-                )
-                PoliceActionButton(
-                    label = "View Issues",
-                    icon = Icons.Outlined.ReportProblem,
+                PremiumActionButton(
+                    label = "Congestion\nReports",
+                    icon = Icons.Outlined.Traffic,
                     accentColor = AccentTraffic,
+                    badge = highTrafficZones.size.let { if (it > 0) "$it" else null },
                     modifier = Modifier.weight(1f),
                     onClick = { onNavigateToTab(PoliceTab.CONGESTION) }
                 )
-            }
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(Spacing.Medium)
-            ) {
-                PoliceActionButton(
-                    label = "Mark Action",
-                    icon = Icons.Outlined.TaskAlt,
-                    accentColor = AccentGreen,
-                    modifier = Modifier.weight(1f),
-                    onClick = { onNavigateToTab(PoliceTab.ACTIONS) }
-                )
-                PoliceActionButton(
-                    label = "Parking",
+                PremiumActionButton(
+                    label = "Parking\nControl",
                     icon = Icons.Outlined.LocalParking,
                     accentColor = AccentParking,
+                    badge = null,
                     modifier = Modifier.weight(1f),
                     onClick = { onNavigateToTab(PoliceTab.PARKING) }
                 )
             }
 
-            // ──────── RECENT ACTIVITY FEED ────────
+            // Row 2: Reports, Actions
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(Spacing.Medium)
+            ) {
+                PremiumActionButton(
+                    label = "View\nReports",
+                    icon = Icons.Outlined.Assignment,
+                    accentColor = AccentIssues,
+                    badge = pendingReports.size.let { if (it > 0) "$it" else null },
+                    modifier = Modifier.weight(1f),
+                    onClick = { onNavigateToTab(PoliceTab.REPORTS) }
+                )
+                PremiumActionButton(
+                    label = "Action\nStatus",
+                    icon = Icons.Outlined.TaskAlt,
+                    accentColor = AccentGreen,
+                    badge = null,
+                    modifier = Modifier.weight(1f),
+                    onClick = { onNavigateToTab(PoliceTab.ACTIONS) }
+                )
+            }
+
+            // ──────── RECENT ACTIVITY (premium timeline) ────────
             PoliceSectionHeader(
                 title = "Recent Activity",
-                icon = Icons.Outlined.History
+                icon = Icons.Outlined.History,
+                actionLabel = "View All",
+                onAction = { onNavigateToTab(PoliceTab.REPORTS) }
             )
 
             if (recentReports.isEmpty() && !reportsLoading) {
@@ -366,11 +379,10 @@ fun PoliceHomeScreen(
                     icon = Icons.Outlined.Inbox,
                     message = "No recent activity"
                 )
+            } else if (reportsLoading) {
+                repeat(3) { PoliceShimmerCard() }
             } else {
-                recentReports.forEach { report ->
-                    RecentActivityCard(report = report)
-                    Spacer(modifier = Modifier.height(Spacing.Small))
-                }
+                RecentActivityTimeline(reports = recentReports)
             }
 
             Spacer(modifier = Modifier.height(Spacing.XXLarge))
@@ -387,6 +399,7 @@ private fun PoliceHomeTopBar(
     userName: String?,
     userLoading: Boolean,
     unreadCount: Int,
+    areaName: String = "",
     onNotificationClick: () -> Unit,
     onProfileClick: () -> Unit
 ) {
@@ -433,7 +446,8 @@ private fun PoliceHomeTopBar(
                     color = colors.textPrimary
                 )
                 Text(
-                    text = "City Traffic Control · Live Operations",
+                    text = if (areaName.isNotBlank()) "$areaName · Live Operations"
+                           else "City Traffic Control · Live Operations",
                     style = MaterialTheme.typography.bodySmall,
                     color = colors.textSecondary
                 )
@@ -568,11 +582,11 @@ private fun CriticalAlertsBanner(
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// ── LIVE CONGESTION SUMMARY ─────────────────────────────────────
+// ── LIVE CONGESTION ACTIVITY CARD (compact premium) ─────────────
 // ═══════════════════════════════════════════════════════════════════
 
 @Composable
-private fun LiveCongestionSummary(
+private fun LiveCongestionActivityCard(
     totalRoads: Int,
     highCount: Int,
     mediumCount: Int,
@@ -585,32 +599,41 @@ private fun LiveCongestionSummary(
         modifier = Modifier
             .fillMaxWidth()
             .shadow(
-                elevation = 4.dp,
-                shape = RoundedCornerShape(CornerRadius.Large),
-                ambientColor = colors.cardShadow
+                elevation = 8.dp,
+                shape = RoundedCornerShape(CornerRadius.XLarge),
+                ambientColor = PrimaryBlue.copy(alpha = 0.12f)
             ),
-        shape = RoundedCornerShape(CornerRadius.Large),
+        shape = RoundedCornerShape(CornerRadius.XLarge),
         colors = CardDefaults.cardColors(containerColor = colors.cardBackground)
     ) {
         Column(modifier = Modifier.padding(Spacing.Large)) {
+            // Header row with live indicator
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    text = "Roads Monitored",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = colors.textSecondary
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    PulsingDot(color = AccentGreen, size = 8.dp)
+                    Text(
+                        text = "LIVE",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = AccentGreen,
+                        letterSpacing = 1.sp
+                    )
+                }
                 Surface(
-                    shape = RoundedCornerShape(CornerRadius.Small),
-                    color = PrimaryBlue.copy(alpha = 0.1f)
+                    shape = RoundedCornerShape(CornerRadius.Round),
+                    color = PrimaryBlue.copy(alpha = 0.08f)
                 ) {
                     Text(
-                        text = if (isLoading) "..." else "$totalRoads roads",
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
-                        style = MaterialTheme.typography.labelMedium,
+                        text = if (isLoading) "..." else "$totalRoads Roads",
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
+                        style = MaterialTheme.typography.labelSmall,
                         fontWeight = FontWeight.SemiBold,
                         color = PrimaryBlue
                     )
@@ -624,18 +647,17 @@ private fun LiveCongestionSummary(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceEvenly
                 ) {
-                    repeat(3) {
-                        PoliceShimmerBox(width = 80.dp, height = 60.dp)
-                    }
+                    repeat(3) { PoliceShimmerBox(width = 80.dp, height = 56.dp) }
                 }
             } else {
-                // Congestion progress bar
+                // Segmented congestion bar with rounded ends
                 if (totalRoads > 0) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(8.dp)
-                            .clip(RoundedCornerShape(4.dp))
+                            .height(10.dp)
+                            .clip(RoundedCornerShape(5.dp))
+                            .background(colors.surfaceVariant)
                     ) {
                         if (highCount > 0) {
                             Box(
@@ -666,14 +688,42 @@ private fun LiveCongestionSummary(
                     Spacer(modifier = Modifier.height(Spacing.Large))
                 }
 
-                // Level breakdown
+                // Level indicators with mini bar charts
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceEvenly
                 ) {
-                    CongestionLevelIndicator(label = "High", count = highCount, color = AccentRed)
-                    CongestionLevelIndicator(label = "Medium", count = mediumCount, color = AccentOrange)
-                    CongestionLevelIndicator(label = "Low", count = lowCount, color = AccentGreen)
+                    CongestionMiniStat(
+                        label = "Critical",
+                        count = highCount,
+                        color = AccentRed,
+                        icon = Icons.Filled.Warning
+                    )
+                    // Vertical divider
+                    Box(
+                        modifier = Modifier
+                            .width(1.dp)
+                            .height(52.dp)
+                            .background(colors.divider)
+                    )
+                    CongestionMiniStat(
+                        label = "Moderate",
+                        count = mediumCount,
+                        color = AccentOrange,
+                        icon = Icons.Filled.RemoveCircle
+                    )
+                    Box(
+                        modifier = Modifier
+                            .width(1.dp)
+                            .height(52.dp)
+                            .background(colors.divider)
+                    )
+                    CongestionMiniStat(
+                        label = "Clear",
+                        count = lowCount,
+                        color = AccentGreen,
+                        icon = Icons.Filled.CheckCircle
+                    )
                 }
             }
         }
@@ -681,85 +731,31 @@ private fun LiveCongestionSummary(
 }
 
 @Composable
-private fun CongestionLevelIndicator(label: String, count: Int, color: Color) {
+private fun CongestionMiniStat(
+    label: String,
+    count: Int,
+    color: Color,
+    icon: ImageVector
+) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Box(
-            modifier = Modifier
-                .size(42.dp)
-                .clip(CircleShape)
-                .background(color.copy(alpha = 0.12f)),
-            contentAlignment = Alignment.Center
-        ) {
-            Text(
-                text = count.toString(),
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                color = color
-            )
-        }
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = color,
+            modifier = Modifier.size(18.dp)
+        )
         Spacer(modifier = Modifier.height(4.dp))
+        Text(
+            text = count.toString(),
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.Bold,
+            color = color
+        )
         Text(
             text = label,
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.cityFluxColors.textSecondary
         )
-    }
-}
-
-// ═══════════════════════════════════════════════════════════════════
-// ── TRAFFIC ZONE CHIP ───────────────────────────────────────────
-// ═══════════════════════════════════════════════════════════════════
-
-@Composable
-private fun TrafficZoneChip(roadId: String, status: TrafficStatus) {
-    val level = status.congestionLevel.uppercase()
-    val chipColor = when (level) {
-        "HIGH" -> AccentRed
-        "MEDIUM" -> AccentOrange
-        else -> AccentGreen
-    }
-    val levelLabel = when (level) {
-        "HIGH" -> "Heavy"
-        "MEDIUM" -> "Moderate"
-        else -> "Clear"
-    }
-
-    Card(
-        shape = RoundedCornerShape(CornerRadius.Large),
-        colors = CardDefaults.cardColors(containerColor = chipColor.copy(alpha = 0.10f)),
-        border = BorderStroke(1.dp, chipColor.copy(alpha = 0.25f))
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            if (level == "HIGH") {
-                PulsingDot(color = chipColor, size = 10.dp)
-            } else {
-                Box(
-                    modifier = Modifier
-                        .size(8.dp)
-                        .clip(CircleShape)
-                        .background(chipColor)
-                )
-            }
-            Column {
-                Text(
-                    text = roadId.replace("_", ", "),
-                    style = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    color = chipColor,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Text(
-                    text = levelLabel,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = chipColor.copy(alpha = 0.75f)
-                )
-            }
-        }
     }
 }
 
@@ -794,202 +790,157 @@ private fun PulsingDot(color: Color, size: Dp) {
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// ── ANIMATED STAT CARD ──────────────────────────────────────────
+// ── HIGH TRAFFIC ZONES GRID (premium glassmorphism-style) ───────
 // ═══════════════════════════════════════════════════════════════════
 
 @Composable
-private fun AnimatedStatCard(
-    title: String,
-    value: String,
-    icon: ImageVector,
-    accentColor: Color,
-    modifier: Modifier = Modifier
-) {
-    val colors = MaterialTheme.cityFluxColors
-
-    Card(
-        modifier = modifier
-            .shadow(
-                elevation = 6.dp,
-                shape = RoundedCornerShape(CornerRadius.Large),
-                ambientColor = colors.cardShadow,
-                spotColor = accentColor.copy(alpha = 0.15f)
-            ),
-        shape = RoundedCornerShape(CornerRadius.Large),
-        colors = CardDefaults.cardColors(containerColor = colors.cardBackground)
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(Spacing.Large),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(48.dp)
-                    .clip(CircleShape)
-                    .background(accentColor.copy(alpha = 0.10f)),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = icon,
-                    contentDescription = null,
-                    tint = accentColor,
-                    modifier = Modifier.size(24.dp)
-                )
-            }
-            Spacer(modifier = Modifier.height(Spacing.Medium))
-            Text(
-                text = value,
-                style = MaterialTheme.typography.headlineMedium,
-                fontWeight = FontWeight.Bold,
-                color = colors.textPrimary
-            )
-            Spacer(modifier = Modifier.height(2.dp))
-            Text(
-                text = title,
-                style = MaterialTheme.typography.labelSmall,
-                color = colors.textSecondary,
-                textAlign = TextAlign.Center,
-                lineHeight = 14.sp
-            )
-        }
-    }
-}
-
-// ═══════════════════════════════════════════════════════════════════
-// ── COMPLAINT TYPE CHIP ─────────────────────────────────────────
-// ═══════════════════════════════════════════════════════════════════
-
-@Composable
-private fun ComplaintTypeChip(type: String, count: Int) {
-    val accentColor = when (type) {
-        "traffic_violation" -> AccentTraffic
-        "illegal_parking" -> AccentParking
-        "road_damage" -> AccentIssues
-        "accident" -> AccentRed
-        "hawker" -> AccentOrange
-        else -> AccentAlerts
-    }
-    val typeIcon = when (type) {
-        "traffic_violation" -> Icons.Outlined.Traffic
-        "illegal_parking" -> Icons.Outlined.LocalParking
-        "road_damage" -> Icons.Outlined.Construction
-        "accident" -> Icons.Outlined.CarCrash
-        "hawker" -> Icons.Outlined.Store
-        else -> Icons.Outlined.Report
-    }
-    val label = type.replace("_", " ").replaceFirstChar { it.uppercase() }
-
-    Card(
-        shape = RoundedCornerShape(CornerRadius.Large),
-        colors = CardDefaults.cardColors(containerColor = accentColor.copy(alpha = 0.08f)),
-        border = BorderStroke(1.dp, accentColor.copy(alpha = 0.2f))
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Icon(
-                imageVector = typeIcon,
-                contentDescription = null,
-                tint = accentColor,
-                modifier = Modifier.size(18.dp)
-            )
-            Column {
-                Text(
-                    text = label,
-                    style = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    color = accentColor
-                )
-                Text(
-                    text = "$count report${if (count != 1) "s" else ""}",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = accentColor.copy(alpha = 0.7f)
-                )
-            }
-        }
-    }
-}
-
-// ═══════════════════════════════════════════════════════════════════
-// ── HIGH TRAFFIC ZONE CARDS ─────────────────────────────────────
-// ═══════════════════════════════════════════════════════════════════
-
-@Composable
-private fun HighTrafficZoneCards(
+private fun HighTrafficZonesGrid(
     highZones: List<Map.Entry<String, TrafficStatus>>,
     mediumZones: List<Map.Entry<String, TrafficStatus>>
 ) {
     val colors = MaterialTheme.cityFluxColors
-    val allZones = (highZones + mediumZones).take(4)
 
-    Column(verticalArrangement = Arrangement.spacedBy(Spacing.Small)) {
-        allZones.forEach { (roadId, status) ->
-            val level = status.congestionLevel.uppercase()
-            val zoneColor = if (level == "HIGH") AccentRed else AccentOrange
-            val levelTag = if (level == "HIGH") "HEAVY" else "MODERATE"
-
-            Card(
+    if (highZones.isEmpty() && mediumZones.isEmpty()) {
+        // Empty state — stylish
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(CornerRadius.XLarge),
+            colors = CardDefaults.cardColors(containerColor = Color.Transparent)
+        ) {
+            Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .shadow(
-                        elevation = 2.dp,
-                        shape = RoundedCornerShape(CornerRadius.Medium),
-                        ambientColor = colors.cardShadow
-                    ),
-                shape = RoundedCornerShape(CornerRadius.Medium),
-                colors = CardDefaults.cardColors(containerColor = colors.cardBackground)
+                    .background(
+                        Brush.linearGradient(
+                            listOf(
+                                AccentGreen.copy(alpha = 0.08f),
+                                AccentGreen.copy(alpha = 0.03f)
+                            )
+                        )
+                    )
+                    .padding(Spacing.XLarge),
+                contentAlignment = Alignment.Center
             ) {
-                Row(modifier = Modifier.height(IntrinsicSize.Min)) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Box(
                         modifier = Modifier
-                            .width(4.dp)
-                            .fillMaxHeight()
-                            .background(zoneColor)
-                    )
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(Spacing.Medium),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
+                            .size(56.dp)
+                            .clip(CircleShape)
+                            .background(AccentGreen.copy(alpha = 0.12f)),
+                        contentAlignment = Alignment.Center
                     ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(Spacing.Medium)
+                        Icon(
+                            imageVector = Icons.Filled.CheckCircle,
+                            contentDescription = null,
+                            tint = AccentGreen,
+                            modifier = Modifier.size(28.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(Spacing.Medium))
+                    Text(
+                        text = "All Zones Clear",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = AccentGreen
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "No congestion detected across the city",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = colors.textSecondary,
+                        textAlign = TextAlign.Center
+                    )
+                }
+            }
+        }
+        return
+    }
+
+    val allZones = (highZones + mediumZones).take(6)
+
+    // 2-column grid
+    val chunked = allZones.chunked(2)
+    Column(verticalArrangement = Arrangement.spacedBy(Spacing.Medium)) {
+        chunked.forEach { rowItems ->
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(Spacing.Medium)
+            ) {
+                rowItems.forEach { (roadId, status) ->
+                    val level = status.congestionLevel.uppercase()
+                    val zoneColor = if (level == "HIGH") AccentRed else AccentOrange
+                    val levelTag = if (level == "HIGH") "HEAVY" else "MODERATE"
+                    val zoneIcon = if (level == "HIGH") Icons.Filled.Warning else Icons.Filled.RemoveCircle
+
+                    Card(
+                        modifier = Modifier
+                            .weight(1f)
+                            .shadow(
+                                elevation = 4.dp,
+                                shape = RoundedCornerShape(CornerRadius.Large),
+                                ambientColor = zoneColor.copy(alpha = 0.15f)
+                            ),
+                        shape = RoundedCornerShape(CornerRadius.Large),
+                        colors = CardDefaults.cardColors(containerColor = colors.cardBackground),
+                        border = BorderStroke(1.dp, zoneColor.copy(alpha = 0.15f))
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(Spacing.Medium)
                         ) {
-                            Icon(
-                                imageVector = Icons.Outlined.LocationOn,
-                                contentDescription = null,
-                                tint = zoneColor,
-                                modifier = Modifier.size(20.dp)
-                            )
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(32.dp)
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(zoneColor.copy(alpha = 0.12f)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = zoneIcon,
+                                        contentDescription = null,
+                                        tint = zoneColor,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
+                                if (level == "HIGH") {
+                                    PulsingDot(color = zoneColor, size = 8.dp)
+                                }
+                            }
+                            Spacer(modifier = Modifier.height(Spacing.Small))
                             Text(
                                 text = roadId.replace("_", ", "),
-                                style = MaterialTheme.typography.bodyMedium,
-                                fontWeight = FontWeight.Medium,
+                                style = MaterialTheme.typography.bodySmall,
+                                fontWeight = FontWeight.SemiBold,
                                 color = colors.textPrimary,
                                 maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.widthIn(max = 180.dp)
+                                overflow = TextOverflow.Ellipsis
                             )
-                        }
-                        Surface(
-                            shape = RoundedCornerShape(CornerRadius.Small),
-                            color = zoneColor.copy(alpha = 0.12f)
-                        ) {
-                            Text(
-                                text = levelTag,
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
-                                style = MaterialTheme.typography.labelSmall,
-                                fontWeight = FontWeight.Bold,
-                                color = zoneColor
-                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Surface(
+                                shape = RoundedCornerShape(4.dp),
+                                color = zoneColor.copy(alpha = 0.10f)
+                            ) {
+                                Text(
+                                    text = levelTag,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = zoneColor,
+                                    fontSize = 9.sp
+                                )
+                            }
                         }
                     }
+                }
+                // Fill empty space if odd number
+                if (rowItems.size == 1) {
+                    Spacer(modifier = Modifier.weight(1f))
                 }
             }
         }
@@ -997,113 +948,216 @@ private fun HighTrafficZoneCards(
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// ── PENDING REPORT CARD ─────────────────────────────────────────
+// ── DATA CLASSES ────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════
+
+private data class ChartItem(val label: String, val value: Int, val color: Color)
+private data class ParkingViolationSummary(
+    val actionType: String,
+    val status: String,
+    val vehicleInfo: String = "",
+    val violationType: String = "",
+    val address: String = "",
+    val timestamp: Timestamp? = null
+)
+
+// ═══════════════════════════════════════════════════════════════════
+// ── PIE CHART STATISTICS CARD ───────────────────────────────────
 // ═══════════════════════════════════════════════════════════════════
 
 @Composable
-private fun PendingReportCard(report: Report) {
+private fun PieChartCard(
+    title: String,
+    icon: ImageVector,
+    accentColor: Color,
+    items: List<ChartItem>,
+    total: Int,
+    centerLabel: String
+) {
     val colors = MaterialTheme.cityFluxColors
+    val nonZeroItems = items.filter { it.value > 0 }
+    val sweepTotal = nonZeroItems.sumOf { it.value }.coerceAtLeast(1)
 
-    val accentColor = when (report.type.lowercase()) {
-        "traffic_violation" -> AccentTraffic
-        "illegal_parking" -> AccentParking
-        "road_damage" -> AccentIssues
-        "accident" -> AccentRed
-        "hawker" -> AccentOrange
-        else -> AccentAlerts
-    }
-
-    val typeLabel = report.type.replace("_", " ").replaceFirstChar { it.uppercase() }
-    val timeAgo = report.timestamp?.let {
-        DateUtils.getRelativeTimeSpanString(
-            it.toDate().time,
-            System.currentTimeMillis(),
-            DateUtils.MINUTE_IN_MILLIS
-        ).toString()
-    } ?: ""
+    // Animate the pie chart sweep
+    var animationPlayed by remember { mutableStateOf(false) }
+    val animateProgress = animateFloatAsState(
+        targetValue = if (animationPlayed) 1f else 0f,
+        animationSpec = tween(durationMillis = 1000, easing = FastOutSlowInEasing),
+        label = "pieAnim"
+    )
+    LaunchedEffect(Unit) { animationPlayed = true }
 
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .shadow(
-                elevation = 3.dp,
-                shape = RoundedCornerShape(CornerRadius.Large),
-                ambientColor = colors.cardShadow
+                elevation = 8.dp,
+                shape = RoundedCornerShape(CornerRadius.XLarge),
+                ambientColor = accentColor.copy(alpha = 0.12f)
             ),
-        shape = RoundedCornerShape(CornerRadius.Large),
+        shape = RoundedCornerShape(CornerRadius.XLarge),
         colors = CardDefaults.cardColors(containerColor = colors.cardBackground)
     ) {
-        Row(modifier = Modifier.height(IntrinsicSize.Min)) {
-            Box(
-                modifier = Modifier
-                    .width(4.dp)
-                    .fillMaxHeight()
-                    .background(accentColor)
-            )
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(Spacing.Medium)
+        Column(modifier = Modifier.padding(Spacing.Large)) {
+            // Card header
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Surface(
-                        shape = RoundedCornerShape(CornerRadius.Small),
-                        color = accentColor.copy(alpha = 0.1f)
-                    ) {
-                        Text(
-                            text = typeLabel,
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
-                            style = MaterialTheme.typography.labelSmall,
-                            fontWeight = FontWeight.SemiBold,
-                            color = accentColor
-                        )
-                    }
-                    Text(
-                        text = timeAgo,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = colors.textTertiary
-                    )
-                }
-                Spacer(modifier = Modifier.height(6.dp))
-                Text(
-                    text = report.title.ifBlank { typeLabel },
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    color = colors.textPrimary,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                if (report.description.isNotBlank()) {
-                    Spacer(modifier = Modifier.height(3.dp))
-                    Text(
-                        text = report.description,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = colors.textSecondary,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-                Spacer(modifier = Modifier.height(6.dp))
-                Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    horizontalArrangement = Arrangement.spacedBy(Spacing.Small)
                 ) {
                     Box(
                         modifier = Modifier
-                            .size(6.dp)
-                            .clip(CircleShape)
-                            .background(AccentOrange)
-                    )
+                            .size(36.dp)
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(
+                                Brush.linearGradient(
+                                    listOf(accentColor.copy(alpha = 0.15f), accentColor.copy(alpha = 0.05f))
+                                )
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = icon,
+                            contentDescription = null,
+                            tint = accentColor,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
                     Text(
-                        text = "Pending",
-                        style = MaterialTheme.typography.labelSmall,
-                        fontWeight = FontWeight.SemiBold,
-                        color = AccentOrange
+                        text = title,
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = colors.textPrimary
                     )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(Spacing.XLarge))
+
+            // Pie chart + legend side-by-side
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Donut pie chart
+                Box(
+                    modifier = Modifier.size(130.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Canvas(modifier = Modifier.size(130.dp)) {
+                        val strokeWidth = 22.dp.toPx()
+                        val radius = (size.minDimension - strokeWidth) / 2f
+                        val topLeft = Offset(
+                            (size.width - 2 * radius) / 2f,
+                            (size.height - 2 * radius) / 2f
+                        )
+                        val arcSize = Size(radius * 2, radius * 2)
+                        val gapAngle = if (nonZeroItems.size > 1) 4f else 0f
+                        val totalGap = gapAngle * nonZeroItems.size
+                        val availableSweep = (360f - totalGap) * animateProgress.value
+
+                        if (nonZeroItems.isEmpty()) {
+                            // Empty state ring
+                            drawArc(
+                                color = Color.LightGray.copy(alpha = 0.3f),
+                                startAngle = -90f,
+                                sweepAngle = 360f,
+                                useCenter = false,
+                                topLeft = topLeft,
+                                size = arcSize,
+                                style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
+                            )
+                        } else {
+                            var startAngle = -90f
+                            nonZeroItems.forEach { item ->
+                                val sweep = (item.value.toFloat() / sweepTotal) * availableSweep
+                                drawArc(
+                                    color = item.color,
+                                    startAngle = startAngle,
+                                    sweepAngle = sweep,
+                                    useCenter = false,
+                                    topLeft = topLeft,
+                                    size = arcSize,
+                                    style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
+                                )
+                                startAngle += sweep + gapAngle
+                            }
+                        }
+                    }
+
+                    // Center text
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(
+                            text = "$total",
+                            style = MaterialTheme.typography.headlineSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = colors.textPrimary
+                        )
+                        Text(
+                            text = centerLabel,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = colors.textTertiary,
+                            fontSize = 10.sp
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.width(Spacing.XLarge))
+
+                // Legend items with values
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(Spacing.Medium)
+                ) {
+                    items.forEach { item ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(10.dp)
+                                        .clip(RoundedCornerShape(3.dp))
+                                        .background(item.color)
+                                )
+                                Text(
+                                    text = item.label,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = colors.textSecondary,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Text(
+                                    text = "${item.value}",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = colors.textPrimary
+                                )
+                                if (total > 0) {
+                                    val pct = (item.value * 100f / total).toInt()
+                                    Text(
+                                        text = "${pct}%",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = item.color,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -1111,14 +1165,15 @@ private fun PendingReportCard(report: Report) {
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// ── QUICK ACTION BUTTON ─────────────────────────────────────────
+// ── PREMIUM ACTION BUTTON (with optional badge) ─────────────────
 // ═══════════════════════════════════════════════════════════════════
 
 @Composable
-private fun PoliceActionButton(
+private fun PremiumActionButton(
     label: String,
     icon: ImageVector,
     accentColor: Color,
+    badge: String?,
     modifier: Modifier = Modifier,
     onClick: () -> Unit
 ) {
@@ -1128,141 +1183,414 @@ private fun PoliceActionButton(
         onClick = onClick,
         modifier = modifier
             .shadow(
-                elevation = 6.dp,
-                shape = RoundedCornerShape(CornerRadius.Large),
+                elevation = 8.dp,
+                shape = RoundedCornerShape(CornerRadius.XLarge),
                 ambientColor = accentColor.copy(alpha = 0.15f)
             ),
-        shape = RoundedCornerShape(CornerRadius.Large),
+        shape = RoundedCornerShape(CornerRadius.XLarge),
         colors = CardDefaults.cardColors(containerColor = colors.cardBackground)
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(Spacing.Large),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
+        Box(modifier = Modifier.fillMaxWidth()) {
+            // Subtle gradient accent at top
             Box(
                 modifier = Modifier
-                    .size(52.dp)
-                    .clip(RoundedCornerShape(CornerRadius.Medium))
+                    .fillMaxWidth()
+                    .height(3.dp)
                     .background(
-                        Brush.linearGradient(
-                            listOf(
-                                accentColor.copy(alpha = 0.15f),
-                                accentColor.copy(alpha = 0.05f)
-                            )
+                        Brush.horizontalGradient(
+                            listOf(accentColor.copy(alpha = 0.6f), accentColor.copy(alpha = 0.1f))
                         )
-                    ),
-                contentAlignment = Alignment.Center
+                    )
+            )
+
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = Spacing.XLarge, bottom = Spacing.Large, start = Spacing.Large, end = Spacing.Large),
+                horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Icon(
-                    imageVector = icon,
-                    contentDescription = label,
-                    tint = accentColor,
-                    modifier = Modifier.size(26.dp)
+                Box {
+                    Box(
+                        modifier = Modifier
+                            .size(52.dp)
+                            .clip(RoundedCornerShape(CornerRadius.Medium))
+                            .background(
+                                Brush.linearGradient(
+                                    listOf(
+                                        accentColor.copy(alpha = 0.15f),
+                                        accentColor.copy(alpha = 0.05f)
+                                    )
+                                )
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = icon,
+                            contentDescription = label,
+                            tint = accentColor,
+                            modifier = Modifier.size(26.dp)
+                        )
+                    }
+                    // Badge
+                    if (badge != null) {
+                        Surface(
+                            modifier = Modifier
+                                .align(Alignment.TopEnd)
+                                .offset(x = 6.dp, y = (-4).dp),
+                            shape = CircleShape,
+                            color = AccentRed,
+                            shadowElevation = 2.dp
+                        ) {
+                            Text(
+                                text = badge,
+                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp),
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White,
+                                fontSize = 9.sp
+                            )
+                        }
+                    }
+                }
+                Spacer(modifier = Modifier.height(Spacing.Medium))
+                Text(
+                    text = label,
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = colors.textPrimary,
+                    textAlign = TextAlign.Center,
+                    lineHeight = 16.sp
                 )
             }
-            Spacer(modifier = Modifier.height(Spacing.Medium))
-            Text(
-                text = label,
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.SemiBold,
-                color = colors.textPrimary,
-                textAlign = TextAlign.Center
-            )
         }
     }
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// ── RECENT ACTIVITY CARD ────────────────────────────────────────
+// ── RECENT ACTIVITY TIMELINE (premium vertical timeline) ────────
 // ═══════════════════════════════════════════════════════════════════
 
 @Composable
-private fun RecentActivityCard(report: Report) {
+private fun RecentActivityTimeline(reports: List<Report>) {
     val colors = MaterialTheme.cityFluxColors
-
-    val statusColor = when (report.status.lowercase()) {
-        "resolved" -> AccentGreen
-        "in_progress", "in progress" -> AccentTraffic
-        else -> AccentOrange
-    }
-    val statusIcon = when (report.status.lowercase()) {
-        "resolved" -> Icons.Outlined.CheckCircle
-        "in_progress", "in progress" -> Icons.Outlined.Autorenew
-        else -> Icons.Outlined.Schedule
-    }
-    val typeLabel = report.type.replace("_", " ").replaceFirstChar { it.uppercase() }
-    val timeAgo = report.timestamp?.let {
-        DateUtils.getRelativeTimeSpanString(
-            it.toDate().time,
-            System.currentTimeMillis(),
-            DateUtils.MINUTE_IN_MILLIS
-        ).toString()
-    } ?: ""
 
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .shadow(
-                elevation = 2.dp,
-                shape = RoundedCornerShape(CornerRadius.Medium),
+                elevation = 4.dp,
+                shape = RoundedCornerShape(CornerRadius.XLarge),
                 ambientColor = colors.cardShadow
             ),
-        shape = RoundedCornerShape(CornerRadius.Medium),
+        shape = RoundedCornerShape(CornerRadius.XLarge),
         colors = CardDefaults.cardColors(containerColor = colors.cardBackground)
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(Spacing.Medium),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(38.dp)
-                    .clip(CircleShape)
-                    .background(statusColor.copy(alpha = 0.10f)),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = statusIcon,
-                    contentDescription = null,
-                    tint = statusColor,
-                    modifier = Modifier.size(20.dp)
-                )
+        Column(modifier = Modifier.padding(Spacing.Large)) {
+            reports.forEachIndexed { index, report ->
+                val statusColor = when (report.status.lowercase()) {
+                    "resolved" -> AccentGreen
+                    "in_progress", "in progress" -> PrimaryBlue
+                    else -> AccentOrange
+                }
+                val statusIcon = when (report.status.lowercase()) {
+                    "resolved" -> Icons.Filled.CheckCircle
+                    "in_progress", "in progress" -> Icons.Filled.Autorenew
+                    else -> Icons.Filled.Schedule
+                }
+                val typeLabel = report.type.replace("_", " ").replaceFirstChar { it.uppercase() }
+                val timeAgo = report.timestamp?.let {
+                    DateUtils.getRelativeTimeSpanString(
+                        it.toDate().time,
+                        System.currentTimeMillis(),
+                        DateUtils.MINUTE_IN_MILLIS
+                    ).toString()
+                } ?: ""
+                val isLast = index == reports.lastIndex
+
+                Row(modifier = Modifier.fillMaxWidth()) {
+                    // Timeline track
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier.width(40.dp)
+                    ) {
+                        // Dot
+                        Box(
+                            modifier = Modifier
+                                .size(36.dp)
+                                .clip(CircleShape)
+                                .background(statusColor.copy(alpha = 0.12f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = statusIcon,
+                                contentDescription = null,
+                                tint = statusColor,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                        // Connecting line
+                        if (!isLast) {
+                            Box(
+                                modifier = Modifier
+                                    .width(2.dp)
+                                    .height(48.dp)
+                                    .background(
+                                        Brush.verticalGradient(
+                                            listOf(statusColor.copy(alpha = 0.3f), colors.divider)
+                                        )
+                                    )
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.width(Spacing.Medium))
+
+                    // Content
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(bottom = if (isLast) 0.dp else Spacing.Medium)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = report.title.ifBlank { typeLabel },
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = colors.textPrimary,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Surface(
+                                shape = RoundedCornerShape(4.dp),
+                                color = statusColor.copy(alpha = 0.10f)
+                            ) {
+                                Text(
+                                    text = report.status.replace("_", " ").replaceFirstChar { it.uppercase() },
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = statusColor,
+                                    fontSize = 9.sp
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Surface(
+                                shape = RoundedCornerShape(4.dp),
+                                color = colors.surfaceVariant
+                            ) {
+                                Text(
+                                    text = typeLabel,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = colors.textSecondary,
+                                    fontSize = 9.sp
+                                )
+                            }
+                            Text(
+                                text = "•",
+                                color = colors.textTertiary,
+                                fontSize = 8.sp
+                            )
+                            Text(
+                                text = timeAgo,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = colors.textTertiary,
+                                fontSize = 10.sp
+                            )
+                        }
+                        if (report.description.isNotBlank()) {
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = report.description,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = colors.textSecondary,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis,
+                                lineHeight = 16.sp
+                            )
+                        }
+                    }
+                }
             }
+        }
+    }
+}
 
-            Spacer(modifier = Modifier.width(Spacing.Medium))
+// ═══════════════════════════════════════════════════════════════════
+// ── RECENT PARKING VIOLATIONS CARD (police-specific timeline) ───
+// ═══════════════════════════════════════════════════════════════════
 
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = report.title.ifBlank { typeLabel },
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.Medium,
-                    color = colors.textPrimary,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Text(
-                    text = "$typeLabel • $timeAgo",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = colors.textTertiary,
-                    maxLines = 1
-                )
-            }
+@Composable
+private fun RecentViolationsCard(violations: List<ParkingViolationSummary>) {
+    val colors = MaterialTheme.cityFluxColors
 
-            Surface(
-                shape = RoundedCornerShape(CornerRadius.Small),
-                color = statusColor.copy(alpha = 0.10f)
-            ) {
-                Text(
-                    text = report.status.replaceFirstChar { it.uppercase() },
-                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
-                    style = MaterialTheme.typography.labelSmall,
-                    fontWeight = FontWeight.SemiBold,
-                    color = statusColor
-                )
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .shadow(
+                elevation = 4.dp,
+                shape = RoundedCornerShape(CornerRadius.XLarge),
+                ambientColor = AccentParking.copy(alpha = 0.12f)
+            ),
+        shape = RoundedCornerShape(CornerRadius.XLarge),
+        colors = CardDefaults.cardColors(containerColor = colors.cardBackground)
+    ) {
+        Column(modifier = Modifier.padding(Spacing.Large)) {
+            violations.forEachIndexed { index, violation ->
+                val statusColor = if (violation.status.equals("Active", true)) AccentRed else AccentGreen
+                val actionColor = when (violation.actionType.lowercase()) {
+                    "fine" -> PrimaryBlue
+                    "tow" -> Color(0xFF8B5CF6)
+                    else -> AccentOrange
+                }
+                val actionIcon = when (violation.actionType.lowercase()) {
+                    "fine" -> Icons.Filled.Receipt
+                    "tow" -> Icons.Filled.LocalShipping
+                    else -> Icons.Filled.Warning
+                }
+                val typeLabel = violation.violationType.replace("_", " ")
+                    .replaceFirstChar { it.uppercase() }
+                val timeAgo = violation.timestamp?.let {
+                    DateUtils.getRelativeTimeSpanString(
+                        it.toDate().time,
+                        System.currentTimeMillis(),
+                        DateUtils.MINUTE_IN_MILLIS
+                    ).toString()
+                } ?: ""
+                val isLast = index == violations.lastIndex
+
+                Row(modifier = Modifier.fillMaxWidth()) {
+                    // Timeline track
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier.width(40.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(36.dp)
+                                .clip(CircleShape)
+                                .background(actionColor.copy(alpha = 0.12f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = actionIcon,
+                                contentDescription = null,
+                                tint = actionColor,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                        if (!isLast) {
+                            Box(
+                                modifier = Modifier
+                                    .width(2.dp)
+                                    .height(48.dp)
+                                    .background(
+                                        Brush.verticalGradient(
+                                            listOf(actionColor.copy(alpha = 0.3f), colors.divider)
+                                        )
+                                    )
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.width(Spacing.Medium))
+
+                    // Content
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(bottom = if (isLast) 0.dp else Spacing.Medium)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = violation.vehicleInfo.ifBlank { typeLabel },
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = colors.textPrimary,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Surface(
+                                shape = RoundedCornerShape(4.dp),
+                                color = statusColor.copy(alpha = 0.10f)
+                            ) {
+                                Text(
+                                    text = violation.status,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = statusColor,
+                                    fontSize = 9.sp
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Surface(
+                                shape = RoundedCornerShape(4.dp),
+                                color = actionColor.copy(alpha = 0.10f)
+                            ) {
+                                Text(
+                                    text = violation.actionType.replaceFirstChar { it.uppercase() },
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = actionColor,
+                                    fontSize = 9.sp
+                                )
+                            }
+                            if (violation.address.isNotBlank()) {
+                                Text(
+                                    text = "•",
+                                    color = colors.textTertiary,
+                                    fontSize = 8.sp
+                                )
+                                Text(
+                                    text = violation.address,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = colors.textTertiary,
+                                    fontSize = 10.sp,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
+                            if (timeAgo.isNotBlank()) {
+                                Text(
+                                    text = "•",
+                                    color = colors.textTertiary,
+                                    fontSize = 8.sp
+                                )
+                                Text(
+                                    text = timeAgo,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = colors.textTertiary,
+                                    fontSize = 10.sp
+                                )
+                            }
+                        }
+                    }
+                }
             }
         }
     }
