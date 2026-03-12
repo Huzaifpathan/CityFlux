@@ -47,7 +47,7 @@
         <!-- 🗺️ Google Maps API Key -->
         <meta-data
             android:name="com.google.android.geo.API_KEY"
-            android:value="AIzaSyBBgOGiBAwiPA7PlIrCClMIo2Kd3gSETZ4" />
+            android:value="AIzaSyAxVcsdFxHgsTjVWXg9OnBsbFfIfsY3Ktg" />
 
         <!-- 📷 FileProvider for camera capture -->
         <provider

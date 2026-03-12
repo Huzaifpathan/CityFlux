@@ -11,7 +11,7 @@ import com.example.cityflux.ui.citizen.MyReportsScreen
 import com.example.cityflux.ui.dashboard.CitizenMainScreen
 import com.example.cityflux.ui.login.ForgotPasswordScreen
 import com.example.cityflux.ui.login.LoginScreen
-import com.example.cityflux.ui.police.PoliceDashboardScreen
+import com.example.cityflux.ui.police.PoliceMainScreen
 import com.example.cityflux.ui.register.RegisterScreen
 import com.example.cityflux.ui.report.ReportIssueScreen
 import com.example.cityflux.ui.splash.SplashScreen
@@ -150,9 +150,15 @@ fun AppNavGraph(navController: NavHostController) {
             AdminDashboardScreen()
         }
 
-        // 🚓 POLICE DASHBOARD
+        // 🚓 POLICE DASHBOARD (Bottom Nav with 6 tabs)
         composable(Routes.POLICE_DASHBOARD) {
-            PoliceDashboardScreen()
+            PoliceMainScreen(
+                onLogout = {
+                    navController.navigate(Routes.LOGIN) {
+                        popUpTo(Routes.POLICE_DASHBOARD) { inclusive = true }
+                    }
+                }
+            )
         }
 
         // 📝 REPORT ISSUE
