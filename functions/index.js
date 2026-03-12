@@ -17,6 +17,7 @@ admin.initializeApp();
 const db = admin.firestore();
 const rtdb = admin.database();
 const messaging = admin.messaging();
+const storageBucket = admin.storage().bucket();
 
 // ── Configurable tuning parameters ───────────────────────────────
 const RECENT_WINDOW_MINUTES = 10; // window to consider reports as 'clustered'
@@ -417,4 +418,76 @@ exports.onReportStatusChange = functions.firestore
     }
 
     return null;
+  });
+
+/**
+ * uploadReportImage – Callable Cloud Function
+ *
+ * Accepts a base64-encoded image from the client, uploads it to Cloud Storage
+ * using the Admin SDK (which has full permissions), and returns the public
+ * download URL. This bypasses client-side Storage SDK permission issues.
+ *
+ * Input:  { reportId: string, imageBase64: string }
+ * Output: { imageUrl: string }
+ */
+exports.uploadReportImage = functions
+  .runWith({ memory: "256MB", timeoutSeconds: 60 })
+  .https.onCall(async (data, context) => {
+    // 1. Auth check
+    if (!context.auth) {
+      throw new functions.https.HttpsError(
+        "unauthenticated",
+        "You must be signed in to upload images."
+      );
+    }
+
+    const { reportId, imageBase64 } = data;
+    if (!reportId || !imageBase64) {
+      throw new functions.https.HttpsError(
+        "invalid-argument",
+        "reportId and imageBase64 are required."
+      );
+    }
+
+    // 2. Decode base64
+    const buffer = Buffer.from(imageBase64, "base64");
+
+    // Limit to 10 MB
+    if (buffer.length > 10 * 1024 * 1024) {
+      throw new functions.https.HttpsError(
+        "invalid-argument",
+        "Image must be less than 10 MB."
+      );
+    }
+
+    // 3. Upload to Storage via Admin SDK
+    const filePath = `reports/${reportId}.jpg`;
+    const file = storageBucket.file(filePath);
+
+    try {
+      await file.save(buffer, {
+        metadata: {
+          contentType: "image/jpeg",
+          metadata: {
+            uploadedBy: context.auth.uid,
+          },
+        },
+      });
+
+      // Make the file publicly readable and get the URL
+      await file.makePublic();
+      const imageUrl = `https://storage.googleapis.com/${storageBucket.name}/${filePath}`;
+
+      functions.logger.info(
+        `Image uploaded by ${context.auth.uid} for report ${reportId}`
+      );
+
+      return { imageUrl };
+    } catch (err) {
+      functions.logger.error("Image upload failed", err);
+      throw new functions.https.HttpsError(
+        "internal",
+        "Failed to upload image. Please try again."
+      );
+    }
   });

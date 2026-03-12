@@ -17,5 +17,9 @@
   },
   "database": {
     "rules": "database.rules.json"
+  },
+  "storage": {
+    "bucket": "cityflux-1adab.firebasestorage.app",
+    "rules": "storage.rules"
   }
 }
