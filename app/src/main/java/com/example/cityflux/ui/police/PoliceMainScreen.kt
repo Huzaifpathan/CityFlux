@@ -43,8 +43,16 @@ enum class PoliceTab(
 fun PoliceMainScreen(
     onLogout: () -> Unit
 ) {
-    var selectedTab by rememberSaveable { mutableIntStateOf(0) }
-    val tabs = PoliceTab.entries.toTypedArray()
+    var selectedTab by rememberSaveable { mutableStateOf(PoliceTab.HOME) }
+    // Bottom navigation should not expose the profile tab,
+    // which is accessed from the header on the Home screen.
+    val bottomTabs = listOf(
+        PoliceTab.HOME,
+        PoliceTab.CONGESTION,
+        PoliceTab.REPORTS,
+        PoliceTab.PARKING,
+        PoliceTab.ACTIONS
+    )
     val colors = MaterialTheme.cityFluxColors
     val notificationsVm: NotificationsViewModel = viewModel()
     val unreadCount by notificationsVm.unreadCount.collectAsState()
@@ -58,11 +66,11 @@ fun PoliceMainScreen(
                     .navigationBarsPadding()
                     .height(64.dp)
             ) {
-                tabs.forEachIndexed { index, tab ->
-                    val selected = selectedTab == index
+                bottomTabs.forEach { tab ->
+                    val selected = selectedTab == tab
                     NavigationBarItem(
                         selected = selected,
-                        onClick = { selectedTab = index },
+                        onClick = { selectedTab = tab },
                         icon = {
                             if (tab == PoliceTab.REPORTS && unreadCount > 0) {
                                 BadgedBox(
@@ -124,26 +132,26 @@ fun PoliceMainScreen(
             animationSpec = tween(250),
             label = "police_tab_crossfade",
             modifier = Modifier.padding(innerPadding)
-        ) { tabIndex ->
-            when (tabs[tabIndex]) {
+        ) { tab ->
+            when (tab) {
                 PoliceTab.HOME -> PoliceHomeScreen(
-                    onNavigateToTab = { tab -> selectedTab = tabs.indexOf(tab) }
+                    onNavigateToTab = { targetTab -> selectedTab = targetTab }
                 )
                 PoliceTab.CONGESTION -> CongestionMapScreen(
-                    onBack = { selectedTab = 0 }
+                    onBack = { selectedTab = PoliceTab.HOME }
                 )
                 PoliceTab.REPORTS -> ReportsScreen(
-                    onBack = { selectedTab = 0 }
+                    onBack = { selectedTab = PoliceTab.HOME }
                 )
                 PoliceTab.PARKING -> ParkingControlScreen(
-                    onBack = { selectedTab = 0 }
+                    onBack = { selectedTab = PoliceTab.HOME }
                 )
                 PoliceTab.ACTIONS -> ActionStatusScreen(
-                    onBack = { selectedTab = 0 }
+                    onBack = { selectedTab = PoliceTab.HOME }
                 )
                 PoliceTab.PROFILE -> com.example.cityflux.ui.profile.ProfileScreen(
                     onLogout = onLogout,
-                    onNavigateToMap = { _, _ -> selectedTab = tabs.indexOf(PoliceTab.CONGESTION) }
+                    onNavigateToMap = { _, _ -> selectedTab = PoliceTab.CONGESTION }
                 )
             }
         }

@@ -427,13 +427,13 @@ private fun PoliceHomeTopBar(
                 PoliceShimmerBox(width = 100.dp, height = 12.dp)
             } else {
                 Text(
-                    text = "Hello, ${userName ?: "Officer"} 👮",
+                    text = "Officer ${userName ?: "On Duty"}",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     color = colors.textPrimary
                 )
                 Text(
-                    text = "Traffic Police Command Center",
+                    text = "City Traffic Control · Live Operations",
                     style = MaterialTheme.typography.bodySmall,
                     color = colors.textSecondary
                 )
@@ -494,7 +494,7 @@ private fun CriticalAlertsBanner(
     if (hasCritical) {
         bgGradient = Brush.horizontalGradient(listOf(AccentRed, Color(0xFFDC2626)))
         iconTint = Color.White
-        titleText = "⚠️  Critical Alert"
+        titleText = "Critical Alert"
         bannerIcon = Icons.Filled.Warning
         subtitleText = buildString {
             if (worstLevel == "HIGH") append("$highZoneCount high-congestion zone(s)")
@@ -504,7 +504,7 @@ private fun CriticalAlertsBanner(
     } else if (worstLevel == "MEDIUM" || pendingCount > 0) {
         bgGradient = Brush.horizontalGradient(listOf(AccentOrange, Color(0xFFF97316)))
         iconTint = Color.White
-        titleText = "⚡  Attention Needed"
+        titleText = "Attention Required"
         bannerIcon = Icons.Filled.Info
         subtitleText = buildString {
             if (worstLevel == "MEDIUM") append("Moderate congestion detected")
@@ -516,7 +516,7 @@ private fun CriticalAlertsBanner(
     } else {
         bgGradient = Brush.horizontalGradient(listOf(AccentGreen, Color(0xFF059669)))
         iconTint = Color.White
-        titleText = "✅  All Clear"
+        titleText = "All Clear"
         bannerIcon = Icons.Filled.CheckCircle
         subtitleText = "No critical alerts — situation normal"
     }

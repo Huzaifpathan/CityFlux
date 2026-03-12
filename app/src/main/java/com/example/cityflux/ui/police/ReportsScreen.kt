@@ -3,6 +3,7 @@ package com.example.cityflux.ui.police
 import android.content.Intent
 import android.net.Uri
 import android.text.format.DateUtils
+import android.util.Log
 import android.widget.Toast
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
@@ -41,8 +42,11 @@ import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.example.cityflux.model.Report
 import com.example.cityflux.ui.theme.*
+import com.google.firebase.Timestamp
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
+import java.text.SimpleDateFormat
+import java.util.*
 
 // ═══════════════════════════════════════════════════════════════════
 // ReportsScreen — Police Citizen Complaints Management Center
@@ -54,7 +58,8 @@ import com.google.firebase.firestore.Query
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ReportsScreen(
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    onTakeAction: (Report) -> Unit = {}
 ) {
     val context = LocalContext.current
     val focusManager = LocalFocusManager.current
@@ -75,7 +80,6 @@ fun ReportsScreen(
     // ── Dialog State ──
     var photoDialogUrl by remember { mutableStateOf<String?>(null) }
     var expandedReportId by remember { mutableStateOf<String?>(null) }
-    var confirmAction by remember { mutableStateOf<Pair<Report, String>?>(null) }
 
     val statusFilters = listOf("All", "Pending", "In Progress", "Resolved")
     val typeFilters = listOf(
@@ -513,9 +517,7 @@ fun ReportsScreen(
                                             context.startActivity(Intent(Intent.ACTION_VIEW, webUri))
                                         }
                                     },
-                                    onMarkStatus = { status ->
-                                        confirmAction = Pair(report, status)
-                                    }
+                                    onTakeAction = { onTakeAction(report) }
                                 )
                             }
                         }
@@ -596,74 +598,6 @@ fun ReportsScreen(
             }
         }
 
-        // ══════════════════════ Confirm Action Dialog ══════════════════════
-        if (confirmAction != null) {
-            val (report, status) = confirmAction!!
-            val statusColor = when (status) {
-                "In Progress" -> AccentOrange
-                "Resolved" -> AccentGreen
-                else -> PrimaryBlue
-            }
-
-            AlertDialog(
-                onDismissRequest = { confirmAction = null },
-                icon = {
-                    Surface(
-                        modifier = Modifier.size(48.dp),
-                        shape = CircleShape,
-                        color = statusColor.copy(alpha = 0.12f)
-                    ) {
-                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                            Icon(
-                                if (status == "Resolved") Icons.Filled.CheckCircle
-                                else Icons.Filled.PlayCircle,
-                                null,
-                                tint = statusColor,
-                                modifier = Modifier.size(24.dp)
-                            )
-                        }
-                    }
-                },
-                title = {
-                    Text(
-                        "Mark as $status?",
-                        fontWeight = FontWeight.Bold
-                    )
-                },
-                text = {
-                    Text(
-                        "Report \"${report.title.ifBlank { report.type.replace("_", " ") }}\" will be updated to $status.",
-                        color = colors.textSecondary
-                    )
-                },
-                confirmButton = {
-                    Button(
-                        onClick = {
-                            FirebaseFirestore.getInstance()
-                                .collection("reports")
-                                .document(report.id)
-                                .update("status", status)
-                                .addOnSuccessListener {
-                                    Toast.makeText(context, "Updated to $status", Toast.LENGTH_SHORT).show()
-                                }
-                                .addOnFailureListener {
-                                    Toast.makeText(context, "Update failed", Toast.LENGTH_SHORT).show()
-                                }
-                            confirmAction = null
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = statusColor)
-                    ) {
-                        Text("Confirm", fontWeight = FontWeight.SemiBold)
-                    }
-                },
-                dismissButton = {
-                    TextButton(onClick = { confirmAction = null }) {
-                        Text("Cancel")
-                    }
-                },
-                shape = RoundedCornerShape(CornerRadius.XLarge)
-            )
-        }
     }
 }
 
@@ -912,7 +846,7 @@ private fun PremiumReportCard(
     onToggleExpand: () -> Unit,
     onViewPhoto: (String) -> Unit,
     onViewLocation: (Double, Double) -> Unit,
-    onMarkStatus: (String) -> Unit
+    onTakeAction: () -> Unit
 ) {
     val colors = MaterialTheme.cityFluxColors
     val accentColor = when (report.type.lowercase()) {
@@ -1248,63 +1182,47 @@ private fun PremiumReportCard(
 
                         Spacer(Modifier.height(Spacing.Large))
 
-                        // ── Action Buttons ──
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        // ── In Progress / Resolved: Show Proofs & Chat ──
+                        if (report.status.equals("Resolved", true) ||
+                            report.status.equals("In Progress", true) ||
+                            report.status.equals("in_progress", true)
                         ) {
-                            // Mark In Progress
-                            if (!report.status.equals("In Progress", true) &&
-                                !report.status.equals("in_progress", true)
-                            ) {
-                                Button(
-                                    onClick = { onMarkStatus("In Progress") },
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .height(44.dp),
-                                    shape = RoundedCornerShape(CornerRadius.Medium),
-                                    colors = ButtonDefaults.buttonColors(containerColor = AccentOrange),
-                                    elevation = ButtonDefaults.buttonElevation(2.dp, 0.dp)
-                                ) {
-                                    Icon(
-                                        Icons.Outlined.PlayCircle,
-                                        null,
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                    Spacer(Modifier.width(6.dp))
-                                    Text(
-                                        "In Progress",
-                                        style = MaterialTheme.typography.labelMedium,
-                                        fontWeight = FontWeight.SemiBold,
-                                        color = TextOnPrimary
-                                    )
-                                }
-                            }
+                            ResolvedProofsSection(reportId = report.id, onViewPhoto = onViewPhoto)
+                            Spacer(Modifier.height(Spacing.Medium))
+                            ResolvedChatSection(reportId = report.id)
+                        }
 
-                            // Mark Resolved
-                            if (!report.status.equals("resolved", true)) {
-                                Button(
-                                    onClick = { onMarkStatus("Resolved") },
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .height(44.dp),
-                                    shape = RoundedCornerShape(CornerRadius.Medium),
-                                    colors = ButtonDefaults.buttonColors(containerColor = AccentGreen),
-                                    elevation = ButtonDefaults.buttonElevation(2.dp, 0.dp)
-                                ) {
-                                    Icon(
-                                        Icons.Outlined.CheckCircle,
-                                        null,
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                    Spacer(Modifier.width(6.dp))
-                                    Text(
-                                        "Resolved",
-                                        style = MaterialTheme.typography.labelMedium,
-                                        fontWeight = FontWeight.SemiBold,
-                                        color = TextOnPrimary
-                                    )
-                                }
+                        // ── Take Action Button (only for non-resolved) ──
+                        val isResolved = report.status.equals("Resolved", true)
+                        val isInProgress = report.status.equals("In Progress", true) ||
+                                report.status.equals("in_progress", true)
+
+                        if (!isResolved) {
+                            Spacer(Modifier.height(Spacing.Medium))
+
+                            Button(
+                                onClick = onTakeAction,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(46.dp),
+                                shape = RoundedCornerShape(CornerRadius.Medium),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = if (isInProgress) PrimaryBlue else AccentOrange
+                                ),
+                                elevation = ButtonDefaults.buttonElevation(2.dp, 0.dp)
+                            ) {
+                                Icon(
+                                    Icons.Outlined.OpenInNew,
+                                    null,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                Text(
+                                    if (isInProgress) "Continue Action" else "Take Action",
+                                    style = MaterialTheme.typography.labelLarge,
+                                    fontWeight = FontWeight.Bold,
+                                    color = TextOnPrimary
+                                )
                             }
                         }
                     }
@@ -1349,6 +1267,324 @@ private fun MetaInfoItem(label: String, value: String) {
             maxLines = 1,
             overflow = TextOverflow.Ellipsis
         )
+    }
+}
+
+
+// ═══════════════════════════════════════════════════════════════════
+// Resolved Proofs Section — shows uploaded proof images/videos
+// ═══════════════════════════════════════════════════════════════════
+
+@Composable
+private fun ResolvedProofsSection(reportId: String, onViewPhoto: (String) -> Unit) {
+    val colors = MaterialTheme.cityFluxColors
+    var proofs by remember { mutableStateOf<List<Map<String, Any>>>(emptyList()) }
+    var loading by remember { mutableStateOf(true) }
+
+    DisposableEffect(reportId) {
+        val listener = FirebaseFirestore.getInstance()
+            .collection("reports").document(reportId)
+            .collection("proofs")
+            .orderBy("timestamp", Query.Direction.DESCENDING)
+            .addSnapshotListener { snap, err ->
+                loading = false
+                if (snap != null) {
+                    proofs = snap.documents.mapNotNull { it.data }
+                }
+            }
+        onDispose { listener.remove() }
+    }
+
+    if (loading) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = Spacing.Small),
+            horizontalArrangement = Arrangement.Center
+        ) {
+            CircularProgressIndicator(
+                modifier = Modifier.size(18.dp),
+                strokeWidth = 2.dp,
+                color = PrimaryBlue
+            )
+            Spacer(Modifier.width(8.dp))
+            Text("Loading proofs…", style = MaterialTheme.typography.bodySmall, color = colors.textTertiary)
+        }
+        return
+    }
+
+    if (proofs.isEmpty()) return
+
+    Column(modifier = Modifier.fillMaxWidth()) {
+        // Section Header
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Surface(
+                modifier = Modifier.size(22.dp),
+                shape = CircleShape,
+                color = AccentGreen.copy(alpha = 0.12f)
+            ) {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Icon(Icons.Filled.VerifiedUser, null, tint = AccentGreen, modifier = Modifier.size(13.dp))
+                }
+            }
+            Spacer(Modifier.width(6.dp))
+            Text(
+                "Evidence & Proof (${proofs.size})",
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.Bold,
+                color = AccentGreen
+            )
+        }
+
+        Spacer(Modifier.height(8.dp))
+
+        proofs.forEach { proof ->
+            val imageUrl = proof["imageUrl"] as? String
+            val description = proof["description"] as? String ?: ""
+            val actionTaken = proof["actionTaken"] as? String ?: ""
+            val timestamp = proof["timestamp"] as? Timestamp
+
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 3.dp),
+                shape = RoundedCornerShape(CornerRadius.Small),
+                color = AccentGreen.copy(alpha = 0.06f),
+                border = BorderStroke(0.5.dp, AccentGreen.copy(alpha = 0.15f))
+            ) {
+                Row(
+                    modifier = Modifier.padding(Spacing.Small),
+                    verticalAlignment = Alignment.Top
+                ) {
+                    if (!imageUrl.isNullOrBlank()) {
+                        AsyncImage(
+                            model = ImageRequest.Builder(LocalContext.current)
+                                .data(imageUrl).crossfade(true).build(),
+                            contentDescription = "Proof",
+                            modifier = Modifier
+                                .size(56.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .clickable { onViewPhoto(imageUrl) },
+                            contentScale = ContentScale.Crop
+                        )
+                        Spacer(Modifier.width(Spacing.Small))
+                    }
+
+                    Column(modifier = Modifier.weight(1f)) {
+                        if (actionTaken.isNotBlank()) {
+                            Text(
+                                actionTaken,
+                                style = MaterialTheme.typography.bodySmall,
+                                fontWeight = FontWeight.SemiBold,
+                                color = colors.textPrimary,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                        if (description.isNotBlank()) {
+                            Text(
+                                description,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = colors.textSecondary,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                        if (timestamp != null) {
+                            Text(
+                                DateUtils.getRelativeTimeSpanString(
+                                    timestamp.toDate().time,
+                                    System.currentTimeMillis(),
+                                    DateUtils.MINUTE_IN_MILLIS
+                                ).toString(),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = colors.textTertiary,
+                                fontSize = 10.sp
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+
+// ═══════════════════════════════════════════════════════════════════
+// Resolved Chat Section — shows police-citizen chat history
+// ═══════════════════════════════════════════════════════════════════
+
+@Composable
+private fun ResolvedChatSection(reportId: String) {
+    val colors = MaterialTheme.cityFluxColors
+    var messages by remember { mutableStateOf<List<Map<String, Any>>>(emptyList()) }
+    var loading by remember { mutableStateOf(true) }
+
+    DisposableEffect(reportId) {
+        val listener = FirebaseFirestore.getInstance()
+            .collection("reports").document(reportId)
+            .collection("chat")
+            .orderBy("timestamp", Query.Direction.ASCENDING)
+            .addSnapshotListener { snap, err ->
+                loading = false
+                if (snap != null) {
+                    messages = snap.documents.mapNotNull { it.data }
+                }
+            }
+        onDispose { listener.remove() }
+    }
+
+    if (loading) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = Spacing.Small),
+            horizontalArrangement = Arrangement.Center
+        ) {
+            CircularProgressIndicator(
+                modifier = Modifier.size(18.dp),
+                strokeWidth = 2.dp,
+                color = PrimaryBlue
+            )
+            Spacer(Modifier.width(8.dp))
+            Text("Loading chat…", style = MaterialTheme.typography.bodySmall, color = colors.textTertiary)
+        }
+        return
+    }
+
+    if (messages.isEmpty()) return
+
+    Column(modifier = Modifier.fillMaxWidth()) {
+        // Section Header
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Surface(
+                modifier = Modifier.size(22.dp),
+                shape = CircleShape,
+                color = PrimaryBlue.copy(alpha = 0.12f)
+            ) {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Icon(Icons.Filled.Chat, null, tint = PrimaryBlue, modifier = Modifier.size(13.dp))
+                }
+            }
+            Spacer(Modifier.width(6.dp))
+            Text(
+                "Chat History (${messages.size})",
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.Bold,
+                color = PrimaryBlue
+            )
+        }
+
+        Spacer(Modifier.height(8.dp))
+
+        // Chat bubbles (show last 5, collapsed)
+        val displayMessages = if (messages.size > 5) messages.takeLast(5) else messages
+        var showAll by remember { mutableStateOf(false) }
+        val toShow = if (showAll) messages else displayMessages
+
+        if (messages.size > 5 && !showAll) {
+            TextButton(
+                onClick = { showAll = true },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    "Show all ${messages.size} messages",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = PrimaryBlue
+                )
+            }
+        }
+
+        toShow.forEach { msg ->
+            val senderRole = (msg["senderRole"] as? String) ?: "user"
+            val senderName = (msg["senderName"] as? String) ?: if (senderRole == "police") "Officer" else "Citizen"
+            val text = (msg["message"] as? String) ?: ""
+            val imageUrl = msg["imageUrl"] as? String
+            val timestamp = msg["timestamp"] as? Timestamp
+            val isPolice = senderRole.equals("police", true)
+
+            val bubbleColor = if (isPolice) PrimaryBlue.copy(alpha = 0.08f) else colors.surfaceVariant
+            val bubbleBorder = if (isPolice) PrimaryBlue.copy(alpha = 0.18f) else colors.divider
+            val align = if (isPolice) Alignment.End else Alignment.Start
+
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 2.dp),
+                horizontalAlignment = align
+            ) {
+                Surface(
+                    modifier = Modifier.fillMaxWidth(0.85f),
+                    shape = RoundedCornerShape(
+                        topStart = 12.dp, topEnd = 12.dp,
+                        bottomStart = if (isPolice) 12.dp else 4.dp,
+                        bottomEnd = if (isPolice) 4.dp else 12.dp
+                    ),
+                    color = bubbleColor,
+                    border = BorderStroke(0.5.dp, bubbleBorder)
+                ) {
+                    Column(modifier = Modifier.padding(Spacing.Small)) {
+                        Text(
+                            senderName,
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = if (isPolice) PrimaryBlue else AccentOrange,
+                            fontSize = 10.sp
+                        )
+
+                        if (!imageUrl.isNullOrBlank()) {
+                            Spacer(Modifier.height(4.dp))
+                            AsyncImage(
+                                model = ImageRequest.Builder(LocalContext.current)
+                                    .data(imageUrl).crossfade(true).build(),
+                                contentDescription = "Chat image",
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(max = 120.dp)
+                                    .clip(RoundedCornerShape(8.dp)),
+                                contentScale = ContentScale.Crop
+                            )
+                        }
+
+                        if (text.isNotBlank()) {
+                            Spacer(Modifier.height(2.dp))
+                            Text(
+                                text,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = colors.textPrimary
+                            )
+                        }
+
+                        if (timestamp != null) {
+                            Text(
+                                DateUtils.getRelativeTimeSpanString(
+                                    timestamp.toDate().time,
+                                    System.currentTimeMillis(),
+                                    DateUtils.MINUTE_IN_MILLIS
+                                ).toString(),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = colors.textTertiary,
+                                fontSize = 9.sp,
+                                modifier = Modifier.align(Alignment.End)
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        if (showAll && messages.size > 5) {
+            TextButton(
+                onClick = { showAll = false },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    "Show less",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = PrimaryBlue
+                )
+            }
+        }
     }
 }
 

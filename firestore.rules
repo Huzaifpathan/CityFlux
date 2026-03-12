@@ -11,7 +11,9 @@ service cloud.firestore {
     }
 
     function getUserRole() {
-      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
+      return exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        ? get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role
+        : 'citizen'; // Default to citizen if user document doesn't exist yet
     }
 
     function isCitizen() {
@@ -85,6 +87,24 @@ service cloud.firestore {
 
       // No one can delete reports
       allow delete: if false;
+
+      // ── Chat sub-collection ──
+      // Police and the citizen who created the report can chat
+      match /chat/{messageId} {
+        allow read: if isAuthenticated();
+        allow create: if isAuthenticated()
+          && request.resource.data.senderId == request.auth.uid;
+        allow update, delete: if false;
+      }
+
+      // ── Proofs sub-collection ──
+      // Police can upload action proofs, all authenticated can read
+      match /proofs/{proofId} {
+        allow read: if isAuthenticated();
+        allow create: if isPolice()
+          && request.resource.data.officerId == request.auth.uid;
+        allow update, delete: if false;
+      }
     }
 
     // ═══════════════════════════════════════════════════════════
@@ -98,7 +118,30 @@ service cloud.firestore {
     }
 
     // ═══════════════════════════════════════════════════════════
-    // 🚫 DENY EVERYTHING ELSE BY DEFAULT
+    // � PARKING VIOLATIONS COLLECTION
+    // - Police can create violations (officerId must match auth uid)
+    // - All authenticated users can read violations
+    // - Police can update violations (status, notes, etc.)
+    // - No one can delete violations
+    // ═══════════════════════════════════════════════════════════
+    match /parking_violations/{violationId} {
+      // All authenticated users can read violations
+      allow read: if isAuthenticated();
+
+      // Police can create violations; officerId must match auth uid
+      allow create: if isPolice()
+        && request.resource.data.officerId == request.auth.uid;
+
+      // Police can update violations
+      // Admin can also update violations
+      allow update: if isPolice() || isAdmin();
+
+      // No one can delete violations (maintain audit trail)
+      allow delete: if false;
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // �🚫 DENY EVERYTHING ELSE BY DEFAULT
     // Any collection not matched above is blocked
     // ═══════════════════════════════════════════════════════════
     match /{document=**} {

@@ -8,5 +8,29 @@ service firebase.storage {
                    && request.resource.size < 10 * 1024 * 1024  // 10 MB max
                    && request.resource.contentType.matches('image/.*');
     }
+    
+    // Allow authenticated police to upload violation evidence photos
+    match /violations/{violationId} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null
+                   && request.resource.size < 10 * 1024 * 1024  // 10 MB max
+                   && request.resource.contentType.matches('image/.*');
+    }
+
+    // Allow authenticated users to upload chat images
+    match /chat_images/{reportId}/{imageId} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null
+                   && request.resource.size < 10 * 1024 * 1024
+                   && request.resource.contentType.matches('image/.*');
+    }
+
+    // Allow police to upload action proof photos
+    match /proofs/{reportId}/{proofId} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null
+                   && request.resource.size < 10 * 1024 * 1024
+                   && request.resource.contentType.matches('image/.*');
+    }
   }
 }
