@@ -1,6 +1,9 @@
 package com.example.cityflux.ui.dashboard
 
+import android.content.Intent
+import android.net.Uri
 import android.text.format.DateUtils
+import android.widget.Toast
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.*
@@ -18,6 +21,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -26,6 +30,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -37,11 +42,18 @@ import com.example.cityflux.model.ParkingLive
 import com.example.cityflux.model.Report
 import com.example.cityflux.model.TrafficStatus
 import com.example.cityflux.ui.theme.*
+import com.google.android.gms.location.LocationServices
+import com.google.android.gms.location.Priority
 import com.google.firebase.analytics.ktx.analytics
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
 import com.google.firebase.ktx.Firebase
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import org.json.JSONObject
+import java.net.HttpURLConnection
+import java.net.URL
 
 // ═══════════════════════════════════════════════════════════════════
 // Citizen Home Content — Premium Modern Dashboard
@@ -185,31 +197,121 @@ fun CitizenHomeContent(
         myReports.filter { it.status.equals("Resolved", true) }
     }
 
-    // ── UI ──
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .statusBarsPadding()
-    ) {
-        // ──────── TOP APP BAR ────────
-        HomeTopBar(
-            userName = userName,
-            userLoading = userLoading,
-            unreadCount = unreadCount,
-            onNotificationClick = { onNavigateToTab(CitizenTab.ALERTS) },
-            onProfileClick = onProfileClick
-        )
+    // ── Community Announcements from Firestore ──
+    var announcements by remember { mutableStateOf<List<Map<String, Any>>>(emptyList()) }
+    LaunchedEffect(Unit) {
+        firestore.collection("announcements")
+            .orderBy("timestamp", Query.Direction.DESCENDING)
+            .limit(5)
+            .addSnapshotListener { snap, _ ->
+                announcements = snap?.documents?.mapNotNull { doc ->
+                    val data = doc.data ?: return@mapNotNull null
+                    data + ("id" to doc.id)
+                } ?: emptyList()
+            }
+    }
 
+    // ── Weather data from Open-Meteo (free, no API key) ──
+    var weatherTemp by remember { mutableStateOf<Double?>(null) }
+    var weatherCode by remember { mutableIntStateOf(-1) }
+    var weatherWind by remember { mutableStateOf<Double?>(null) }
+    var weatherLoading by remember { mutableStateOf(true) }
+
+    val context = LocalContext.current
+
+    LaunchedEffect(Unit) {
+        try {
+            // Default to Mumbai coordinates; ideally use device location
+            val fusedClient = LocationServices.getFusedLocationProviderClient(context)
+            var lat = 19.076
+            var lon = 72.8777
+            try {
+                fusedClient.lastLocation.addOnSuccessListener { loc ->
+                    if (loc != null) { lat = loc.latitude; lon = loc.longitude }
+                }
+            } catch (_: SecurityException) { }
+
+            // Small delay to let location resolve
+            kotlinx.coroutines.delay(1500)
+
+            withContext(Dispatchers.IO) {
+                val url = URL(
+                    "https://api.open-meteo.com/v1/forecast?" +
+                    "latitude=$lat&longitude=$lon&current_weather=true"
+                )
+                val conn = url.openConnection() as HttpURLConnection
+                conn.connectTimeout = 5000
+                conn.readTimeout = 5000
+                try {
+                    val json = JSONObject(conn.inputStream.bufferedReader().readText())
+                    val current = json.getJSONObject("current_weather")
+                    weatherTemp = current.getDouble("temperature")
+                    weatherCode = current.getInt("weathercode")
+                    weatherWind = current.getDouble("windspeed")
+                } finally {
+                    conn.disconnect()
+                }
+            }
+        } catch (_: Exception) { }
+        weatherLoading = false
+    }
+
+    // ── SOS state ──
+    var showSosDialog by remember { mutableStateOf(false) }
+    var sosSending by remember { mutableStateOf(false) }
+
+    // ── UI ──
+    Box(modifier = Modifier.fillMaxSize()) {
         Column(
-            modifier = Modifier.padding(horizontal = Spacing.XLarge),
-            verticalArrangement = Arrangement.spacedBy(Spacing.Large)
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .statusBarsPadding()
         ) {
-            // ──────── CRITICAL ALERTS BANNER (upgraded) ────────
-            CitizenAlertsBanner(
+            // ──────── TOP APP BAR ────────
+            HomeTopBar(
+                userName = userName,
+                userLoading = userLoading,
+                unreadCount = unreadCount,
+                onNotificationClick = { onNavigateToTab(CitizenTab.ALERTS) },
+                onProfileClick = onProfileClick
+            )
+
+            Column(
+                modifier = Modifier.padding(horizontal = Spacing.XLarge),
+                verticalArrangement = Arrangement.spacedBy(Spacing.Large)
+            ) {
+                // ──────── CRITICAL ALERTS BANNER (upgraded) ────────
+                CitizenAlertsBanner(
                 worstLevel = worstLevel,
                 highZoneCount = highTrafficZones.size,
                 pendingCount = myPendingReports.size
+            )
+
+            // ──────── 📢 COMMUNITY ANNOUNCEMENTS ────────
+            if (announcements.isNotEmpty()) {
+                SectionHeader(
+                    title = "Announcements",
+                    icon = Icons.Outlined.Campaign
+                )
+
+                LazyRow(
+                    horizontalArrangement = Arrangement.spacedBy(Spacing.Medium),
+                    contentPadding = PaddingValues(end = Spacing.Medium)
+                ) {
+                    items(announcements) { announcement ->
+                        AnnouncementCard(announcement = announcement)
+                    }
+                }
+            }
+
+            // ──────── 🌦️ WEATHER & TRAVEL CARD ────────
+            WeatherCard(
+                temp = weatherTemp,
+                weatherCode = weatherCode,
+                windSpeed = weatherWind,
+                isLoading = weatherLoading,
+                highTrafficCount = highTrafficZones.size
             )
 
             // ──────── LIVE CONGESTION STATS CARD ────────
@@ -284,6 +386,14 @@ fun CitizenHomeContent(
                     }
                 }
             }
+
+            // ──────── 🏥 NEARBY EMERGENCY SERVICES ────────
+            SectionHeader(
+                title = "Emergency Services",
+                icon = Icons.Outlined.LocalHospital
+            )
+
+            NearbyEmergencyServicesCard()
 
             // ──────── QUICK ACTIONS (premium with badges) ────────
             SectionHeader(
@@ -366,6 +476,100 @@ fun CitizenHomeContent(
             Spacer(modifier = Modifier.height(Spacing.Large))
         }
     }
+
+    // ──────── 🆘 SOS EMERGENCY FLOATING BUTTON ────────
+    SosEmergencyFab(
+        onClick = { showSosDialog = true }
+    )
+
+    // ──────── SOS CONFIRMATION DIALOG ────────
+    if (showSosDialog) {
+        AlertDialog(
+            onDismissRequest = { if (!sosSending) showSosDialog = false },
+            icon = {
+                Icon(
+                    Icons.Filled.Warning,
+                    contentDescription = null,
+                    tint = AccentRed,
+                    modifier = Modifier.size(40.dp)
+                )
+            },
+            title = {
+                Text(
+                    "🆘 Send SOS Alert?",
+                    fontWeight = FontWeight.Bold,
+                    textAlign = TextAlign.Center
+                )
+            },
+            text = {
+                Text(
+                    "This will send your live location and an emergency alert to nearby police officers immediately.",
+                    textAlign = TextAlign.Center,
+                    color = MaterialTheme.cityFluxColors.textSecondary
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        sosSending = true
+                        val uid = auth.currentUser?.uid ?: return@Button
+                        try {
+                            val fusedClient = LocationServices.getFusedLocationProviderClient(context)
+                            fusedClient.getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, null)
+                                .addOnSuccessListener { loc ->
+                                    val alert = hashMapOf(
+                                        "userId" to uid,
+                                        "userName" to (userName ?: "Citizen"),
+                                        "latitude" to (loc?.latitude ?: 0.0),
+                                        "longitude" to (loc?.longitude ?: 0.0),
+                                        "timestamp" to com.google.firebase.Timestamp.now(),
+                                        "status" to "active",
+                                        "type" to "sos"
+                                    )
+                                    firestore.collection("sos_alerts").add(alert)
+                                        .addOnSuccessListener {
+                                            Toast.makeText(context, "🆘 SOS Alert Sent! Help is on the way.", Toast.LENGTH_LONG).show()
+                                            sosSending = false
+                                            showSosDialog = false
+                                        }
+                                        .addOnFailureListener {
+                                            Toast.makeText(context, "Failed to send SOS. Try again.", Toast.LENGTH_SHORT).show()
+                                            sosSending = false
+                                        }
+                                }
+                                .addOnFailureListener {
+                                    Toast.makeText(context, "Could not get location. Check GPS.", Toast.LENGTH_SHORT).show()
+                                    sosSending = false
+                                }
+                        } catch (_: SecurityException) {
+                            Toast.makeText(context, "Location permission required.", Toast.LENGTH_SHORT).show()
+                            sosSending = false
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = AccentRed),
+                    enabled = !sosSending
+                ) {
+                    if (sosSending) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(18.dp),
+                            color = Color.White,
+                            strokeWidth = 2.dp
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                    }
+                    Text(if (sosSending) "Sending..." else "Send SOS", color = Color.White)
+                }
+            },
+            dismissButton = {
+                if (!sosSending) {
+                    TextButton(onClick = { showSosDialog = false }) {
+                        Text("Cancel")
+                    }
+                }
+            }
+        )
+    }
+    } // end Box
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -1603,6 +1807,461 @@ private fun RecentActivityTimeline(reports: List<Report>) {
                                 maxLines = 2,
                                 overflow = TextOverflow.Ellipsis,
                                 lineHeight = 16.sp
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// 🆘 SOS Emergency Floating Action Button
+// ═══════════════════════════════════════════════════════════════════
+
+@Composable
+private fun SosEmergencyFab(onClick: () -> Unit) {
+    val infiniteTransition = rememberInfiniteTransition(label = "sos_pulse")
+    val pulseScale by infiniteTransition.animateFloat(
+        initialValue = 1f,
+        targetValue = 1.15f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(800, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "sos_scale"
+    )
+    val glowAlpha by infiniteTransition.animateFloat(
+        initialValue = 0.3f,
+        targetValue = 0.7f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(800, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "sos_glow"
+    )
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(end = Spacing.XLarge, bottom = 24.dp),
+        contentAlignment = Alignment.BottomEnd
+    ) {
+        // Glow ring
+        Box(
+            modifier = Modifier
+                .size(68.dp)
+                .scale(pulseScale)
+                .clip(CircleShape)
+                .background(AccentRed.copy(alpha = glowAlpha))
+        )
+        // Actual button
+        FloatingActionButton(
+            onClick = onClick,
+            containerColor = AccentRed,
+            contentColor = Color.White,
+            shape = CircleShape,
+            modifier = Modifier.size(60.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Filled.Sos,
+                contentDescription = "SOS Emergency",
+                modifier = Modifier.size(28.dp)
+            )
+        }
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// 📢 Community Announcement Card
+// ═══════════════════════════════════════════════════════════════════
+
+@Composable
+private fun AnnouncementCard(announcement: Map<String, Any>) {
+    val colors = MaterialTheme.cityFluxColors
+    val title = announcement["title"] as? String ?: "Announcement"
+    val message = announcement["message"] as? String ?: ""
+    val type = (announcement["type"] as? String ?: "info").lowercase()
+
+    val (accentColor, bgAlpha, icon) = remember(type) {
+        when (type) {
+            "urgent" -> Triple(AccentRed, 0.08f, Icons.Filled.Error)
+            "warning" -> Triple(AccentOrange, 0.08f, Icons.Filled.Warning)
+            else -> Triple(PrimaryBlue, 0.06f, Icons.Filled.Info)
+        }
+    }
+
+    val timestamp = announcement["timestamp"]
+    val timeAgo = remember(timestamp) {
+        when (timestamp) {
+            is com.google.firebase.Timestamp ->
+                DateUtils.getRelativeTimeSpanString(
+                    timestamp.toDate().time,
+                    System.currentTimeMillis(),
+                    DateUtils.MINUTE_IN_MILLIS
+                ).toString()
+            else -> ""
+        }
+    }
+
+    Surface(
+        modifier = Modifier.width(280.dp),
+        shape = RoundedCornerShape(CornerRadius.Large),
+        color = accentColor.copy(alpha = bgAlpha),
+        border = BorderStroke(1.dp, accentColor.copy(alpha = 0.2f))
+    ) {
+        Column(modifier = Modifier.padding(Spacing.Large)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier = Modifier
+                        .size(32.dp)
+                        .clip(CircleShape)
+                        .background(accentColor.copy(alpha = 0.15f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = null,
+                        tint = accentColor,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+                Spacer(modifier = Modifier.width(Spacing.Small))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = title,
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = colors.textPrimary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    if (timeAgo.isNotEmpty()) {
+                        Text(
+                            text = timeAgo,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = colors.textTertiary,
+                            fontSize = 10.sp
+                        )
+                    }
+                }
+                Surface(
+                    shape = RoundedCornerShape(4.dp),
+                    color = accentColor.copy(alpha = 0.15f)
+                ) {
+                    Text(
+                        text = type.replaceFirstChar { it.uppercase() },
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = accentColor,
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 9.sp
+                    )
+                }
+            }
+            if (message.isNotBlank()) {
+                Spacer(modifier = Modifier.height(Spacing.Small))
+                Text(
+                    text = message,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = colors.textSecondary,
+                    maxLines = 3,
+                    overflow = TextOverflow.Ellipsis,
+                    lineHeight = 16.sp
+                )
+            }
+        }
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// 🌦️ Weather & Travel Card
+// ═══════════════════════════════════════════════════════════════════
+
+private fun weatherCodeToInfo(code: Int): Triple<String, ImageVector, String> {
+    return when (code) {
+        0 -> Triple("Clear Sky", Icons.Outlined.WbSunny, "Great driving conditions!")
+        1, 2, 3 -> Triple("Partly Cloudy", Icons.Outlined.Cloud, "Good visibility. Drive safe.")
+        45, 48 -> Triple("Foggy", Icons.Outlined.CloudQueue, "⚠️ Low visibility — drive slow, use fog lights.")
+        51, 53, 55 -> Triple("Drizzle", Icons.Outlined.Grain, "Light rain — roads may be slippery.")
+        61, 63, 65 -> Triple("Rainy", Icons.Outlined.Umbrella, "🌧️ Wet roads — expect slower traffic & delays.")
+        66, 67 -> Triple("Freezing Rain", Icons.Outlined.AcUnit, "⚠️ Icy roads — avoid travel if possible.")
+        71, 73, 75, 77 -> Triple("Snowfall", Icons.Outlined.AcUnit, "❄️ Snow — major traffic impact expected.")
+        80, 81, 82 -> Triple("Rain Showers", Icons.Outlined.Umbrella, "🌧️ Heavy showers — poor visibility, delays likely.")
+        85, 86 -> Triple("Snow Showers", Icons.Outlined.AcUnit, "❄️ Snow showers — roads dangerous.")
+        95 -> Triple("Thunderstorm", Icons.Outlined.FlashOn, "⛈️ Thunderstorm — stay indoors if possible!")
+        96, 99 -> Triple("Hail Storm", Icons.Outlined.FlashOn, "⛈️ Hail — avoid driving, seek shelter!")
+        else -> Triple("Unknown", Icons.Outlined.Cloud, "Check local weather for updates.")
+    }
+}
+
+@Composable
+private fun WeatherCard(
+    temp: Double?,
+    weatherCode: Int,
+    windSpeed: Double?,
+    isLoading: Boolean,
+    highTrafficCount: Int
+) {
+    val colors = MaterialTheme.cityFluxColors
+    val (condition, weatherIcon, travelTip) = remember(weatherCode) {
+        weatherCodeToInfo(weatherCode)
+    }
+
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(CornerRadius.Large),
+        color = colors.cardBackground,
+        shadowElevation = 2.dp
+    ) {
+        if (isLoading) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(80.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(Spacing.Small)
+                ) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(16.dp),
+                        strokeWidth = 2.dp,
+                        color = PrimaryBlue
+                    )
+                    Text(
+                        "Loading weather...",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = colors.textTertiary
+                    )
+                }
+            }
+        } else if (temp != null) {
+            Column(modifier = Modifier.padding(Spacing.Large)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(48.dp)
+                            .clip(CircleShape)
+                            .background(
+                                Brush.linearGradient(
+                                    listOf(GradientSky.copy(alpha = 0.2f), PrimaryBlue.copy(alpha = 0.1f))
+                                )
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = weatherIcon,
+                            contentDescription = null,
+                            tint = PrimaryBlue,
+                            modifier = Modifier.size(26.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(Spacing.Medium))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = condition,
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = colors.textPrimary
+                        )
+                        Text(
+                            text = "Wind: ${windSpeed?.let { "%.0f".format(it) } ?: "-"} km/h",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = colors.textTertiary
+                        )
+                    }
+                    Text(
+                        text = "${temp.let { "%.0f".format(it) }}°C",
+                        style = MaterialTheme.typography.headlineMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = PrimaryBlue
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(Spacing.Medium))
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(CornerRadius.Medium),
+                    color = if (weatherCode in listOf(0, 1, 2, 3))
+                        AccentGreen.copy(alpha = 0.08f)
+                    else
+                        AccentOrange.copy(alpha = 0.08f)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(Spacing.Medium),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.DirectionsCar,
+                            contentDescription = null,
+                            tint = if (weatherCode in listOf(0, 1, 2, 3)) AccentGreen else AccentOrange,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(Spacing.Small))
+                        Text(
+                            text = if (highTrafficCount > 0)
+                                "$travelTip ($highTrafficCount congested zones)"
+                            else travelTip,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = colors.textSecondary,
+                            lineHeight = 16.sp
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// 🏥 Nearby Emergency Services Card
+// ═══════════════════════════════════════════════════════════════════
+
+private data class EmergencyService(
+    val name: String,
+    val number: String,
+    val icon: ImageVector,
+    val color: Color,
+    val mapsQuery: String
+)
+
+@Composable
+private fun NearbyEmergencyServicesCard() {
+    val colors = MaterialTheme.cityFluxColors
+    val context = LocalContext.current
+
+    val services = remember {
+        listOf(
+            EmergencyService("Emergency", "112", Icons.Filled.Sos, AccentRed, "emergency services"),
+            EmergencyService("Police", "100", Icons.Outlined.LocalPolice, PrimaryBlue, "police station"),
+            EmergencyService("Fire", "101", Icons.Outlined.LocalFireDepartment, AccentOrange, "fire station"),
+            EmergencyService("Ambulance", "102", Icons.Outlined.LocalHospital, AccentGreen, "hospital")
+        )
+    }
+
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(CornerRadius.Large),
+        color = colors.cardBackground,
+        shadowElevation = 2.dp
+    ) {
+        Column(modifier = Modifier.padding(Spacing.Large)) {
+            Text(
+                text = "Quick Dial",
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = colors.textSecondary
+            )
+            Spacer(modifier = Modifier.height(Spacing.Medium))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceEvenly
+            ) {
+                services.forEach { service ->
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier.clickable {
+                            val intent = Intent(Intent.ACTION_DIAL, Uri.parse("tel:${service.number}"))
+                            context.startActivity(intent)
+                        }
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(48.dp)
+                                .clip(CircleShape)
+                                .background(service.color.copy(alpha = 0.1f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = service.icon,
+                                contentDescription = service.name,
+                                tint = service.color,
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = service.number,
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = colors.textPrimary
+                        )
+                        Text(
+                            text = service.name,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = colors.textTertiary,
+                            fontSize = 10.sp
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(Spacing.Large))
+            Divider(color = colors.divider)
+            Spacer(modifier = Modifier.height(Spacing.Medium))
+
+            Text(
+                text = "Find Nearby",
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = colors.textSecondary
+            )
+            Spacer(modifier = Modifier.height(Spacing.Medium))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(Spacing.Small)
+            ) {
+                val nearbyItems = listOf(
+                    Triple("🏥 Hospital", "hospital near me", AccentGreen),
+                    Triple("🚔 Police", "police station near me", PrimaryBlue),
+                    Triple("🚒 Fire Stn", "fire station near me", AccentOrange)
+                )
+                nearbyItems.forEach { (label, query, color) ->
+                    Surface(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clickable {
+                                val uri = Uri.parse("geo:0,0?q=${Uri.encode(query)}")
+                                val intent = Intent(Intent.ACTION_VIEW, uri).apply {
+                                    setPackage("com.google.android.apps.maps")
+                                }
+                                try {
+                                    context.startActivity(intent)
+                                } catch (_: Exception) {
+                                    context.startActivity(
+                                        Intent(Intent.ACTION_VIEW, Uri.parse("https://maps.google.com/?q=${Uri.encode(query)}"))
+                                    )
+                                }
+                            },
+                        shape = RoundedCornerShape(CornerRadius.Medium),
+                        color = color.copy(alpha = 0.08f),
+                        border = BorderStroke(1.dp, color.copy(alpha = 0.15f))
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(Spacing.Medium),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Text(
+                                text = label,
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = color,
+                                textAlign = TextAlign.Center,
+                                fontSize = 12.sp
+                            )
+                            Text(
+                                text = "Open Maps →",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = colors.textTertiary,
+                                fontSize = 9.sp
                             )
                         }
                     }
