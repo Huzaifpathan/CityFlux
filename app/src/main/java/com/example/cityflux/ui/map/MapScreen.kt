@@ -12,6 +12,7 @@ import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.net.Uri
 import android.text.format.DateUtils
+import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
@@ -70,6 +71,21 @@ fun MapScreen(
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
     val state by vm.uiState.collectAsState()
+
+    // ── Initialize Maps renderer (ensures latest renderer is used) ──
+    var mapLoaded by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        try {
+            com.google.android.gms.maps.MapsInitializer.initialize(
+                context,
+                com.google.android.gms.maps.MapsInitializer.Renderer.LATEST
+            ) { renderer ->
+                Log.d("MapScreen", "Maps renderer initialized: $renderer")
+            }
+        } catch (e: Exception) {
+            Log.e("MapScreen", "MapsInitializer failed", e)
+        }
+    }
 
     // ── Analytics ──
     LaunchedEffect(Unit) {
@@ -167,6 +183,16 @@ fun MapScreen(
     val incidentHawkerBitmap = remember { createCircleMarkerBitmap(AccentOrange.toArgb(), 36) }
     val incidentDefaultBitmap = remember { createCircleMarkerBitmap(PrimaryBlue.toArgb(), 36) }
 
+    // ── Map load timeout diagnostic ──
+    var mapLoadTimedOut by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        kotlinx.coroutines.delay(5000)
+        if (!mapLoaded) {
+            mapLoadTimedOut = true
+            Log.w("MapScreen", "Map did not load within 5s — check API key & restrictions")
+        }
+    }
+
     Box(modifier = Modifier.fillMaxSize()) {
 
         // ══════════════════════ Google Map ══════════════════════
@@ -175,6 +201,10 @@ fun MapScreen(
             cameraPositionState = cameraPositionState,
             properties = mapProperties,
             uiSettings = uiSettings,
+            onMapLoaded = {
+                mapLoaded = true
+                Log.d("MapScreen", "Google Map loaded successfully")
+            },
             onMapClick = {
                 selectedParking = null
                 selectedIncident = null
@@ -401,6 +431,47 @@ fun MapScreen(
                     ) {
                         Text("Retry", fontWeight = FontWeight.Bold, fontSize = 12.sp)
                     }
+                }
+            }
+        }
+
+        // ══════════════════════ Map Load Warning ══════════════════════
+        AnimatedVisibility(
+            visible = mapLoadTimedOut && !mapLoaded,
+            enter = slideInVertically { -it } + fadeIn(),
+            exit = slideOutVertically { -it } + fadeOut(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .statusBarsPadding()
+                .padding(top = 56.dp)
+        ) {
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = Spacing.Medium),
+                shape = RoundedCornerShape(CornerRadius.Medium),
+                color = AccentOrange.copy(alpha = 0.95f),
+                shadowElevation = 4.dp
+            ) {
+                Row(
+                    modifier = Modifier.padding(
+                        horizontal = Spacing.Medium,
+                        vertical = Spacing.Small
+                    ),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        Icons.Outlined.Warning,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(Modifier.width(Spacing.Small))
+                    Text(
+                        "Map not loading — check API key in Google Cloud Console",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = Color.White
+                    )
                 }
             }
         }
