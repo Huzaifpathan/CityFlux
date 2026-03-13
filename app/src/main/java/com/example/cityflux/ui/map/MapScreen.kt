@@ -16,6 +16,7 @@ import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
@@ -36,6 +37,7 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -138,11 +140,11 @@ fun MapScreen(
     }
 
     // ── Map Properties ──
-    val mapProperties by remember(hasLocationPermission) {
+    val mapProperties by remember(hasLocationPermission, currentMapType) {
         mutableStateOf(
             MapProperties(
                 isMyLocationEnabled = hasLocationPermission,
-                mapType = MapType.NORMAL,
+                mapType = currentMapType,
                 isTrafficEnabled = true,
                 isBuildingEnabled = true
             )
@@ -174,6 +176,39 @@ fun MapScreen(
     // ── Layer Visibility ──
     var showParking by remember { mutableStateOf(true) }
     var showIncidents by remember { mutableStateOf(true) }
+    var showZones by remember { mutableStateOf(true) }
+
+    // ── Map Type Toggle ──
+    var currentMapType by remember { mutableStateOf(MapType.NORMAL) }
+
+    // ── Stats Panel Toggle ──
+    var showStatsPanel by remember { mutableStateOf(false) }
+
+    // ── Congestion Breakdown (derived from ViewModel traffic data) ──
+    val highZones = remember(state.trafficMap) {
+        state.trafficMap.entries.filter { it.value.congestionLevel.equals("HIGH", true) }
+    }
+    val mediumZones = remember(state.trafficMap) {
+        state.trafficMap.entries.filter { it.value.congestionLevel.equals("MEDIUM", true) }
+    }
+    val lowZones = remember(state.trafficMap) {
+        state.trafficMap.entries.filter {
+            !it.value.congestionLevel.equals("HIGH", true) &&
+            !it.value.congestionLevel.equals("MEDIUM", true)
+        }
+    }
+
+    // ── Pulsing animation for HIGH zones ──
+    val infiniteTransition = rememberInfiniteTransition(label = "zone_pulse")
+    val pulseAlpha by infiniteTransition.animateFloat(
+        initialValue = 0.25f,
+        targetValue = 0.45f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1000, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "pulse_alpha"
+    )
 
     // ── Custom Marker Bitmaps (cached once) ──
     val parkingGreenBitmap = remember { createCircleMarkerBitmap(AccentParking.toArgb(), 40) }
@@ -266,9 +301,48 @@ fun MapScreen(
                     )
                 }
             }
+
+            // ──────── Congestion Zone Circles ────────
+            if (showZones) {
+                state.trafficMap.forEach { (roadId, traffic) ->
+                    val latLng = parseRoadLatLng(roadId)
+                    if (latLng != null) {
+                        val isHigh = traffic.congestionLevel.equals("HIGH", true)
+                        val isMedium = traffic.congestionLevel.equals("MEDIUM", true)
+                        val zoneColor = when {
+                            isHigh -> Color(0xFFEF4444)
+                            isMedium -> Color(0xFFF97316)
+                            else -> Color(0xFF22C55E)
+                        }
+                        val radius = when {
+                            isHigh -> 450.0
+                            isMedium -> 350.0
+                            else -> 250.0
+                        }
+                        val alpha = if (isHigh) pulseAlpha else if (isMedium) 0.3f else 0.2f
+
+                        Circle(
+                            center = latLng,
+                            radius = radius,
+                            fillColor = zoneColor.copy(alpha = alpha),
+                            strokeColor = zoneColor.copy(alpha = 0.6f),
+                            strokeWidth = 2f,
+                            clickable = true,
+                            onClick = {
+                                scope.launch {
+                                    cameraPositionState.animate(
+                                        CameraUpdateFactory.newLatLngZoom(latLng, 16f),
+                                        durationMs = 600
+                                    )
+                                }
+                            }
+                        )
+                    }
+                }
+            }
         }
 
-        // ══════════════════════ Top Row: Back + Title + Layer Toggles ══════════════════════
+        // ══════════════════════ Top Row: Back + Title + Toggles ══════════════════════
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -300,7 +374,7 @@ fun MapScreen(
                         )
                     }
 
-                    // Title card (police style)
+                    // Title card
                     Surface(
                         shape = RoundedCornerShape(CornerRadius.Large),
                         color = colors.cardBackground.copy(alpha = 0.95f),
@@ -347,24 +421,107 @@ fun MapScreen(
                     }
                 }
 
-                // Layer toggle chips
+                // Analytics + Map Type toggles
                 Row(horizontalArrangement = Arrangement.spacedBy(Spacing.Small)) {
-                    LayerChip(
-                        label = "Parking",
-                        icon = Icons.Outlined.LocalParking,
-                        isActive = showParking,
-                        activeColor = AccentParking,
-                        onClick = { showParking = !showParking }
-                    )
-                    LayerChip(
-                        label = "Incidents",
-                        icon = Icons.Outlined.Warning,
-                        isActive = showIncidents,
-                        activeColor = AccentIssues,
-                        onClick = { showIncidents = !showIncidents }
-                    )
+                    // Analytics toggle
+                    FloatingActionButton(
+                        onClick = { showStatsPanel = !showStatsPanel },
+                        modifier = Modifier.size(36.dp),
+                        shape = CircleShape,
+                        containerColor = if (showStatsPanel) PrimaryBlue
+                            else colors.cardBackground.copy(alpha = 0.95f),
+                        elevation = FloatingActionButtonDefaults.elevation(3.dp)
+                    ) {
+                        Icon(
+                            Icons.Outlined.Analytics,
+                            "Analytics",
+                            tint = if (showStatsPanel) Color.White else colors.textSecondary,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+
+                    // Map type toggle
+                    FloatingActionButton(
+                        onClick = {
+                            currentMapType = when (currentMapType) {
+                                MapType.NORMAL -> MapType.SATELLITE
+                                MapType.SATELLITE -> MapType.HYBRID
+                                else -> MapType.NORMAL
+                            }
+                        },
+                        modifier = Modifier.size(36.dp),
+                        shape = CircleShape,
+                        containerColor = colors.cardBackground.copy(alpha = 0.95f),
+                        elevation = FloatingActionButtonDefaults.elevation(3.dp)
+                    ) {
+                        Icon(
+                            when (currentMapType) {
+                                MapType.SATELLITE -> Icons.Outlined.Satellite
+                                MapType.HYBRID -> Icons.Outlined.Layers
+                                else -> Icons.Outlined.Map
+                            },
+                            "Map Type",
+                            tint = colors.textSecondary,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
                 }
             }
+
+            Spacer(modifier = Modifier.height(Spacing.Small))
+
+            // Layer toggle chips with badges
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(Spacing.Small)
+            ) {
+                LayerChipWithBadge(
+                    label = "Zones",
+                    icon = Icons.Outlined.RadioButtonChecked,
+                    isActive = showZones,
+                    activeColor = AccentTraffic,
+                    badge = state.trafficMap.size.let { if (it > 0) "$it" else null },
+                    onClick = { showZones = !showZones }
+                )
+                LayerChipWithBadge(
+                    label = "Parking",
+                    icon = Icons.Outlined.LocalParking,
+                    isActive = showParking,
+                    activeColor = AccentParking,
+                    badge = state.parkingSpots.size.let { if (it > 0) "$it" else null },
+                    onClick = { showParking = !showParking }
+                )
+                LayerChipWithBadge(
+                    label = "Incidents",
+                    icon = Icons.Outlined.Warning,
+                    isActive = showIncidents,
+                    activeColor = AccentIssues,
+                    badge = state.incidents.size.let { if (it > 0) "$it" else null },
+                    onClick = { showIncidents = !showIncidents }
+                )
+            }
+        }
+
+        // ══════════════════════ Analytics Stats Panel ══════════════════════
+        AnimatedVisibility(
+            visible = showStatsPanel,
+            enter = slideInVertically { -it } + fadeIn(),
+            exit = slideOutVertically { -it } + fadeOut(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .statusBarsPadding()
+                .padding(top = 110.dp)
+        ) {
+            CongestionStatsPanel(
+                highCount = highZones.size,
+                mediumCount = mediumZones.size,
+                lowCount = lowZones.size,
+                totalZones = state.trafficMap.size,
+                pendingIncidents = state.incidents.count {
+                    it.status.equals("Pending", true) || it.status.equals("submitted", true)
+                },
+                totalIncidents = state.incidents.size
+            )
         }
 
         // ══════════════════════ Loading Indicator ══════════════════════
@@ -496,6 +653,32 @@ fun MapScreen(
                 Icon(Icons.Outlined.ReportProblem, "Report Issue", Modifier.size(20.dp))
             }
 
+            // Jump to Crisis FAB (only if HIGH zones exist)
+            if (highZones.isNotEmpty()) {
+                SmallFloatingActionButton(
+                    onClick = {
+                        val firstHigh = highZones.firstOrNull()
+                        if (firstHigh != null) {
+                            val latLng = parseRoadLatLng(firstHigh.key)
+                            if (latLng != null) {
+                                scope.launch {
+                                    cameraPositionState.animate(
+                                        CameraUpdateFactory.newLatLngZoom(latLng, 16f),
+                                        durationMs = 600
+                                    )
+                                }
+                            }
+                        }
+                    },
+                    shape = CircleShape,
+                    containerColor = AccentRed,
+                    contentColor = Color.White,
+                    elevation = FloatingActionButtonDefaults.elevation(6.dp)
+                ) {
+                    Icon(Icons.Outlined.GpsFixed, "Jump to Crisis", Modifier.size(20.dp))
+                }
+            }
+
             // Nearest Parking FAB
             SmallFloatingActionButton(
                 onClick = {
@@ -531,6 +714,26 @@ fun MapScreen(
                 Icon(Icons.Outlined.LocalParking, "Nearest Parking", Modifier.size(20.dp))
             }
 
+            // Reset View FAB
+            SmallFloatingActionButton(
+                onClick = {
+                    scope.launch {
+                        cameraPositionState.animate(
+                            CameraUpdateFactory.newLatLngZoom(
+                                userLocation ?: defaultLocation, 13f
+                            ),
+                            durationMs = 600
+                        )
+                    }
+                },
+                shape = CircleShape,
+                containerColor = colors.cardBackground,
+                contentColor = colors.textSecondary,
+                elevation = FloatingActionButtonDefaults.elevation(6.dp)
+            ) {
+                Icon(Icons.Outlined.ZoomOutMap, "Reset View", Modifier.size(20.dp))
+            }
+
             // My Location FAB
             FloatingActionButton(
                 onClick = {
@@ -549,6 +752,45 @@ fun MapScreen(
                 elevation = FloatingActionButtonDefaults.elevation(8.dp)
             ) {
                 Icon(Icons.Filled.MyLocation, "My Location", Modifier.size(24.dp))
+            }
+        }
+
+        // ══════════════════════ Map Legend (bottom-left) ══════════════════════
+        if (showZones && state.trafficMap.isNotEmpty()) {
+            Surface(
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .padding(start = Spacing.Medium, bottom = Spacing.Large)
+                    .navigationBarsPadding(),
+                shape = RoundedCornerShape(CornerRadius.Large),
+                color = colors.cardBackground.copy(alpha = 0.95f),
+                shadowElevation = 4.dp
+            ) {
+                Column(modifier = Modifier.padding(Spacing.Medium)) {
+                    Text(
+                        "Congestion",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = colors.textSecondary,
+                        fontSize = 9.sp
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    LegendItem(
+                        color = Color(0xFFEF4444),
+                        label = "Heavy",
+                        count = highZones.size
+                    )
+                    LegendItem(
+                        color = Color(0xFFF97316),
+                        label = "Moderate",
+                        count = mediumZones.size
+                    )
+                    LegendItem(
+                        color = Color(0xFF22C55E),
+                        label = "Clear",
+                        count = lowZones.size
+                    )
+                }
             }
         }
 
@@ -1055,4 +1297,264 @@ private fun isNetworkAvailable(context: Context): Boolean {
     val network = cm.activeNetwork ?: return false
     val capabilities = cm.getNetworkCapabilities(network) ?: return false
     return capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+}
+
+
+// ═══════════════════════════════════════════════════════════════════
+// Layer Chip with Badge (upgraded)
+// ═══════════════════════════════════════════════════════════════════
+
+@Composable
+private fun LayerChipWithBadge(
+    label: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    isActive: Boolean,
+    activeColor: Color,
+    badge: String? = null,
+    onClick: () -> Unit
+) {
+    val colors = MaterialTheme.cityFluxColors
+    val bgColor = if (isActive) activeColor.copy(alpha = 0.15f)
+        else colors.cardBackground.copy(alpha = 0.9f)
+    val contentColor = if (isActive) activeColor else colors.textSecondary
+
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(CornerRadius.Round),
+        color = bgColor,
+        shadowElevation = 3.dp,
+        modifier = Modifier.height(32.dp)
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            Icon(icon, null, tint = contentColor, modifier = Modifier.size(14.dp))
+            Text(
+                label,
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.SemiBold,
+                color = contentColor
+            )
+            if (badge != null && isActive) {
+                Surface(
+                    shape = CircleShape,
+                    color = activeColor,
+                    modifier = Modifier.size(18.dp)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Text(
+                            badge,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Color.White,
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+
+// ═══════════════════════════════════════════════════════════════════
+// Analytics Stats Panel
+// ═══════════════════════════════════════════════════════════════════
+
+@Composable
+private fun CongestionStatsPanel(
+    highCount: Int,
+    mediumCount: Int,
+    lowCount: Int,
+    totalZones: Int,
+    pendingIncidents: Int,
+    totalIncidents: Int
+) {
+    val colors = MaterialTheme.cityFluxColors
+
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = Spacing.Medium),
+        shape = RoundedCornerShape(CornerRadius.Large),
+        color = colors.cardBackground.copy(alpha = 0.97f),
+        shadowElevation = 6.dp
+    ) {
+        Column(modifier = Modifier.padding(Spacing.Large)) {
+            // Distribution bar
+            if (totalZones > 0) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(8.dp)
+                        .clip(RoundedCornerShape(4.dp))
+                ) {
+                    val highFraction = highCount.toFloat() / totalZones
+                    val medFraction = mediumCount.toFloat() / totalZones
+                    val lowFraction = lowCount.toFloat() / totalZones
+
+                    if (highFraction > 0f) {
+                        Box(
+                            modifier = Modifier
+                                .weight(highFraction.coerceAtLeast(0.05f))
+                                .fillMaxHeight()
+                                .background(Color(0xFFEF4444))
+                        )
+                    }
+                    if (medFraction > 0f) {
+                        Box(
+                            modifier = Modifier
+                                .weight(medFraction.coerceAtLeast(0.05f))
+                                .fillMaxHeight()
+                                .background(Color(0xFFF97316))
+                        )
+                    }
+                    if (lowFraction > 0f) {
+                        Box(
+                            modifier = Modifier
+                                .weight(lowFraction.coerceAtLeast(0.05f))
+                                .fillMaxHeight()
+                                .background(Color(0xFF22C55E))
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.height(Spacing.Medium))
+            }
+
+            // Stats grid (2×3)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(Spacing.Small)
+            ) {
+                StatMiniCard(
+                    label = "High",
+                    value = "$highCount",
+                    color = Color(0xFFEF4444),
+                    modifier = Modifier.weight(1f)
+                )
+                StatMiniCard(
+                    label = "Medium",
+                    value = "$mediumCount",
+                    color = Color(0xFFF97316),
+                    modifier = Modifier.weight(1f)
+                )
+                StatMiniCard(
+                    label = "Low",
+                    value = "$lowCount",
+                    color = Color(0xFF22C55E),
+                    modifier = Modifier.weight(1f)
+                )
+            }
+            Spacer(modifier = Modifier.height(Spacing.Small))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(Spacing.Small)
+            ) {
+                StatMiniCard(
+                    label = "Pending",
+                    value = "$pendingIncidents",
+                    color = AccentOrange,
+                    modifier = Modifier.weight(1f)
+                )
+                StatMiniCard(
+                    label = "Incidents",
+                    value = "$totalIncidents",
+                    color = AccentIssues,
+                    modifier = Modifier.weight(1f)
+                )
+                StatMiniCard(
+                    label = "Zones",
+                    value = "$totalZones",
+                    color = PrimaryBlue,
+                    modifier = Modifier.weight(1f)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun StatMiniCard(
+    label: String,
+    value: String,
+    color: Color,
+    modifier: Modifier = Modifier
+) {
+    val colors = MaterialTheme.cityFluxColors
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(CornerRadius.Medium),
+        color = color.copy(alpha = 0.08f)
+    ) {
+        Column(
+            modifier = Modifier.padding(vertical = 8.dp, horizontal = 6.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(
+                value,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = color
+            )
+            Text(
+                label,
+                style = MaterialTheme.typography.labelSmall,
+                color = colors.textTertiary,
+                fontSize = 9.sp
+            )
+        }
+    }
+}
+
+
+// ═══════════════════════════════════════════════════════════════════
+// Map Legend Item
+// ═══════════════════════════════════════════════════════════════════
+
+@Composable
+private fun LegendItem(color: Color, label: String, count: Int) {
+    val textColors = MaterialTheme.cityFluxColors
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.padding(vertical = 2.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .size(10.dp)
+                .clip(CircleShape)
+                .background(color)
+        )
+        Spacer(modifier = Modifier.width(6.dp))
+        Text(
+            "$label ($count)",
+            style = MaterialTheme.typography.labelSmall,
+            color = textColors.textPrimary,
+            fontSize = 10.sp
+        )
+    }
+}
+
+
+// ═══════════════════════════════════════════════════════════════════
+// Parse Road LatLng from road ID
+// ═══════════════════════════════════════════════════════════════════
+
+/** Parse lat/lng from road ID like "road_19.076_72.877" or fallback hash-based. */
+private fun parseRoadLatLng(roadId: String): LatLng? {
+    // Try format: road_<lat>_<lng> or <name>_<lat>_<lng>
+    val parts = roadId.split("_")
+    if (parts.size >= 3) {
+        val lat = parts[parts.size - 2].toDoubleOrNull()
+        val lng = parts[parts.size - 1].toDoubleOrNull()
+        if (lat != null && lng != null && lat in -90.0..90.0 && lng in -180.0..180.0) {
+            return LatLng(lat, lng)
+        }
+    }
+    // Hash-based fallback: deterministic position around Mumbai
+    val hash = roadId.hashCode()
+    val baseLat = 19.076 + (hash % 100) * 0.002
+    val baseLng = 72.877 + ((hash / 100) % 100) * 0.002
+    return LatLng(baseLat, baseLng)
 }
