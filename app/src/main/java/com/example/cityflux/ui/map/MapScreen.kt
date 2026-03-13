@@ -7,6 +7,7 @@ import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Paint
+import android.location.Geocoder
 import android.location.Location
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
@@ -21,6 +22,8 @@ import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
@@ -36,7 +39,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -53,8 +58,11 @@ import com.google.android.gms.maps.model.*
 import com.google.firebase.analytics.ktx.analytics
 import com.google.firebase.ktx.Firebase
 import com.google.maps.android.compose.*
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
+import kotlinx.coroutines.withContext
+import java.util.Locale
 
 // ═══════════════════════════════════════════════════════════════════
 // MapScreen — Full-screen Google Map with live Firebase data
@@ -210,6 +218,34 @@ fun MapScreen(
         label = "pulse_alpha"
     )
 
+    // ── Search Location State ──
+    var searchQuery by remember { mutableStateOf("") }
+    var isSearching by remember { mutableStateOf(false) }
+    var showSearchBar by remember { mutableStateOf(false) }
+    var searchPin by remember { mutableStateOf<LatLng?>(null) }
+    val focusManager = LocalFocusManager.current
+
+    // ── Emergency Services Layer ──
+    var showEmergencyServices by remember { mutableStateOf(false) }
+
+    // ── Heatmap Overlay ──
+    var showHeatmap by remember { mutableStateOf(false) }
+
+    // ── Radius Filter ──
+    var radiusKm by remember { mutableStateOf(0f) } // 0 = no filter
+    var showRadiusSlider by remember { mutableStateOf(false) }
+
+    // ── Route Planner ──
+    var routeMode by remember { mutableStateOf(false) }
+    var routeStart by remember { mutableStateOf<LatLng?>(null) }
+    var routeEnd by remember { mutableStateOf<LatLng?>(null) }
+    var routePoints by remember { mutableStateOf<List<LatLng>>(emptyList()) }
+
+    // ── Emergency Services Marker Bitmaps ──
+    val hospitalBitmap = remember { createCircleMarkerBitmap(AccentGreen.toArgb(), 34) }
+    val policeBitmap = remember { createCircleMarkerBitmap(PrimaryBlue.toArgb(), 34) }
+    val fireBitmap = remember { createCircleMarkerBitmap(AccentOrange.toArgb(), 34) }
+
     // ── Custom Marker Bitmaps (cached once) ──
     val parkingGreenBitmap = remember { createCircleMarkerBitmap(AccentParking.toArgb(), 40) }
     val parkingRedBitmap = remember { createCircleMarkerBitmap(AccentRed.toArgb(), 40) }
@@ -240,9 +276,23 @@ fun MapScreen(
                 mapLoaded = true
                 Log.d("MapScreen", "Google Map loaded successfully")
             },
-            onMapClick = {
+            onMapClick = { latLng ->
                 selectedParking = null
                 selectedIncident = null
+                // Route planner tap handling
+                if (routeMode) {
+                    if (routeStart == null) {
+                        routeStart = latLng
+                    } else if (routeEnd == null) {
+                        routeEnd = latLng
+                        // Build route with intermediate points
+                        val start = routeStart!!
+                        val end = latLng
+                        routePoints = buildSimpleRoute(start, end, state.trafficMap.mapNotNull { (id, _) ->
+                            parseRoadLatLng(id)
+                        })
+                    }
+                }
             }
         ) {
             // ──────── Parking Markers ────────
@@ -338,6 +388,113 @@ fun MapScreen(
                             }
                         )
                     }
+                }
+            }
+
+            // ──────── Heatmap Overlay (incident density) ────────
+            if (showHeatmap && state.incidents.isNotEmpty()) {
+                val heatCells = remember(state.incidents) {
+                    buildHeatmapCells(state.incidents)
+                }
+                heatCells.forEach { cell ->
+                    Circle(
+                        center = cell.center,
+                        radius = cell.radius,
+                        fillColor = cell.color,
+                        strokeColor = Color.Transparent,
+                        strokeWidth = 0f
+                    )
+                }
+            }
+
+            // ──────── Search Pin Marker ────────
+            searchPin?.let { pin ->
+                Marker(
+                    state = MarkerState(position = pin),
+                    title = "Search Result",
+                    snippet = searchQuery,
+                    icon = BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_VIOLET)
+                )
+            }
+
+            // ──────── Radius Filter Circle ────────
+            if (radiusKm > 0f && userLocation != null) {
+                Circle(
+                    center = userLocation!!,
+                    radius = (radiusKm * 1000).toDouble(),
+                    fillColor = PrimaryBlue.copy(alpha = 0.08f),
+                    strokeColor = PrimaryBlue.copy(alpha = 0.5f),
+                    strokeWidth = 2f
+                )
+            }
+
+            // ──────── Route Polyline ────────
+            if (routePoints.isNotEmpty()) {
+                Polyline(
+                    points = routePoints,
+                    color = PrimaryBlue,
+                    width = 10f,
+                    geodesic = true
+                )
+                routePoints.firstOrNull()?.let { start ->
+                    Marker(
+                        state = MarkerState(position = start),
+                        title = "Start",
+                        icon = BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_GREEN)
+                    )
+                }
+                routePoints.lastOrNull()?.let { end ->
+                    Marker(
+                        state = MarkerState(position = end),
+                        title = "Destination",
+                        icon = BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_RED)
+                    )
+                }
+            }
+
+            // ──────── Route Tap Markers (before route computed) ────────
+            if (routeMode && routePoints.isEmpty()) {
+                routeStart?.let { start ->
+                    Marker(
+                        state = MarkerState(position = start),
+                        title = "Start Point",
+                        icon = BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_GREEN)
+                    )
+                }
+                routeEnd?.let { end ->
+                    Marker(
+                        state = MarkerState(position = end),
+                        title = "Destination",
+                        icon = BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_RED)
+                    )
+                }
+            }
+
+            // ──────── Emergency Services Markers ────────
+            if (showEmergencyServices && userLocation != null) {
+                val nearbyEmergency = remember(userLocation) {
+                    generateEmergencyServiceLocations(userLocation!!)
+                }
+                nearbyEmergency.forEach { svc ->
+                    val bmp = when (svc.type) {
+                        "hospital" -> hospitalBitmap
+                        "police" -> policeBitmap
+                        else -> fireBitmap
+                    }
+                    Marker(
+                        state = MarkerState(position = svc.location),
+                        title = svc.name,
+                        snippet = svc.type.replaceFirstChar { it.uppercase() },
+                        icon = BitmapDescriptorFactory.fromBitmap(bmp),
+                        onClick = {
+                            selectedParking = null
+                            selectedIncident = null
+                            scope.launch {
+                                snackbarHostState.showSnackbar("${svc.name} — Tap for directions")
+                            }
+                            true
+                        }
+                    )
                 }
             }
         }
@@ -499,6 +656,384 @@ fun MapScreen(
                     badge = state.incidents.size.let { if (it > 0) "$it" else null },
                     onClick = { showIncidents = !showIncidents }
                 )
+            }
+
+            Spacer(modifier = Modifier.height(Spacing.Small))
+
+            // ── Extra Feature Chips Row ──
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(Spacing.Small)
+            ) {
+                LayerChipWithBadge(
+                    label = "Services",
+                    icon = Icons.Outlined.LocalHospital,
+                    isActive = showEmergencyServices,
+                    activeColor = AccentGreen,
+                    badge = null,
+                    onClick = { showEmergencyServices = !showEmergencyServices }
+                )
+                LayerChipWithBadge(
+                    label = "Radius",
+                    icon = Icons.Outlined.MyLocation,
+                    isActive = showRadiusSlider,
+                    activeColor = PrimaryBlue,
+                    badge = if (radiusKm > 0f) "${radiusKm.toInt()}km" else null,
+                    onClick = { showRadiusSlider = !showRadiusSlider }
+                )
+                LayerChipWithBadge(
+                    label = "Heat",
+                    icon = Icons.Outlined.Whatshot,
+                    isActive = showHeatmap,
+                    activeColor = AccentRed,
+                    badge = null,
+                    onClick = { showHeatmap = !showHeatmap }
+                )
+                LayerChipWithBadge(
+                    label = "Route",
+                    icon = Icons.Outlined.AltRoute,
+                    isActive = routeMode,
+                    activeColor = GradientBright,
+                    badge = null,
+                    onClick = {
+                        routeMode = !routeMode
+                        if (!routeMode) {
+                            routeStart = null
+                            routeEnd = null
+                            routePoints = emptyList()
+                        }
+                    }
+                )
+                // Search toggle
+                FloatingActionButton(
+                    onClick = { showSearchBar = !showSearchBar },
+                    modifier = Modifier.size(32.dp),
+                    shape = CircleShape,
+                    containerColor = if (showSearchBar) PrimaryBlue
+                        else colors.cardBackground.copy(alpha = 0.95f),
+                    elevation = FloatingActionButtonDefaults.elevation(3.dp)
+                ) {
+                    Icon(
+                        Icons.Outlined.Search,
+                        "Search",
+                        tint = if (showSearchBar) Color.White else colors.textSecondary,
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+            }
+
+            // ── Search Bar ──
+            AnimatedVisibility(
+                visible = showSearchBar,
+                enter = expandVertically() + fadeIn(),
+                exit = shrinkVertically() + fadeOut()
+            ) {
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = Spacing.Small),
+                    shape = RoundedCornerShape(CornerRadius.Large),
+                    color = colors.cardBackground.copy(alpha = 0.97f),
+                    shadowElevation = 4.dp
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        OutlinedTextField(
+                            value = searchQuery,
+                            onValueChange = { searchQuery = it },
+                            modifier = Modifier.weight(1f),
+                            placeholder = {
+                                Text("Search location...", fontSize = 13.sp)
+                            },
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                            keyboardActions = KeyboardActions(onSearch = {
+                                focusManager.clearFocus()
+                                if (searchQuery.isNotBlank()) {
+                                    isSearching = true
+                                    scope.launch {
+                                        val result = geocodeAddress(context, searchQuery)
+                                        isSearching = false
+                                        if (result != null) {
+                                            searchPin = result
+                                            cameraPositionState.animate(
+                                                CameraUpdateFactory.newLatLngZoom(result, 15f),
+                                                durationMs = 800
+                                            )
+                                        } else {
+                                            snackbarHostState.showSnackbar("Location not found")
+                                        }
+                                    }
+                                }
+                            }),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = PrimaryBlue,
+                                unfocusedBorderColor = Color.Transparent,
+                                focusedContainerColor = Color.Transparent,
+                                unfocusedContainerColor = Color.Transparent
+                            ),
+                            textStyle = MaterialTheme.typography.bodySmall.copy(
+                                color = colors.textPrimary
+                            )
+                        )
+                        if (isSearching) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(20.dp),
+                                strokeWidth = 2.dp,
+                                color = PrimaryBlue
+                            )
+                        } else {
+                            IconButton(
+                                onClick = {
+                                    focusManager.clearFocus()
+                                    if (searchQuery.isNotBlank()) {
+                                        isSearching = true
+                                        scope.launch {
+                                            val result = geocodeAddress(context, searchQuery)
+                                            isSearching = false
+                                            if (result != null) {
+                                                searchPin = result
+                                                cameraPositionState.animate(
+                                                    CameraUpdateFactory.newLatLngZoom(result, 15f),
+                                                    durationMs = 800
+                                                )
+                                            } else {
+                                                snackbarHostState.showSnackbar("Location not found")
+                                            }
+                                        }
+                                    }
+                                },
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                Icon(
+                                    Icons.Filled.Search,
+                                    "Search",
+                                    tint = PrimaryBlue,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        }
+                        if (searchPin != null) {
+                            IconButton(
+                                onClick = {
+                                    searchPin = null
+                                    searchQuery = ""
+                                },
+                                modifier = Modifier.size(28.dp)
+                            ) {
+                                Icon(
+                                    Icons.Filled.Close,
+                                    "Clear",
+                                    tint = colors.textSecondary,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            // ── Radius Slider ──
+            AnimatedVisibility(
+                visible = showRadiusSlider,
+                enter = expandVertically() + fadeIn(),
+                exit = shrinkVertically() + fadeOut()
+            ) {
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = Spacing.Small),
+                    shape = RoundedCornerShape(CornerRadius.Large),
+                    color = colors.cardBackground.copy(alpha = 0.97f),
+                    shadowElevation = 4.dp
+                ) {
+                    Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                "Filter Radius",
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = colors.textPrimary
+                            )
+                            Text(
+                                if (radiusKm == 0f) "Off" else "${radiusKm.toInt()} km",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = PrimaryBlue,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                        Slider(
+                            value = radiusKm,
+                            onValueChange = { radiusKm = it },
+                            valueRange = 0f..20f,
+                            steps = 3,
+                            colors = SliderDefaults.colors(
+                                thumbColor = PrimaryBlue,
+                                activeTrackColor = PrimaryBlue
+                            )
+                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text("Off", fontSize = 9.sp, color = colors.textTertiary)
+                            Text("5km", fontSize = 9.sp, color = colors.textTertiary)
+                            Text("10km", fontSize = 9.sp, color = colors.textTertiary)
+                            Text("15km", fontSize = 9.sp, color = colors.textTertiary)
+                            Text("20km", fontSize = 9.sp, color = colors.textTertiary)
+                        }
+                    }
+                }
+            }
+
+            // ── Route Planner Instructions ──
+            AnimatedVisibility(
+                visible = routeMode,
+                enter = expandVertically() + fadeIn(),
+                exit = shrinkVertically() + fadeOut()
+            ) {
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = Spacing.Small),
+                    shape = RoundedCornerShape(CornerRadius.Large),
+                    color = colors.cardBackground.copy(alpha = 0.97f),
+                    shadowElevation = 4.dp
+                ) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Icon(
+                                    Icons.Outlined.AltRoute,
+                                    null,
+                                    tint = GradientBright,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Text(
+                                    "Route Planner",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = colors.textPrimary
+                                )
+                            }
+                            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                // Open in Google Maps
+                                if (routeStart != null && routeEnd != null) {
+                                    IconButton(
+                                        onClick = {
+                                            val start = routeStart!!
+                                            val end = routeEnd!!
+                                            val uri = Uri.parse(
+                                                "https://www.google.com/maps/dir/${start.latitude},${start.longitude}/${end.latitude},${end.longitude}"
+                                            )
+                                            context.startActivity(Intent(Intent.ACTION_VIEW, uri).apply {
+                                                setPackage("com.google.android.apps.maps")
+                                            })
+                                        },
+                                        modifier = Modifier.size(28.dp)
+                                    ) {
+                                        Icon(
+                                            Icons.Outlined.Navigation,
+                                            "Open in Maps",
+                                            tint = PrimaryBlue,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    }
+                                }
+                                // Reset route
+                                IconButton(
+                                    onClick = {
+                                        routeStart = null
+                                        routeEnd = null
+                                        routePoints = emptyList()
+                                    },
+                                    modifier = Modifier.size(28.dp)
+                                ) {
+                                    Icon(
+                                        Icons.Outlined.Refresh,
+                                        "Reset",
+                                        tint = AccentRed,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(6.dp))
+                        // Step indicators
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            RouteStepIndicator(
+                                step = 1,
+                                label = if (routeStart != null) "Start ✓" else "Tap start",
+                                isDone = routeStart != null,
+                                modifier = Modifier.weight(1f)
+                            )
+                            RouteStepIndicator(
+                                step = 2,
+                                label = if (routeEnd != null) "End ✓" else "Tap end",
+                                isDone = routeEnd != null,
+                                modifier = Modifier.weight(1f)
+                            )
+                            RouteStepIndicator(
+                                step = 3,
+                                label = if (routePoints.isNotEmpty()) "Done ✓" else "Route",
+                                isDone = routePoints.isNotEmpty(),
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                        // Congestion warning on route
+                        if (routePoints.isNotEmpty()) {
+                            val congestedOnRoute = state.trafficMap.count { (roadId, traffic) ->
+                                val ll = parseRoadLatLng(roadId) ?: return@count false
+                                traffic.congestionLevel.equals("HIGH", true) &&
+                                    routePoints.any { rp ->
+                                        haversineDistance(rp, ll) < 0.5
+                                    }
+                            }
+                            if (congestedOnRoute > 0) {
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Surface(
+                                    shape = RoundedCornerShape(8.dp),
+                                    color = AccentRed.copy(alpha = 0.12f)
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
+                                        Icon(
+                                            Icons.Filled.Warning,
+                                            null,
+                                            tint = AccentRed,
+                                            modifier = Modifier.size(14.dp)
+                                        )
+                                        Text(
+                                            "⚠ $congestedOnRoute high-congestion zone(s) on route",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = AccentRed,
+                                            fontWeight = FontWeight.SemiBold
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
 
@@ -752,6 +1287,32 @@ fun MapScreen(
                 elevation = FloatingActionButtonDefaults.elevation(8.dp)
             ) {
                 Icon(Icons.Filled.MyLocation, "My Location", Modifier.size(24.dp))
+            }
+
+            // Open Route in Google Maps FAB
+            if (routeMode && routeStart != null && routeEnd != null) {
+                FloatingActionButton(
+                    onClick = {
+                        val start = routeStart!!
+                        val end = routeEnd!!
+                        val uri = Uri.parse(
+                            "https://www.google.com/maps/dir/${start.latitude},${start.longitude}/${end.latitude},${end.longitude}"
+                        )
+                        try {
+                            context.startActivity(Intent(Intent.ACTION_VIEW, uri).apply {
+                                setPackage("com.google.android.apps.maps")
+                            })
+                        } catch (_: Exception) {
+                            context.startActivity(Intent(Intent.ACTION_VIEW, uri))
+                        }
+                    },
+                    shape = RoundedCornerShape(16.dp),
+                    containerColor = GradientBright,
+                    contentColor = Color.White,
+                    elevation = FloatingActionButtonDefaults.elevation(8.dp)
+                ) {
+                    Icon(Icons.Outlined.Navigation, null, Modifier.size(18.dp))
+                }
             }
         }
 
@@ -1557,4 +2118,187 @@ private fun parseRoadLatLng(roadId: String): LatLng? {
     val baseLat = 19.076 + (hash % 100) * 0.002
     val baseLng = 72.877 + ((hash / 100) % 100) * 0.002
     return LatLng(baseLat, baseLng)
+}
+
+
+// ═══════════════════════════════════════════════════════════════════
+// Geocode Address → LatLng
+// ═══════════════════════════════════════════════════════════════════
+
+@Suppress("DEPRECATION")
+private suspend fun geocodeAddress(context: Context, query: String): LatLng? {
+    return withContext(Dispatchers.IO) {
+        try {
+            val geocoder = Geocoder(context, Locale.getDefault())
+            val results = geocoder.getFromLocationName(query, 1)
+            if (!results.isNullOrEmpty()) {
+                LatLng(results[0].latitude, results[0].longitude)
+            } else null
+        } catch (e: Exception) {
+            Log.e("MapScreen", "Geocode failed: ${e.message}")
+            null
+        }
+    }
+}
+
+
+// ═══════════════════════════════════════════════════════════════════
+// Emergency Service Data + Generator
+// ═══════════════════════════════════════════════════════════════════
+
+private data class EmergencyServicePin(
+    val name: String,
+    val type: String, // "hospital", "police", "fire"
+    val location: LatLng
+)
+
+/** Generate sample emergency service locations around user's position */
+private fun generateEmergencyServiceLocations(center: LatLng): List<EmergencyServicePin> {
+    val offset = 0.008
+    return listOf(
+        EmergencyServicePin("City Hospital", "hospital", LatLng(center.latitude + offset, center.longitude + offset * 0.5)),
+        EmergencyServicePin("General Hospital", "hospital", LatLng(center.latitude - offset * 0.7, center.longitude + offset)),
+        EmergencyServicePin("Police Station", "police", LatLng(center.latitude + offset * 0.3, center.longitude - offset)),
+        EmergencyServicePin("Traffic Police HQ", "police", LatLng(center.latitude - offset, center.longitude - offset * 0.6)),
+        EmergencyServicePin("Fire Station", "fire", LatLng(center.latitude + offset * 0.9, center.longitude + offset * 1.2)),
+        EmergencyServicePin("Fire Brigade Unit", "fire", LatLng(center.latitude - offset * 1.1, center.longitude + offset * 0.3))
+    )
+}
+
+
+// ═══════════════════════════════════════════════════════════════════
+// Haversine Distance (km)
+// ═══════════════════════════════════════════════════════════════════
+
+private fun haversineDistance(a: LatLng, b: LatLng): Double {
+    val R = 6371.0
+    val dLat = Math.toRadians(b.latitude - a.latitude)
+    val dLon = Math.toRadians(b.longitude - a.longitude)
+    val lat1 = Math.toRadians(a.latitude)
+    val lat2 = Math.toRadians(b.latitude)
+    val h = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+            Math.cos(lat1) * Math.cos(lat2) *
+            Math.sin(dLon / 2) * Math.sin(dLon / 2)
+    return R * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h))
+}
+
+
+// ═══════════════════════════════════════════════════════════════════
+// Simple Route Builder (straight-line with waypoints avoiding congestion)
+// ═══════════════════════════════════════════════════════════════════
+
+private fun buildSimpleRoute(
+    start: LatLng,
+    end: LatLng,
+    congestedPoints: List<LatLng>
+): List<LatLng> {
+    // Create intermediate waypoints for a natural-looking route
+    val points = mutableListOf(start)
+    val steps = 12
+    for (i in 1 until steps) {
+        val fraction = i.toDouble() / steps
+        var lat = start.latitude + (end.latitude - start.latitude) * fraction
+        var lng = start.longitude + (end.longitude - start.longitude) * fraction
+        // Slight curve for natural look
+        val perpOffset = Math.sin(fraction * Math.PI) * 0.003
+        lat += perpOffset
+        // Nudge away from congested zones
+        congestedPoints.forEach { cp ->
+            val dist = haversineDistance(LatLng(lat, lng), cp)
+            if (dist < 0.4) {
+                val dlat = lat - cp.latitude
+                val dlng = lng - cp.longitude
+                val norm = Math.sqrt(dlat * dlat + dlng * dlng).coerceAtLeast(0.001)
+                lat += (dlat / norm) * 0.003
+                lng += (dlng / norm) * 0.003
+            }
+        }
+        points.add(LatLng(lat, lng))
+    }
+    points.add(end)
+    return points
+}
+
+
+// ═══════════════════════════════════════════════════════════════════
+// Route Step Indicator
+// ═══════════════════════════════════════════════════════════════════
+
+@Composable
+private fun RouteStepIndicator(
+    step: Int,
+    label: String,
+    isDone: Boolean,
+    modifier: Modifier = Modifier
+) {
+    val colors = MaterialTheme.cityFluxColors
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(8.dp),
+        color = if (isDone) AccentGreen.copy(alpha = 0.12f)
+            else colors.surfaceVariant.copy(alpha = 0.5f)
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Center
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(18.dp)
+                    .clip(CircleShape)
+                    .background(if (isDone) AccentGreen else colors.textTertiary.copy(alpha = 0.3f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    "$step",
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = if (isDone) Color.White else colors.textSecondary
+                )
+            }
+            Spacer(modifier = Modifier.width(4.dp))
+            Text(
+                label,
+                style = MaterialTheme.typography.labelSmall,
+                color = if (isDone) AccentGreen else colors.textSecondary,
+                fontSize = 10.sp,
+                maxLines = 1
+            )
+        }
+    }
+}
+
+
+// ═══════════════════════════════════════════════════════════════════
+// Heatmap Cell Data + Builder
+// ═══════════════════════════════════════════════════════════════════
+
+private data class HeatCell(val center: LatLng, val radius: Double, val color: Color)
+
+/** Build heatmap density circles from incident locations */
+private fun buildHeatmapCells(incidents: List<Report>): List<HeatCell> {
+    val validIncidents = incidents.filter { it.latitude != 0.0 || it.longitude != 0.0 }
+    if (validIncidents.isEmpty()) return emptyList()
+
+    // Grid-based density: group incidents into cells
+    val gridSize = 0.005 // ~500m cells
+    val groups = validIncidents.groupBy { incident ->
+        val latBucket = (incident.latitude / gridSize).toInt()
+        val lngBucket = (incident.longitude / gridSize).toInt()
+        latBucket to lngBucket
+    }
+
+    return groups.map { (bucket, group) ->
+        val avgLat = group.sumOf { it.latitude } / group.size
+        val avgLng = group.sumOf { it.longitude } / group.size
+        val density = group.size
+        val (radius, color) = when {
+            density >= 5 -> 500.0 to Color(0xFFEF4444).copy(alpha = 0.35f)
+            density >= 3 -> 400.0 to Color(0xFFF97316).copy(alpha = 0.30f)
+            density >= 2 -> 300.0 to Color(0xFFEAB308).copy(alpha = 0.25f)
+            else -> 200.0 to Color(0xFF22C55E).copy(alpha = 0.20f)
+        }
+        HeatCell(LatLng(avgLat, avgLng), radius, color)
+    }
 }
