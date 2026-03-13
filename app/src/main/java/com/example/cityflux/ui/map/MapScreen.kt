@@ -288,9 +288,21 @@ fun MapScreen(
                         // Build route with intermediate points
                         val start = routeStart!!
                         val end = latLng
-                        routePoints = buildSimpleRoute(start, end, state.trafficMap.mapNotNull { (id, _) ->
+                        val congestedPts = state.trafficMap.mapNotNull { (id, _) ->
                             parseRoadLatLng(id)
-                        })
+                        }
+                        routePoints = buildSimpleRoute(start, end, congestedPts)
+                        // Auto-zoom to fit the full route
+                        scope.launch {
+                            val boundsBuilder = LatLngBounds.builder()
+                            boundsBuilder.include(start)
+                            boundsBuilder.include(end)
+                            routePoints.forEach { boundsBuilder.include(it) }
+                            cameraPositionState.animate(
+                                CameraUpdateFactory.newLatLngBounds(boundsBuilder.build(), 120),
+                                durationMs = 800
+                            )
+                        }
                     }
                 }
             }
@@ -430,10 +442,18 @@ fun MapScreen(
 
             // ──────── Route Polyline ────────
             if (routePoints.isNotEmpty()) {
+                // Shadow polyline (wider, translucent)
+                Polyline(
+                    points = routePoints,
+                    color = PrimaryBlue.copy(alpha = 0.3f),
+                    width = 18f,
+                    geodesic = true
+                )
+                // Main route polyline
                 Polyline(
                     points = routePoints,
                     color = PrimaryBlue,
-                    width = 10f,
+                    width = 8f,
                     geodesic = true
                 )
                 routePoints.firstOrNull()?.let { start ->
@@ -930,29 +950,6 @@ fun MapScreen(
                                 )
                             }
                             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                // Open in Google Maps
-                                if (routeStart != null && routeEnd != null) {
-                                    IconButton(
-                                        onClick = {
-                                            val start = routeStart!!
-                                            val end = routeEnd!!
-                                            val uri = Uri.parse(
-                                                "https://www.google.com/maps/dir/${start.latitude},${start.longitude}/${end.latitude},${end.longitude}"
-                                            )
-                                            context.startActivity(Intent(Intent.ACTION_VIEW, uri).apply {
-                                                setPackage("com.google.android.apps.maps")
-                                            })
-                                        },
-                                        modifier = Modifier.size(28.dp)
-                                    ) {
-                                        Icon(
-                                            Icons.Outlined.Navigation,
-                                            "Open in Maps",
-                                            tint = PrimaryBlue,
-                                            modifier = Modifier.size(16.dp)
-                                        )
-                                    }
-                                }
                                 // Reset route
                                 IconButton(
                                     onClick = {
@@ -998,6 +995,97 @@ fun MapScreen(
                         }
                         // Congestion warning on route
                         if (routePoints.isNotEmpty()) {
+                            // Route distance & ETA
+                            val routeDistKm = remember(routePoints) {
+                                var dist = 0.0
+                                for (i in 0 until routePoints.size - 1) {
+                                    dist += haversineDistance(routePoints[i], routePoints[i + 1])
+                                }
+                                dist
+                            }
+                            val etaMinutes = (routeDistKm / 30.0 * 60).toInt() // ~30 km/h city avg
+
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Surface(
+                                shape = RoundedCornerShape(10.dp),
+                                color = PrimaryBlue.copy(alpha = 0.08f)
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    // Distance + ETA
+                                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                            Text(
+                                                "%.1f km".format(routeDistKm),
+                                                style = MaterialTheme.typography.titleSmall,
+                                                fontWeight = FontWeight.Bold,
+                                                color = PrimaryBlue
+                                            )
+                                            Text(
+                                                "Distance",
+                                                fontSize = 9.sp,
+                                                color = colors.textTertiary
+                                            )
+                                        }
+                                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                            Text(
+                                                "$etaMinutes min",
+                                                style = MaterialTheme.typography.titleSmall,
+                                                fontWeight = FontWeight.Bold,
+                                                color = AccentGreen
+                                            )
+                                            Text(
+                                                "ETA",
+                                                fontSize = 9.sp,
+                                                color = colors.textTertiary
+                                            )
+                                        }
+                                    }
+                                    // Open in Google Maps (secondary)
+                                    Surface(
+                                        onClick = {
+                                            val start = routeStart!!
+                                            val end = routeEnd!!
+                                            val uri = Uri.parse(
+                                                "https://www.google.com/maps/dir/${start.latitude},${start.longitude}/${end.latitude},${end.longitude}"
+                                            )
+                                            try {
+                                                context.startActivity(Intent(Intent.ACTION_VIEW, uri).apply {
+                                                    setPackage("com.google.android.apps.maps")
+                                                })
+                                            } catch (_: Exception) {
+                                                context.startActivity(Intent(Intent.ACTION_VIEW, uri))
+                                            }
+                                        },
+                                        shape = RoundedCornerShape(8.dp),
+                                        color = colors.surfaceVariant.copy(alpha = 0.5f)
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                        ) {
+                                            Icon(
+                                                Icons.Outlined.OpenInNew,
+                                                null,
+                                                tint = colors.textSecondary,
+                                                modifier = Modifier.size(12.dp)
+                                            )
+                                            Text(
+                                                "Google Maps",
+                                                fontSize = 10.sp,
+                                                color = colors.textSecondary
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+
                             val congestedOnRoute = state.trafficMap.count { (roadId, traffic) ->
                                 val ll = parseRoadLatLng(roadId) ?: return@count false
                                 traffic.congestionLevel.equals("HIGH", true) &&
@@ -1289,21 +1377,17 @@ fun MapScreen(
                 Icon(Icons.Filled.MyLocation, "My Location", Modifier.size(24.dp))
             }
 
-            // Open Route in Google Maps FAB
-            if (routeMode && routeStart != null && routeEnd != null) {
+            // Fit Route in-app FAB
+            if (routeMode && routePoints.isNotEmpty()) {
                 FloatingActionButton(
                     onClick = {
-                        val start = routeStart!!
-                        val end = routeEnd!!
-                        val uri = Uri.parse(
-                            "https://www.google.com/maps/dir/${start.latitude},${start.longitude}/${end.latitude},${end.longitude}"
-                        )
-                        try {
-                            context.startActivity(Intent(Intent.ACTION_VIEW, uri).apply {
-                                setPackage("com.google.android.apps.maps")
-                            })
-                        } catch (_: Exception) {
-                            context.startActivity(Intent(Intent.ACTION_VIEW, uri))
+                        scope.launch {
+                            val boundsBuilder = LatLngBounds.builder()
+                            routePoints.forEach { boundsBuilder.include(it) }
+                            cameraPositionState.animate(
+                                CameraUpdateFactory.newLatLngBounds(boundsBuilder.build(), 120),
+                                durationMs = 800
+                            )
                         }
                     },
                     shape = RoundedCornerShape(16.dp),
@@ -1311,7 +1395,7 @@ fun MapScreen(
                     contentColor = Color.White,
                     elevation = FloatingActionButtonDefaults.elevation(8.dp)
                 ) {
-                    Icon(Icons.Outlined.Navigation, null, Modifier.size(18.dp))
+                    Icon(Icons.Outlined.ZoomOutMap, "Fit Route", Modifier.size(18.dp))
                 }
             }
         }
