@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
@@ -28,6 +29,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.ContentScale
@@ -236,47 +238,102 @@ fun MapScreen(
             }
         }
 
-        // ══════════════════════ Top Row: Back + Layer Toggles ══════════════════════
-        Row(
+        // ══════════════════════ Top Row: Back + Title + Layer Toggles ══════════════════════
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .statusBarsPadding()
-                .padding(horizontal = Spacing.Medium, vertical = Spacing.Medium),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+                .padding(horizontal = Spacing.Medium, vertical = Spacing.Medium)
         ) {
-            // Back button
-            FloatingActionButton(
-                onClick = onBack,
-                modifier = Modifier.size(42.dp),
-                shape = CircleShape,
-                containerColor = colors.cardBackground,
-                elevation = FloatingActionButtonDefaults.elevation(4.dp)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Icon(
-                    Icons.Filled.ArrowBack,
-                    contentDescription = "Back",
-                    tint = colors.textPrimary,
-                    modifier = Modifier.size(20.dp)
-                )
-            }
+                // Back button with title
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(Spacing.Small)
+                ) {
+                    FloatingActionButton(
+                        onClick = onBack,
+                        modifier = Modifier.size(42.dp),
+                        shape = CircleShape,
+                        containerColor = colors.cardBackground,
+                        elevation = FloatingActionButtonDefaults.elevation(4.dp)
+                    ) {
+                        Icon(
+                            Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Back",
+                            tint = colors.textPrimary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
 
-            // Layer toggle chips
-            Row(horizontalArrangement = Arrangement.spacedBy(Spacing.Small)) {
-                LayerChip(
-                    label = "Parking",
-                    icon = Icons.Outlined.LocalParking,
-                    isActive = showParking,
-                    activeColor = AccentParking,
-                    onClick = { showParking = !showParking }
-                )
-                LayerChip(
-                    label = "Incidents",
-                    icon = Icons.Outlined.Warning,
-                    isActive = showIncidents,
-                    activeColor = AccentIssues,
-                    onClick = { showIncidents = !showIncidents }
-                )
+                    // Title card (police style)
+                    Surface(
+                        shape = RoundedCornerShape(CornerRadius.Large),
+                        color = colors.cardBackground.copy(alpha = 0.95f),
+                        shadowElevation = 4.dp
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(28.dp)
+                                    .clip(CircleShape)
+                                    .background(
+                                        Brush.linearGradient(
+                                            listOf(PrimaryBlue, GradientBright)
+                                        )
+                                    ),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    Icons.Filled.Map,
+                                    contentDescription = null,
+                                    tint = Color.White,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                            Column {
+                                Text(
+                                    "City Map",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = colors.textPrimary
+                                )
+                                Text(
+                                    "Live traffic & parking",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = colors.textSecondary,
+                                    fontSize = 10.sp
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // Layer toggle chips
+                Row(horizontalArrangement = Arrangement.spacedBy(Spacing.Small)) {
+                    LayerChip(
+                        label = "Parking",
+                        icon = Icons.Outlined.LocalParking,
+                        isActive = showParking,
+                        activeColor = AccentParking,
+                        onClick = { showParking = !showParking }
+                    )
+                    LayerChip(
+                        label = "Incidents",
+                        icon = Icons.Outlined.Warning,
+                        isActive = showIncidents,
+                        activeColor = AccentIssues,
+                        onClick = { showIncidents = !showIncidents }
+                    )
+                }
             }
         }
 

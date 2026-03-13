@@ -125,27 +125,13 @@ fun ParkingScreen(
                 .fillMaxSize()
                 .statusBarsPadding()
         ) {
-            // ══════════════════════ Header ══════════════════════
-            Column(
-                modifier = Modifier.padding(
-                    start = Spacing.XLarge, end = Spacing.XLarge,
-                    top = Spacing.Large, bottom = Spacing.Small
-                )
-            ) {
-                Text(
-                    "Nearby Parking",
-                    style = MaterialTheme.typography.headlineMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = colors.textPrimary
-                )
-                Spacer(Modifier.height(2.dp))
-                Text(
-                    if (state.isLoading) "Finding parking spots..."
-                    else "$totalSpots spots · $totalAvailable slots available",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = colors.textSecondary
-                )
-            }
+            // ══════════════════════ Header (Police-style) ══════════════════════
+            ParkingTopBar(
+                colors = colors,
+                totalSpots = totalSpots,
+                totalAvailable = totalAvailable,
+                isLoading = state.isLoading
+            )
 
             // ══════════════════════ View Toggle + Filter Chips ══════════════════════
             Row(
@@ -1153,4 +1139,103 @@ private fun isNetworkAvailable(context: Context): Boolean {
     val network = cm.activeNetwork ?: return false
     val capabilities = cm.getNetworkCapabilities(network) ?: return false
     return capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+}
+
+
+// ═══════════════════════════════════════════════════════════════════
+// TopBar — Police-style header with icon badge
+// ═══════════════════════════════════════════════════════════════════
+
+@Composable
+private fun ParkingTopBar(
+    colors: CityFluxColors,
+    totalSpots: Int,
+    totalAvailable: Int,
+    isLoading: Boolean
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = Spacing.XLarge, vertical = Spacing.Medium),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            // Icon badge (police style)
+            Box(
+                modifier = Modifier
+                    .size(44.dp)
+                    .clip(CircleShape)
+                    .background(
+                        Brush.linearGradient(
+                            listOf(AccentParking, AccentParking.copy(alpha = 0.7f))
+                        )
+                    ),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.LocalParking,
+                    contentDescription = null,
+                    tint = Color.White,
+                    modifier = Modifier.size(24.dp)
+                )
+            }
+            Spacer(Modifier.width(Spacing.Medium))
+            Column {
+                Text(
+                    "Nearby Parking",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = colors.textPrimary
+                )
+                Text(
+                    if (isLoading) "Finding parking spots..."
+                    else "$totalSpots spots · $totalAvailable slots available",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = colors.textSecondary
+                )
+            }
+        }
+
+        // Live indicator
+        Surface(
+            shape = RoundedCornerShape(CornerRadius.Round),
+            color = AccentGreen.copy(alpha = 0.12f)
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                ParkingPulsingDot(color = AccentGreen, size = 8.dp)
+                Text(
+                    "LIVE",
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = AccentGreen,
+                    letterSpacing = 1.sp
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ParkingPulsingDot(color: Color, size: androidx.compose.ui.unit.Dp) {
+    val infiniteTransition = rememberInfiniteTransition(label = "dot")
+    val alpha by infiniteTransition.animateFloat(
+        initialValue = 0.4f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(800, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "dotAlpha"
+    )
+    Box(
+        modifier = Modifier
+            .size(size)
+            .clip(CircleShape)
+            .background(color.copy(alpha = alpha))
+    )
 }

@@ -10,7 +10,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.automirrored.outlined.ListAlt
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -46,6 +47,7 @@ import com.google.firebase.ktx.Firebase
 fun CitizenHomeContent(
     onNavigateToTab: (CitizenTab) -> Unit
 ) {
+    @Suppress("UNUSED_VARIABLE")
     val colors = MaterialTheme.cityFluxColors
     val auth = FirebaseAuth.getInstance()
     val firestore = FirebaseFirestore.getInstance()
@@ -148,7 +150,8 @@ fun CitizenHomeContent(
             userName = userName,
             userLoading = userLoading,
             unreadCount = unreadCount,
-            onNotificationClick = { onNavigateToTab(CitizenTab.ALERTS) }
+            onNotificationClick = { onNavigateToTab(CitizenTab.ALERTS) },
+            onProfileClick = { onNavigateToTab(CitizenTab.PROFILE) }
         )
 
         Column(
@@ -159,11 +162,9 @@ fun CitizenHomeContent(
             LiveAlertBanner(worstLevel = worstLevel)
 
             // ──────── DASHBOARD ACTION GRID ────────
-            Text(
-                "Quick Actions",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                color = colors.textPrimary
+            SectionHeader(
+                title = "Quick Actions",
+                icon = Icons.Outlined.FlashOn
             )
 
             Row(
@@ -213,7 +214,7 @@ fun CitizenHomeContent(
                 QuickActionCard(
                     title = "My Reports",
                     subtitle = "Track your reports",
-                    icon = Icons.Outlined.ListAlt,
+                    icon = Icons.AutoMirrored.Outlined.ListAlt,
                     accentColor = AccentAlerts,
                     modifier = Modifier.weight(1f),
                     onClick = { onNavigateToTab(CitizenTab.ALERTS) }
@@ -222,7 +223,10 @@ fun CitizenHomeContent(
 
             // ──────── TOP CONGESTED ROADS CAROUSEL ────────
             if (congestedRoads.isNotEmpty()) {
-                SectionHeader(title = "Top Congested Roads")
+                SectionHeader(
+                    title = "Top Congested Roads",
+                    icon = Icons.Outlined.Traffic
+                )
 
                 LazyRow(
                     horizontalArrangement = Arrangement.spacedBy(Spacing.Medium),
@@ -236,7 +240,10 @@ fun CitizenHomeContent(
 
             // ──────── PARKING AVAILABILITY CARDS ────────
             if (parkingMap.isNotEmpty()) {
-                SectionHeader(title = "Parking Availability")
+                SectionHeader(
+                    title = "Parking Availability",
+                    icon = Icons.Outlined.LocalParking
+                )
 
                 LazyRow(
                     horizontalArrangement = Arrangement.spacedBy(Spacing.Medium),
@@ -249,7 +256,10 @@ fun CitizenHomeContent(
             }
 
             // ──────── NEARBY INCIDENTS ────────
-            SectionHeader(title = "Nearby Incidents")
+            SectionHeader(
+                title = "Nearby Incidents",
+                icon = Icons.Outlined.Report
+            )
 
             if (reportsLoading) {
                 repeat(3) { ShimmerCard() }
@@ -278,7 +288,8 @@ private fun HomeTopBar(
     userName: String?,
     userLoading: Boolean,
     unreadCount: Int,
-    onNotificationClick: () -> Unit
+    onNotificationClick: () -> Unit,
+    onProfileClick: () -> Unit = {}
 ) {
     val colors = MaterialTheme.cityFluxColors
 
@@ -288,36 +299,53 @@ private fun HomeTopBar(
             .padding(horizontal = Spacing.XLarge, vertical = Spacing.Large),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // Logo
-        CityFluxLogo(size = 36.dp)
+        // City badge icon (matching police shield style)
+        Box(
+            modifier = Modifier
+                .size(44.dp)
+                .clip(CircleShape)
+                .background(
+                    Brush.linearGradient(
+                        listOf(PrimaryBlue, GradientBright)
+                    )
+                ),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = Icons.Filled.LocationCity,
+                contentDescription = null,
+                tint = Color.White,
+                modifier = Modifier.size(24.dp)
+            )
+        }
+
         Spacer(modifier = Modifier.width(Spacing.Medium))
 
         Column(modifier = Modifier.weight(1f)) {
-            Text(
-                "CityFlux",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                color = colors.textPrimary
-            )
             if (userLoading) {
-                ShimmerBox(width = 120.dp, height = 14.dp)
+                CitizenShimmerBox(width = 140.dp, height = 16.dp)
+                Spacer(modifier = Modifier.height(4.dp))
+                CitizenShimmerBox(width = 100.dp, height = 12.dp)
             } else {
                 Text(
-                    "Hi, ${userName ?: "Citizen"} \uD83D\uDC4B",
+                    text = "Hello, ${userName ?: "Citizen"} 👋",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = colors.textPrimary
+                )
+                Text(
+                    text = "Smart City Dashboard",
                     style = MaterialTheme.typography.bodySmall,
                     color = colors.textSecondary
                 )
             }
         }
 
-        // Notification bell with badge
+        // Notification bell
         BadgedBox(
             badge = {
                 if (unreadCount > 0) {
-                    Badge(
-                        containerColor = AccentRed,
-                        contentColor = Color.White
-                    ) {
+                    Badge(containerColor = AccentRed, contentColor = Color.White) {
                         Text(
                             if (unreadCount > 9) "9+" else "$unreadCount",
                             style = MaterialTheme.typography.labelSmall
@@ -334,58 +362,96 @@ private fun HomeTopBar(
                 )
             }
         }
+
+        // Profile
+        IconButton(onClick = onProfileClick) {
+            Icon(
+                imageVector = Icons.Outlined.AccountCircle,
+                contentDescription = "Profile",
+                tint = colors.textSecondary
+            )
+        }
     }
 }
 
 @Composable
 private fun LiveAlertBanner(worstLevel: String?) {
-    val (bgColor, textColor, label, icon) = remember(worstLevel) {
-        when (worstLevel) {
-            "HIGH" -> listOf(AccentRed, Color.White, "Heavy Traffic Detected — Use Alternate Routes", Icons.Outlined.Warning)
-            "MEDIUM" -> listOf(AccentOrange, Color.White, "Moderate Traffic — Plan Ahead", Icons.Outlined.Info)
-            "LOW" -> listOf(AccentGreen, Color.White, "Roads Are Clear — Smooth Driving!", Icons.Outlined.CheckCircle)
-            else -> listOf(PrimaryBlue.copy(alpha = 0.8f), Color.White, "Monitoring traffic in real time...", Icons.Outlined.Sensors)
+    val bgGradient: Brush
+    val iconTint: Color
+    val titleText: String
+    val subtitleText: String
+    val bannerIcon: ImageVector
+
+    when (worstLevel) {
+        "HIGH" -> {
+            bgGradient = Brush.horizontalGradient(listOf(AccentRed, Color(0xFFDC2626)))
+            iconTint = Color.White
+            titleText = "⚠️  Heavy Traffic Alert"
+            bannerIcon = Icons.Filled.Warning
+            subtitleText = "Use alternate routes for faster travel"
+        }
+        "MEDIUM" -> {
+            bgGradient = Brush.horizontalGradient(listOf(AccentOrange, Color(0xFFF97316)))
+            iconTint = Color.White
+            titleText = "⚡  Moderate Traffic"
+            bannerIcon = Icons.Filled.Info
+            subtitleText = "Plan your journey ahead"
+        }
+        "LOW" -> {
+            bgGradient = Brush.horizontalGradient(listOf(AccentGreen, Color(0xFF059669)))
+            iconTint = Color.White
+            titleText = "✅  Roads Clear"
+            bannerIcon = Icons.Filled.CheckCircle
+            subtitleText = "Smooth driving conditions"
+        }
+        else -> {
+            bgGradient = Brush.horizontalGradient(listOf(PrimaryBlue, GradientBright))
+            iconTint = Color.White
+            titleText = "📡  Live Monitoring"
+            bannerIcon = Icons.Filled.Sensors
+            subtitleText = "Tracking traffic in real time"
         }
     }
 
-    @Suppress("UNCHECKED_CAST")
-    val bannerColor = bgColor as Color
-    @Suppress("UNCHECKED_CAST")
-    val bannerTextColor = textColor as Color
-    @Suppress("UNCHECKED_CAST")
-    val bannerLabel = label as String
-    @Suppress("UNCHECKED_CAST")
-    val bannerIcon = icon as ImageVector
-
-    AnimatedVisibility(
-        visible = true,
-        enter = fadeIn() + expandVertically()
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .shadow(
+                elevation = 8.dp,
+                shape = RoundedCornerShape(CornerRadius.Large),
+                ambientColor = if (worstLevel == "HIGH") AccentRed.copy(alpha = 0.3f) else Color.Transparent
+            ),
+        shape = RoundedCornerShape(CornerRadius.Large),
+        colors = CardDefaults.cardColors(containerColor = Color.Transparent)
     ) {
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(CornerRadius.Large),
-            colors = CardDefaults.cardColors(containerColor = bannerColor)
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(bgGradient)
+                .padding(Spacing.Large)
         ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(Spacing.Large),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
                     imageVector = bannerIcon,
                     contentDescription = null,
-                    tint = bannerTextColor,
-                    modifier = Modifier.size(24.dp)
+                    tint = iconTint,
+                    modifier = Modifier.size(28.dp)
                 )
                 Spacer(modifier = Modifier.width(Spacing.Medium))
-                Text(
-                    text = bannerLabel,
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    color = bannerTextColor,
-                    modifier = Modifier.weight(1f)
-                )
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = titleText,
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = iconTint
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = subtitleText,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = iconTint.copy(alpha = 0.9f)
+                    )
+                }
             }
         }
     }
@@ -452,15 +518,51 @@ private fun QuickActionCard(
 }
 
 @Composable
-private fun SectionHeader(title: String) {
+private fun SectionHeader(
+    title: String,
+    icon: ImageVector? = null,
+    actionLabel: String? = null,
+    onAction: (() -> Unit)? = null
+) {
     val colors = MaterialTheme.cityFluxColors
-    Text(
-        text = title,
-        style = MaterialTheme.typography.titleMedium,
-        fontWeight = FontWeight.Bold,
-        color = colors.textPrimary,
-        modifier = Modifier.padding(top = Spacing.Small)
-    )
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = Spacing.Small),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            if (icon != null) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = PrimaryBlue,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = colors.textPrimary
+            )
+        }
+        if (actionLabel != null && onAction != null) {
+            TextButton(onClick = onAction) {
+                Text(
+                    text = actionLabel,
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = PrimaryBlue
+                )
+            }
+        }
+    }
 }
 
 @Composable
@@ -733,4 +835,10 @@ private fun ShimmerBox(width: androidx.compose.ui.unit.Dp, height: androidx.comp
             .clip(RoundedCornerShape(4.dp))
             .background(brush)
     )
+}
+
+// Alias for consistency with police style
+@Composable
+private fun CitizenShimmerBox(width: androidx.compose.ui.unit.Dp, height: androidx.compose.ui.unit.Dp) {
+    ShimmerBox(width = width, height = height)
 }

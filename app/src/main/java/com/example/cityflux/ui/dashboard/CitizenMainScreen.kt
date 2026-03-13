@@ -3,18 +3,17 @@ package com.example.cityflux.ui.dashboard
 import androidx.compose.animation.*
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -55,7 +54,9 @@ fun CitizenMainScreen(
             NavigationBar(
                 containerColor = colors.bottomNavBackground,
                 tonalElevation = 0.dp,
-                modifier = Modifier.navigationBarsPadding()
+                modifier = Modifier
+                    .navigationBarsPadding()
+                    .height(64.dp)
             ) {
                 tabs.forEachIndexed { index, tab ->
                     val selected = selectedTab == index
@@ -72,7 +73,7 @@ fun CitizenMainScreen(
                                         ) {
                                             Text(
                                                 if (unreadCount > 9) "9+" else unreadCount.toString(),
-                                                fontSize = 9.sp
+                                                fontSize = 8.sp
                                             )
                                         }
                                     }
@@ -80,24 +81,30 @@ fun CitizenMainScreen(
                                     Icon(
                                         imageVector = if (selected) tab.selectedIcon else tab.unselectedIcon,
                                         contentDescription = tab.label,
-                                        modifier = Modifier.size(if (selected) 26.dp else 24.dp)
+                                        modifier = Modifier.size(if (selected) 24.dp else 22.dp)
                                     )
                                 }
                             } else {
                                 Icon(
                                     imageVector = if (selected) tab.selectedIcon else tab.unselectedIcon,
                                     contentDescription = tab.label,
-                                    modifier = Modifier.size(if (selected) 26.dp else 24.dp)
+                                    modifier = Modifier.size(if (selected) 24.dp else 22.dp)
                                 )
                             }
                         },
                         label = {
                             Text(
                                 text = tab.label,
-                                style = MaterialTheme.typography.labelSmall,
-                                fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    fontSize = 10.sp,
+                                    lineHeight = 12.sp
+                                ),
+                                fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
                         },
+                        alwaysShowLabel = true,
                         colors = NavigationBarItemDefaults.colors(
                             selectedIconColor = PrimaryBlue,
                             selectedTextColor = PrimaryBlue,
@@ -111,14 +118,12 @@ fun CitizenMainScreen(
         },
         containerColor = MaterialTheme.colorScheme.background
     ) { innerPadding ->
-        // Crossfade keeps each tab alive and animates between them
-        Crossfade(
-            targetState = selectedTab,
-            animationSpec = tween(250),
-            label = "tab_crossfade",
-            modifier = Modifier.padding(innerPadding)
-        ) { tabIndex ->
-            when (tabs[tabIndex]) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+        ) {
+            when (tabs[selectedTab]) {
                 CitizenTab.HOME -> CitizenHomeContent(
                     onNavigateToTab = { tab -> selectedTab = tabs.indexOf(tab) }
                 )

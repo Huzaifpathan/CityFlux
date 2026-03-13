@@ -19,6 +19,7 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.Send
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
@@ -154,26 +155,12 @@ fun ReportIssueScreen(
                 .padding(padding)
                 .statusBarsPadding()
         ) {
-            // ══════════════════════ Header ══════════════════════
-            Column(
-                modifier = Modifier.padding(
-                    start = Spacing.XLarge, end = Spacing.XLarge,
-                    top = Spacing.Large, bottom = Spacing.Small
-                )
-            ) {
-                Text(
-                    "Report an Issue",
-                    style = MaterialTheme.typography.headlineMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = colors.textPrimary
-                )
-                Spacer(Modifier.height(2.dp))
-                Text(
-                    "Help keep your city safe and smooth.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = colors.textSecondary
-                )
-            }
+            // ══════════════════════ Header (Police-style) ══════════════════════
+            ReportTopBar(
+                colors = colors,
+                activeTab = state.activeTab,
+                myReportsCount = state.myReports.size
+            )
 
             // ══════════════════════ Tab Toggle ══════════════════════
             Row(
@@ -528,7 +515,7 @@ private fun NewReportContent(
                     Spacer(Modifier.width(Spacing.Small))
                     Text("Submitting...", fontWeight = FontWeight.SemiBold)
                 } else {
-                    Icon(Icons.Outlined.Send, null, Modifier.size(20.dp))
+                    Icon(Icons.AutoMirrored.Outlined.Send, null, Modifier.size(20.dp))
                     Spacer(Modifier.width(Spacing.Small))
                     Text("Submit Report", fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
                 }
@@ -1228,4 +1215,90 @@ private fun isNetworkAvailable(context: Context): Boolean {
     val network = cm.activeNetwork ?: return false
     val capabilities = cm.getNetworkCapabilities(network) ?: return false
     return capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+}
+
+
+// ═══════════════════════════════════════════════════════════════════
+// TopBar — Police-style header with icon badge
+// ═══════════════════════════════════════════════════════════════════
+
+@Composable
+private fun ReportTopBar(
+    colors: CityFluxColors,
+    activeTab: ReportViewModel.ReportTab,
+    myReportsCount: Int
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = Spacing.XLarge, vertical = Spacing.Medium),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            // Icon badge (police style)
+            Box(
+                modifier = Modifier
+                    .size(44.dp)
+                    .clip(CircleShape)
+                    .background(
+                        Brush.linearGradient(
+                            listOf(AccentIssues, AccentIssues.copy(alpha = 0.7f))
+                        )
+                    ),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.ReportProblem,
+                    contentDescription = null,
+                    tint = Color.White,
+                    modifier = Modifier.size(24.dp)
+                )
+            }
+            Spacer(Modifier.width(Spacing.Medium))
+            Column {
+                Text(
+                    "Report an Issue",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = colors.textPrimary
+                )
+                Text(
+                    when (activeTab) {
+                        ReportViewModel.ReportTab.NEW_REPORT -> "Help keep your city safe"
+                        ReportViewModel.ReportTab.MY_REPORTS -> "$myReportsCount reports submitted"
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = colors.textSecondary
+                )
+            }
+        }
+
+        // Badge for reports count
+        if (myReportsCount > 0) {
+            Surface(
+                shape = RoundedCornerShape(CornerRadius.Round),
+                color = PrimaryBlue.copy(alpha = 0.12f)
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Icon(
+                        Icons.Outlined.History,
+                        contentDescription = null,
+                        tint = PrimaryBlue,
+                        modifier = Modifier.size(14.dp)
+                    )
+                    Text(
+                        "$myReportsCount",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = PrimaryBlue
+                    )
+                }
+            }
+        }
+    }
 }

@@ -83,76 +83,18 @@ fun NotificationsScreen(
                 .padding(padding)
                 .statusBarsPadding()
         ) {
-            // ══════════════════════ Header ══════════════════════
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(
-                        start = Spacing.XLarge, end = Spacing.XLarge,
-                        top = Spacing.Large, bottom = Spacing.Small
-                    ),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.Top
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            "Alerts & Notifications",
-                            style = MaterialTheme.typography.headlineMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = colors.textPrimary
-                        )
-                        if (unreadCount > 0) {
-                            Spacer(Modifier.width(Spacing.Small))
-                            Surface(
-                                shape = CircleShape,
-                                color = AccentRed,
-                                modifier = Modifier.size(22.dp)
-                            ) {
-                                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                    Text(
-                                        if (unreadCount > 99) "99+" else unreadCount.toString(),
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = Color.White,
-                                        fontSize = 10.sp,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                }
-                            }
-                        }
-                    }
-                    Spacer(Modifier.height(2.dp))
-                    Text(
-                        if (state.isLoading) "Loading alerts..."
-                        else "${state.notifications.size} alerts · $unreadCount unread",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = colors.textSecondary
-                    )
+            // ══════════════════════ Header (Police-style) ══════════════════════
+            NotificationsTopBar(
+                colors = colors,
+                unreadCount = unreadCount,
+                totalCount = state.notifications.size,
+                isLoading = state.isLoading,
+                onMarkAllRead = {
+                    try { Firebase.analytics.logEvent("mark_all_read_clicked", null) } catch (_: Exception) {}
+                    vm.markAllAsRead()
+                    snackbarMsg = "All marked as read"
                 }
-
-                // Mark all as read
-                if (unreadCount > 0) {
-                    TextButton(
-                        onClick = {
-                            try { Firebase.analytics.logEvent("mark_all_read_clicked", null) } catch (_: Exception) {}
-                            vm.markAllAsRead()
-                            snackbarMsg = "All marked as read"
-                        }
-                    ) {
-                        Icon(
-                            Icons.Outlined.DoneAll, null,
-                            tint = PrimaryBlue, modifier = Modifier.size(16.dp)
-                        )
-                        Spacer(Modifier.width(4.dp))
-                        Text(
-                            "Mark all read",
-                            style = MaterialTheme.typography.labelMedium,
-                            fontWeight = FontWeight.SemiBold,
-                            color = PrimaryBlue
-                        )
-                    }
-                }
-            }
+            )
 
             // ══════════════════════ Loading indicator ══════════════════════
             AnimatedVisibility(visible = state.isLoading) {
@@ -712,4 +654,111 @@ private fun isNetworkAvailable(context: Context): Boolean {
     val network = cm.activeNetwork ?: return false
     val caps = cm.getNetworkCapabilities(network) ?: return false
     return caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+}
+
+
+// ═══════════════════════════════════════════════════════════════════
+// TopBar — Police-style header with icon badge
+// ═══════════════════════════════════════════════════════════════════
+
+@Composable
+private fun NotificationsTopBar(
+    colors: CityFluxColors,
+    unreadCount: Int,
+    totalCount: Int,
+    isLoading: Boolean,
+    onMarkAllRead: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = Spacing.XLarge, vertical = Spacing.Medium),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            // Icon badge (police style)
+            Box(
+                modifier = Modifier
+                    .size(44.dp)
+                    .clip(CircleShape)
+                    .background(
+                        Brush.linearGradient(
+                            listOf(AccentAlerts, AccentAlerts.copy(alpha = 0.7f))
+                        )
+                    ),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.Notifications,
+                    contentDescription = null,
+                    tint = Color.White,
+                    modifier = Modifier.size(24.dp)
+                )
+            }
+            Spacer(Modifier.width(Spacing.Medium))
+            Column {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        "Alerts",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = colors.textPrimary
+                    )
+                    if (unreadCount > 0) {
+                        Spacer(Modifier.width(8.dp))
+                        Surface(
+                            shape = CircleShape,
+                            color = AccentRed,
+                            modifier = Modifier.size(22.dp)
+                        ) {
+                            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                Text(
+                                    if (unreadCount > 99) "99+" else unreadCount.toString(),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = Color.White,
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+                    }
+                }
+                Text(
+                    if (isLoading) "Loading alerts..."
+                    else "$totalCount alerts · $unreadCount unread",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = colors.textSecondary
+                )
+            }
+        }
+
+        // Mark all as read button
+        if (unreadCount > 0) {
+            Surface(
+                onClick = onMarkAllRead,
+                shape = RoundedCornerShape(CornerRadius.Round),
+                color = PrimaryBlue.copy(alpha = 0.12f)
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Icon(
+                        Icons.Outlined.DoneAll,
+                        contentDescription = null,
+                        tint = PrimaryBlue,
+                        modifier = Modifier.size(14.dp)
+                    )
+                    Text(
+                        "Mark read",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = PrimaryBlue
+                    )
+                }
+            }
+        }
+    }
 }
