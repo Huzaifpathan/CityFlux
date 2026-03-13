@@ -139,6 +139,9 @@ fun MapScreen(
         }
     }
 
+    // ── Map Type Toggle ──
+    var currentMapType by remember { mutableStateOf(MapType.NORMAL) }
+
     // ── Map Properties ──
     val mapProperties by remember(hasLocationPermission, currentMapType) {
         mutableStateOf(
@@ -177,9 +180,6 @@ fun MapScreen(
     var showParking by remember { mutableStateOf(true) }
     var showIncidents by remember { mutableStateOf(true) }
     var showZones by remember { mutableStateOf(true) }
-
-    // ── Map Type Toggle ──
-    var currentMapType by remember { mutableStateOf(MapType.NORMAL) }
 
     // ── Stats Panel Toggle ──
     var showStatsPanel by remember { mutableStateOf(false) }
