@@ -30,8 +30,7 @@ enum class CitizenTab(
     MAP("Map", Icons.Filled.Map, Icons.Outlined.Map),
     PARKING("Parking", Icons.Filled.LocalParking, Icons.Outlined.LocalParking),
     REPORT("Report", Icons.Filled.ReportProblem, Icons.Outlined.ReportProblem),
-    ALERTS("Alerts", Icons.Filled.Notifications, Icons.Outlined.Notifications),
-    PROFILE("Profile", Icons.Filled.Person, Icons.Outlined.Person)
+    ALERTS("Alerts", Icons.Filled.Notifications, Icons.Outlined.Notifications)
 }
 
 /**
@@ -45,8 +44,7 @@ fun CitizenMainScreen(
 ) {
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
     val tabs = CitizenTab.entries.toTypedArray()
-    // Bottom nav shows all tabs except PROFILE (accessed from Home header)
-    val bottomTabs = tabs.filter { it != CitizenTab.PROFILE }
+    var showProfile by rememberSaveable { mutableStateOf(false) }
     val colors = MaterialTheme.cityFluxColors
     val notificationsVm: NotificationsViewModel = viewModel()
     val unreadCount by notificationsVm.unreadCount.collectAsState()
@@ -60,12 +58,11 @@ fun CitizenMainScreen(
                     .navigationBarsPadding()
                     .height(64.dp)
             ) {
-                bottomTabs.forEachIndexed { index, tab ->
-                    val tabIndex = tabs.indexOf(tab)
-                    val selected = selectedTab == tabIndex
+                tabs.forEachIndexed { index, tab ->
+                    val selected = selectedTab == index
                     NavigationBarItem(
                         selected = selected,
-                        onClick = { selectedTab = tabIndex },
+                        onClick = { showProfile = false; selectedTab = index },
                         icon = {
                             if (tab == CitizenTab.ALERTS && unreadCount > 0) {
                                 BadgedBox(
@@ -126,29 +123,35 @@ fun CitizenMainScreen(
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
-            when (tabs[selectedTab]) {
-                CitizenTab.HOME -> CitizenHomeContent(
-                    onNavigateToTab = { tab -> selectedTab = tabs.indexOf(tab) }
-                )
-                CitizenTab.MAP -> com.example.cityflux.ui.map.MapScreen(
-                    onBack = { selectedTab = 0 },
-                    onNavigateToReport = { selectedTab = tabs.indexOf(CitizenTab.REPORT) },
-                    onNavigateToParking = { selectedTab = tabs.indexOf(CitizenTab.PARKING) }
-                )
-                CitizenTab.PARKING -> com.example.cityflux.ui.parking.ParkingScreen(
-                    onBack = { selectedTab = 0 }
-                )
-                CitizenTab.REPORT -> com.example.cityflux.ui.report.ReportIssueScreen(
-                    onReportSubmitted = { selectedTab = 0 }
-                )
-                CitizenTab.ALERTS -> com.example.cityflux.ui.notifications.NotificationsScreen(
-                    onNavigateToMap = { _, _ -> selectedTab = tabs.indexOf(CitizenTab.MAP) },
-                    vm = notificationsVm
-                )
-                CitizenTab.PROFILE -> com.example.cityflux.ui.profile.ProfileScreen(
+            when {
+                showProfile -> com.example.cityflux.ui.profile.ProfileScreen(
                     onLogout = onLogout,
-                    onNavigateToMap = { _, _ -> selectedTab = tabs.indexOf(CitizenTab.MAP) }
+                    onNavigateToMap = { _, _ ->
+                        showProfile = false
+                        selectedTab = tabs.indexOf(CitizenTab.MAP)
+                    }
                 )
+                else -> when (tabs[selectedTab]) {
+                    CitizenTab.HOME -> CitizenHomeContent(
+                        onNavigateToTab = { tab -> selectedTab = tabs.indexOf(tab) },
+                        onProfileClick = { showProfile = true }
+                    )
+                    CitizenTab.MAP -> com.example.cityflux.ui.map.MapScreen(
+                        onBack = { selectedTab = 0 },
+                        onNavigateToReport = { selectedTab = tabs.indexOf(CitizenTab.REPORT) },
+                        onNavigateToParking = { selectedTab = tabs.indexOf(CitizenTab.PARKING) }
+                    )
+                    CitizenTab.PARKING -> com.example.cityflux.ui.parking.ParkingScreen(
+                        onBack = { selectedTab = 0 }
+                    )
+                    CitizenTab.REPORT -> com.example.cityflux.ui.report.ReportIssueScreen(
+                        onReportSubmitted = { selectedTab = 0 }
+                    )
+                    CitizenTab.ALERTS -> com.example.cityflux.ui.notifications.NotificationsScreen(
+                        onNavigateToMap = { _, _ -> selectedTab = tabs.indexOf(CitizenTab.MAP) },
+                        vm = notificationsVm
+                    )
+                }
             }
         }
     }

@@ -45,7 +45,8 @@ import com.google.firebase.ktx.Firebase
 
 @Composable
 fun CitizenHomeContent(
-    onNavigateToTab: (CitizenTab) -> Unit
+    onNavigateToTab: (CitizenTab) -> Unit,
+    onProfileClick: () -> Unit = {}
 ) {
     @Suppress("UNUSED_VARIABLE")
     val colors = MaterialTheme.cityFluxColors
@@ -151,7 +152,7 @@ fun CitizenHomeContent(
             userLoading = userLoading,
             unreadCount = unreadCount,
             onNotificationClick = { onNavigateToTab(CitizenTab.ALERTS) },
-            onProfileClick = { onNavigateToTab(CitizenTab.PROFILE) }
+            onProfileClick = onProfileClick
         )
 
         Column(
