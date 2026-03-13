@@ -240,6 +240,7 @@ fun MapScreen(
     var routeStart by remember { mutableStateOf<LatLng?>(null) }
     var routeEnd by remember { mutableStateOf<LatLng?>(null) }
     var routePoints by remember { mutableStateOf<List<LatLng>>(emptyList()) }
+    var isRouteLoading by remember { mutableStateOf(false) }
 
     // ── Emergency Services Marker Bitmaps ──
     val hospitalBitmap = remember { createCircleMarkerBitmap(AccentGreen.toArgb(), 34) }
@@ -285,23 +286,24 @@ fun MapScreen(
                         routeStart = latLng
                     } else if (routeEnd == null) {
                         routeEnd = latLng
-                        // Build route with intermediate points
                         val start = routeStart!!
                         val end = latLng
-                        val congestedPts = state.trafficMap.mapNotNull { (id, _) ->
-                            parseRoadLatLng(id)
-                        }
-                        routePoints = buildSimpleRoute(start, end, congestedPts)
-                        // Auto-zoom to fit the full route
+                        // Fetch real road route from Directions API
                         scope.launch {
-                            val boundsBuilder = LatLngBounds.builder()
-                            boundsBuilder.include(start)
-                            boundsBuilder.include(end)
-                            routePoints.forEach { boundsBuilder.include(it) }
-                            cameraPositionState.animate(
-                                CameraUpdateFactory.newLatLngBounds(boundsBuilder.build(), 120),
-                                durationMs = 800
-                            )
+                            isRouteLoading = true
+                            val apiKey = getMapApiKey(context)
+                            val pts = fetchDirectionsRoute(start, end, apiKey)
+                            routePoints = pts
+                            isRouteLoading = false
+                            // Auto-zoom to fit the full route
+                            if (pts.isNotEmpty()) {
+                                val boundsBuilder = LatLngBounds.builder()
+                                pts.forEach { boundsBuilder.include(it) }
+                                cameraPositionState.animate(
+                                    CameraUpdateFactory.newLatLngBounds(boundsBuilder.build(), 120),
+                                    durationMs = 800
+                                )
+                            }
                         }
                     }
                 }
@@ -721,6 +723,7 @@ fun MapScreen(
                             routeStart = null
                             routeEnd = null
                             routePoints = emptyList()
+                            isRouteLoading = false
                         }
                     }
                 )
@@ -956,6 +959,7 @@ fun MapScreen(
                                         routeStart = null
                                         routeEnd = null
                                         routePoints = emptyList()
+                                        isRouteLoading = false
                                     },
                                     modifier = Modifier.size(28.dp)
                                 ) {
@@ -988,7 +992,11 @@ fun MapScreen(
                             )
                             RouteStepIndicator(
                                 step = 3,
-                                label = if (routePoints.isNotEmpty()) "Done ✓" else "Route",
+                                label = when {
+                                    routePoints.isNotEmpty() -> "Done ✓"
+                                    isRouteLoading -> "Loading..."
+                                    else -> "Route"
+                                },
                                 isDone = routePoints.isNotEmpty(),
                                 modifier = Modifier.weight(1f)
                             )
@@ -2268,39 +2276,87 @@ private fun haversineDistance(a: LatLng, b: LatLng): Double {
 
 
 // ═══════════════════════════════════════════════════════════════════
-// Simple Route Builder (straight-line with waypoints avoiding congestion)
+// Google Directions API — Real Road Route
 // ═══════════════════════════════════════════════════════════════════
 
-private fun buildSimpleRoute(
+/** Get Maps API key from AndroidManifest meta-data */
+private fun getMapApiKey(context: Context): String {
+    return try {
+        val ai = context.packageManager.getApplicationInfo(
+            context.packageName,
+            android.content.pm.PackageManager.GET_META_DATA
+        )
+        ai.metaData?.getString("com.google.android.geo.API_KEY") ?: ""
+    } catch (_: Exception) { "" }
+}
+
+/** Fetch route from Google Directions API, fallback to straight line */
+private suspend fun fetchDirectionsRoute(
     start: LatLng,
     end: LatLng,
-    congestedPoints: List<LatLng>
-): List<LatLng> {
-    // Create intermediate waypoints for a natural-looking route
-    val points = mutableListOf(start)
-    val steps = 12
-    for (i in 1 until steps) {
-        val fraction = i.toDouble() / steps
-        var lat = start.latitude + (end.latitude - start.latitude) * fraction
-        var lng = start.longitude + (end.longitude - start.longitude) * fraction
-        // Slight curve for natural look
-        val perpOffset = Math.sin(fraction * Math.PI) * 0.003
-        lat += perpOffset
-        // Nudge away from congested zones
-        congestedPoints.forEach { cp ->
-            val dist = haversineDistance(LatLng(lat, lng), cp)
-            if (dist < 0.4) {
-                val dlat = lat - cp.latitude
-                val dlng = lng - cp.longitude
-                val norm = Math.sqrt(dlat * dlat + dlng * dlng).coerceAtLeast(0.001)
-                lat += (dlat / norm) * 0.003
-                lng += (dlng / norm) * 0.003
-            }
+    apiKey: String
+): List<LatLng> = withContext(Dispatchers.IO) {
+    try {
+        val url = "https://maps.googleapis.com/maps/api/directions/json" +
+                "?origin=${start.latitude},${start.longitude}" +
+                "&destination=${end.latitude},${end.longitude}" +
+                "&mode=driving" +
+                "&key=$apiKey"
+        val connection = java.net.URL(url).openConnection() as java.net.HttpURLConnection
+        connection.connectTimeout = 8000
+        connection.readTimeout = 8000
+        val response = connection.inputStream.bufferedReader().readText()
+        connection.disconnect()
+
+        // Parse the overview_polyline from JSON response
+        val polylineRegex = """"overview_polyline"\s*:\s*\{\s*"points"\s*:\s*"([^"]+)"""".toRegex()
+        val match = polylineRegex.find(response)
+        if (match != null) {
+            val encoded = match.groupValues[1]
+            decodePolyline(encoded)
+        } else {
+            Log.w("MapScreen", "Directions API: no polyline in response")
+            listOf(start, end) // fallback
         }
-        points.add(LatLng(lat, lng))
+    } catch (e: Exception) {
+        Log.e("MapScreen", "Directions API failed: ${e.message}")
+        listOf(start, end) // fallback straight line
     }
-    points.add(end)
-    return points
+}
+
+/** Decode Google Maps encoded polyline string into LatLng list */
+private fun decodePolyline(encoded: String): List<LatLng> {
+    val poly = mutableListOf<LatLng>()
+    var index = 0
+    val len = encoded.length
+    var lat = 0
+    var lng = 0
+
+    while (index < len) {
+        // Decode latitude
+        var shift = 0
+        var result = 0
+        var b: Int
+        do {
+            b = encoded[index++].code - 63
+            result = result or ((b and 0x1F) shl shift)
+            shift += 5
+        } while (b >= 0x20)
+        lat += if (result and 1 != 0) (result shr 1).inv() else result shr 1
+
+        // Decode longitude
+        shift = 0
+        result = 0
+        do {
+            b = encoded[index++].code - 63
+            result = result or ((b and 0x1F) shl shift)
+            shift += 5
+        } while (b >= 0x20)
+        lng += if (result and 1 != 0) (result shr 1).inv() else result shr 1
+
+        poly.add(LatLng(lat / 1E5, lng / 1E5))
+    }
+    return poly
 }
 
 
