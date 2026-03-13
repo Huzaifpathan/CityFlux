@@ -36,8 +36,8 @@ enum class CitizenTab(
 
 /**
  * Single-activity citizen shell with persistent bottom navigation.
- * Hosts 6 tabs: Home, Map, Parking, Report, Alerts, Profile.
- * Each tab's state is preserved across switches.
+ * Hosts 5 bottom tabs: Home, Map, Parking, Report, Alerts.
+ * Profile is accessible from the Home screen header icon.
  */
 @Composable
 fun CitizenMainScreen(
@@ -45,6 +45,8 @@ fun CitizenMainScreen(
 ) {
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
     val tabs = CitizenTab.entries.toTypedArray()
+    // Bottom nav shows all tabs except PROFILE (accessed from Home header)
+    val bottomTabs = tabs.filter { it != CitizenTab.PROFILE }
     val colors = MaterialTheme.cityFluxColors
     val notificationsVm: NotificationsViewModel = viewModel()
     val unreadCount by notificationsVm.unreadCount.collectAsState()
@@ -58,11 +60,12 @@ fun CitizenMainScreen(
                     .navigationBarsPadding()
                     .height(64.dp)
             ) {
-                tabs.forEachIndexed { index, tab ->
-                    val selected = selectedTab == index
+                bottomTabs.forEachIndexed { index, tab ->
+                    val tabIndex = tabs.indexOf(tab)
+                    val selected = selectedTab == tabIndex
                     NavigationBarItem(
                         selected = selected,
-                        onClick = { selectedTab = index },
+                        onClick = { selectedTab = tabIndex },
                         icon = {
                             if (tab == CitizenTab.ALERTS && unreadCount > 0) {
                                 BadgedBox(
