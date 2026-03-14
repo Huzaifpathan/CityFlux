@@ -34,6 +34,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
@@ -240,6 +241,8 @@ fun MapScreen(
     var routeStart by remember { mutableStateOf<LatLng?>(null) }
     var routeEnd by remember { mutableStateOf<LatLng?>(null) }
     var routePoints by remember { mutableStateOf<List<LatLng>>(emptyList()) }
+    var routeDurationMin by remember { mutableStateOf(0) }
+    var routeDistanceKm by remember { mutableStateOf(0.0) }
     var isRouteLoading by remember { mutableStateOf(false) }
 
     // ── Emergency Services Marker Bitmaps ──
@@ -292,13 +295,24 @@ fun MapScreen(
                         scope.launch {
                             isRouteLoading = true
                             val apiKey = getMapApiKey(context)
-                            val pts = fetchDirectionsRoute(start, end, apiKey)
-                            routePoints = pts
+                            Log.d("MapScreen", "Route: API key length=${apiKey.length}, start=$start, end=$end")
+                            val result = fetchDirectionsRoute(start, end, apiKey)
+                            routePoints = result.points
+                            routeDurationMin = result.durationMinutes
+                            routeDistanceKm = result.distanceKm
                             isRouteLoading = false
+                            // Show user feedback
+                            if (result.points.size <= 2) {
+                                snackbarHostState.showSnackbar(
+                                    "⚠ Road route unavailable — check Logcat \"MapScreen\" for details"
+                                )
+                            }
                             // Auto-zoom to fit the full route
-                            if (pts.isNotEmpty()) {
+                            if (result.points.isNotEmpty()) {
                                 val boundsBuilder = LatLngBounds.builder()
-                                pts.forEach { boundsBuilder.include(it) }
+                                result.points.forEach { boundsBuilder.include(it) }
+                                // Include user location in bounds if available
+                                userLocation?.let { boundsBuilder.include(it) }
                                 cameraPositionState.animate(
                                     CameraUpdateFactory.newLatLngBounds(boundsBuilder.build(), 120),
                                     durationMs = 800
@@ -442,22 +456,56 @@ fun MapScreen(
                 )
             }
 
-            // ──────── Route Polyline ────────
+            // ──────── Route Polyline (Google Maps style) ────────
             if (routePoints.isNotEmpty()) {
+                val routePurple = Color(0xFF4A0FBF)
+
                 // Shadow polyline (wider, translucent)
                 Polyline(
                     points = routePoints,
-                    color = PrimaryBlue.copy(alpha = 0.3f),
-                    width = 18f,
+                    color = routePurple.copy(alpha = 0.25f),
+                    width = 22f,
                     geodesic = true
                 )
-                // Main route polyline
+                // Main route polyline (purple like Google Maps)
                 Polyline(
                     points = routePoints,
-                    color = PrimaryBlue,
-                    width = 8f,
+                    color = routePurple,
+                    width = 10f,
                     geodesic = true
                 )
+
+                // Dotted walking line: user location → nearest route point
+                if (userLocation != null) {
+                    val nearestPt = routePoints.minByOrNull { pt ->
+                        haversineDistance(userLocation!!, pt)
+                    }
+                    if (nearestPt != null) {
+                        Polyline(
+                            points = listOf(userLocation!!, nearestPt),
+                            color = Color(0xFF555555),
+                            width = 6f,
+                            pattern = listOf(Dot(), Gap(12f)),
+                            geodesic = true
+                        )
+                    }
+                }
+
+                // Dotted walking line: route end → destination marker
+                routeEnd?.let { dest ->
+                    val routeEndPt = routePoints.lastOrNull()
+                    if (routeEndPt != null && haversineDistance(routeEndPt, dest) > 0.01) {
+                        Polyline(
+                            points = listOf(routeEndPt, dest),
+                            color = Color(0xFF555555),
+                            width = 6f,
+                            pattern = listOf(Dot(), Gap(12f)),
+                            geodesic = true
+                        )
+                    }
+                }
+
+                // Start marker
                 routePoints.firstOrNull()?.let { start ->
                     Marker(
                         state = MarkerState(position = start),
@@ -465,11 +513,28 @@ fun MapScreen(
                         icon = BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_GREEN)
                     )
                 }
+                // Destination marker
                 routePoints.lastOrNull()?.let { end ->
                     Marker(
                         state = MarkerState(position = end),
                         title = "Destination",
                         icon = BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_RED)
+                    )
+                }
+
+                // ETA badge marker at route midpoint
+                if (routeDurationMin > 0) {
+                    val midIdx = routePoints.size / 2
+                    val midPoint = routePoints[midIdx.coerceIn(0, routePoints.lastIndex)]
+                    val etaBitmap = remember(routeDurationMin) {
+                        createEtaBadgeBitmap(routeDurationMin)
+                    }
+                    Marker(
+                        state = MarkerState(position = midPoint),
+                        title = "$routeDurationMin min",
+                        icon = BitmapDescriptorFactory.fromBitmap(etaBitmap),
+                        anchor = Offset(0.5f, 0.5f),
+                        flat = true
                     )
                 }
             }
@@ -723,6 +788,8 @@ fun MapScreen(
                             routeStart = null
                             routeEnd = null
                             routePoints = emptyList()
+                            routeDurationMin = 0
+                            routeDistanceKm = 0.0
                             isRouteLoading = false
                         }
                     }
@@ -959,6 +1026,8 @@ fun MapScreen(
                                         routeStart = null
                                         routeEnd = null
                                         routePoints = emptyList()
+                                        routeDurationMin = 0
+                                        routeDistanceKm = 0.0
                                         isRouteLoading = false
                                     },
                                     modifier = Modifier.size(28.dp)
@@ -1003,20 +1072,10 @@ fun MapScreen(
                         }
                         // Congestion warning on route
                         if (routePoints.isNotEmpty()) {
-                            // Route distance & ETA
-                            val routeDistKm = remember(routePoints) {
-                                var dist = 0.0
-                                for (i in 0 until routePoints.size - 1) {
-                                    dist += haversineDistance(routePoints[i], routePoints[i + 1])
-                                }
-                                dist
-                            }
-                            val etaMinutes = (routeDistKm / 30.0 * 60).toInt() // ~30 km/h city avg
-
                             Spacer(modifier = Modifier.height(8.dp))
                             Surface(
                                 shape = RoundedCornerShape(10.dp),
-                                color = PrimaryBlue.copy(alpha = 0.08f)
+                                color = Color(0xFF4A0FBF).copy(alpha = 0.08f)
                             ) {
                                 Row(
                                     modifier = Modifier
@@ -1025,14 +1084,14 @@ fun MapScreen(
                                     horizontalArrangement = Arrangement.SpaceBetween,
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    // Distance + ETA
+                                    // Distance + ETA from Directions API
                                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                             Text(
-                                                "%.1f km".format(routeDistKm),
+                                                "%.1f km".format(routeDistanceKm),
                                                 style = MaterialTheme.typography.titleSmall,
                                                 fontWeight = FontWeight.Bold,
-                                                color = PrimaryBlue
+                                                color = Color(0xFF4A0FBF)
                                             )
                                             Text(
                                                 "Distance",
@@ -1042,7 +1101,7 @@ fun MapScreen(
                                         }
                                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                             Text(
-                                                "$etaMinutes min",
+                                                "$routeDurationMin min",
                                                 style = MaterialTheme.typography.titleSmall,
                                                 fontWeight = FontWeight.Bold,
                                                 color = AccentGreen
@@ -2279,6 +2338,13 @@ private fun haversineDistance(a: LatLng, b: LatLng): Double {
 // Google Directions API — Real Road Route
 // ═══════════════════════════════════════════════════════════════════
 
+/** Directions API result with polyline, duration and distance */
+private data class DirectionsResult(
+    val points: List<LatLng>,
+    val durationMinutes: Int,
+    val distanceKm: Double
+)
+
 /** Get Maps API key from AndroidManifest meta-data */
 private fun getMapApiKey(context: Context): String {
     return try {
@@ -2295,32 +2361,75 @@ private suspend fun fetchDirectionsRoute(
     start: LatLng,
     end: LatLng,
     apiKey: String
-): List<LatLng> = withContext(Dispatchers.IO) {
+): DirectionsResult = withContext(Dispatchers.IO) {
+    val fallback = DirectionsResult(listOf(start, end), 0, 0.0)
     try {
         val url = "https://maps.googleapis.com/maps/api/directions/json" +
                 "?origin=${start.latitude},${start.longitude}" +
                 "&destination=${end.latitude},${end.longitude}" +
                 "&mode=driving" +
                 "&key=$apiKey"
+        Log.d("MapScreen", "Directions API request: $url")
         val connection = java.net.URL(url).openConnection() as java.net.HttpURLConnection
-        connection.connectTimeout = 8000
-        connection.readTimeout = 8000
-        val response = connection.inputStream.bufferedReader().readText()
+        connection.connectTimeout = 10000
+        connection.readTimeout = 10000
+        connection.requestMethod = "GET"
+
+        val responseCode = connection.responseCode
+        val response = if (responseCode == 200) {
+            connection.inputStream.bufferedReader().readText()
+        } else {
+            val errorBody = connection.errorStream?.bufferedReader()?.readText() ?: "no body"
+            Log.e("MapScreen", "Directions API HTTP $responseCode: $errorBody")
+            connection.disconnect()
+            return@withContext fallback
+        }
         connection.disconnect()
 
-        // Parse the overview_polyline from JSON response
-        val polylineRegex = """"overview_polyline"\s*:\s*\{\s*"points"\s*:\s*"([^"]+)"""".toRegex()
-        val match = polylineRegex.find(response)
-        if (match != null) {
-            val encoded = match.groupValues[1]
-            decodePolyline(encoded)
+        val json = org.json.JSONObject(response)
+        val status = json.optString("status", "UNKNOWN")
+        Log.d("MapScreen", "Directions API status: $status")
+
+        if (status != "OK") {
+            val errorMsg = json.optString("error_message", "no details")
+            Log.e("MapScreen", "Directions API error: $status — $errorMsg")
+            return@withContext fallback
+        }
+
+        val routes = json.optJSONArray("routes")
+        if (routes == null || routes.length() == 0) {
+            Log.w("MapScreen", "Directions API: no routes returned")
+            return@withContext fallback
+        }
+
+        val route = routes.getJSONObject(0)
+
+        // Extract duration & distance from first leg
+        val legs = route.optJSONArray("legs")
+        val leg = legs?.optJSONObject(0)
+        val durationSec = leg?.optJSONObject("duration")?.optInt("value", 0) ?: 0
+        val distanceMeters = leg?.optJSONObject("distance")?.optInt("value", 0) ?: 0
+
+        val overviewPolyline = route
+            .optJSONObject("overview_polyline")
+            ?.optString("points", "")
+            ?: ""
+
+        if (overviewPolyline.isNotEmpty()) {
+            val decoded = decodePolyline(overviewPolyline)
+            Log.d("MapScreen", "Directions API: decoded ${decoded.size} points, ${durationSec}s, ${distanceMeters}m")
+            DirectionsResult(
+                points = decoded,
+                durationMinutes = (durationSec / 60.0).toInt().coerceAtLeast(1),
+                distanceKm = distanceMeters / 1000.0
+            )
         } else {
-            Log.w("MapScreen", "Directions API: no polyline in response")
-            listOf(start, end) // fallback
+            Log.w("MapScreen", "Directions API: empty polyline")
+            fallback
         }
     } catch (e: Exception) {
-        Log.e("MapScreen", "Directions API failed: ${e.message}")
-        listOf(start, end) // fallback straight line
+        Log.e("MapScreen", "Directions API failed: ${e.javaClass.simpleName}: ${e.message}")
+        fallback
     }
 }
 
@@ -2357,6 +2466,34 @@ private fun decodePolyline(encoded: String): List<LatLng> {
         poly.add(LatLng(lat / 1E5, lng / 1E5))
     }
     return poly
+}
+
+/** Create a bitmap badge showing ETA text (like Google Maps "7 min" badge) */
+private fun createEtaBadgeBitmap(minutes: Int): Bitmap {
+    val text = "$minutes min"
+    val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = android.graphics.Color.WHITE
+        textSize = 36f
+        typeface = android.graphics.Typeface.DEFAULT_BOLD
+        textAlign = Paint.Align.CENTER
+    }
+    val padding = 20f
+    val textWidth = textPaint.measureText(text)
+    val width = (textWidth + padding * 2).toInt()
+    val height = 52
+    val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+    val canvas = Canvas(bitmap)
+    // Dark blue rounded rect background
+    val bgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = 0xFF1A73E8.toInt()
+        style = Paint.Style.FILL
+    }
+    val rect = android.graphics.RectF(0f, 0f, width.toFloat(), height.toFloat())
+    canvas.drawRoundRect(rect, 14f, 14f, bgPaint)
+    // Text centered
+    val textY = height / 2f - (textPaint.descent() + textPaint.ascent()) / 2f
+    canvas.drawText(text, width / 2f, textY, textPaint)
+    return bitmap
 }
 
 

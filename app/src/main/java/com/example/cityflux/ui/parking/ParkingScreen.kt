@@ -19,6 +19,7 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ViewList
 import androidx.compose.material.icons.filled.*
@@ -118,6 +119,38 @@ fun ParkingScreen(
     val totalAvailable = filteredSpots.sumOf { spot ->
         state.parkingLive[spot.id]?.availableSlots ?: spot.availableSlots
     }
+    val totalFull = filteredSpots.count { spot ->
+        (state.parkingLive[spot.id]?.availableSlots ?: spot.availableSlots) <= 0
+    }
+    val nearbyCount = filteredSpots.count { spot ->
+        val dist = vm.distanceTo(spot)
+        dist != null && dist < 1000f
+    }
+
+    // ── Search State ──
+    var searchQuery by remember { mutableStateOf("") }
+
+    // ── Quick Filter ──
+    var quickFilter by remember { mutableStateOf("All") }
+
+    // ── Apply search + quick filter ──
+    val displaySpots = remember(filteredSpots, searchQuery, quickFilter, state.parkingLive) {
+        filteredSpots.filter { spot ->
+            val matchesSearch = searchQuery.isBlank() ||
+                spot.address.contains(searchQuery, ignoreCase = true) ||
+                spot.id.contains(searchQuery, ignoreCase = true)
+            val available = state.parkingLive[spot.id]?.availableSlots ?: spot.availableSlots
+            val dist = vm.distanceTo(spot)
+            val matchesQuick = when (quickFilter) {
+                "Available" -> available > 0
+                "Full" -> available <= 0
+                "Near Me" -> dist != null && dist < 1000f
+                "Legal" -> spot.isLegal
+                else -> true
+            }
+            matchesSearch && matchesQuick
+        }
+    }
 
     Box(modifier = Modifier.fillMaxSize()) {
         Column(
@@ -125,13 +158,168 @@ fun ParkingScreen(
                 .fillMaxSize()
                 .statusBarsPadding()
         ) {
-            // ══════════════════════ Header (Police-style) ══════════════════════
+            // ══════════════════════ Header (Premium) ══════════════════════
             ParkingTopBar(
                 colors = colors,
                 totalSpots = totalSpots,
                 totalAvailable = totalAvailable,
                 isLoading = state.isLoading
             )
+
+            // ══════════════════════ Stats Strip ══════════════════════
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = Spacing.XLarge, vertical = Spacing.Small),
+                horizontalArrangement = Arrangement.spacedBy(Spacing.Small)
+            ) {
+                ParkingStatMiniCard(
+                    label = "Total",
+                    value = "$totalSpots",
+                    icon = Icons.Outlined.LocalParking,
+                    color = PrimaryBlue,
+                    modifier = Modifier.weight(1f)
+                )
+                ParkingStatMiniCard(
+                    label = "Free",
+                    value = "$totalAvailable",
+                    icon = Icons.Outlined.CheckCircle,
+                    color = AccentGreen,
+                    modifier = Modifier.weight(1f)
+                )
+                ParkingStatMiniCard(
+                    label = "Full",
+                    value = "$totalFull",
+                    icon = Icons.Outlined.Block,
+                    color = AccentRed,
+                    modifier = Modifier.weight(1f)
+                )
+                ParkingStatMiniCard(
+                    label = "Nearby",
+                    value = "$nearbyCount",
+                    icon = Icons.Outlined.NearMe,
+                    color = AccentOrange,
+                    modifier = Modifier.weight(1f)
+                )
+            }
+
+            // ══════════════════════ Search Bar ══════════════════════
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = Spacing.XLarge, vertical = Spacing.Small),
+                shape = RoundedCornerShape(CornerRadius.Large),
+                color = colors.surfaceVariant.copy(alpha = 0.7f)
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        Icons.Outlined.Search,
+                        null,
+                        tint = colors.textTertiary,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    BasicTextField(
+                        value = searchQuery,
+                        onValueChange = { searchQuery = it },
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(vertical = 10.dp),
+                        singleLine = true,
+                        textStyle = MaterialTheme.typography.bodySmall.copy(
+                            color = colors.textPrimary
+                        ),
+                        decorationBox = { inner ->
+                            if (searchQuery.isEmpty()) {
+                                Text(
+                                    "Search parking by name or address...",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = colors.textTertiary
+                                )
+                            }
+                            inner()
+                        }
+                    )
+                    if (searchQuery.isNotEmpty()) {
+                        IconButton(
+                            onClick = { searchQuery = "" },
+                            modifier = Modifier.size(24.dp)
+                        ) {
+                            Icon(
+                                Icons.Filled.Close,
+                                "Clear",
+                                tint = colors.textTertiary,
+                                modifier = Modifier.size(14.dp)
+                            )
+                        }
+                    }
+                }
+            }
+
+            // ══════════════════════ Quick Filter Chips ══════════════════════
+            LazyRow(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = Spacing.XLarge, vertical = Spacing.Small),
+                horizontalArrangement = Arrangement.spacedBy(Spacing.Small)
+            ) {
+                val chipData = listOf(
+                    "All" to totalSpots,
+                    "Available" to totalAvailable,
+                    "Full" to totalFull,
+                    "Near Me" to nearbyCount,
+                    "Legal" to filteredSpots.count { it.isLegal }
+                )
+                items(chipData.size) { idx ->
+                    val (label, count) = chipData[idx]
+                    val isSelected = quickFilter == label
+                    val chipColor = when (label) {
+                        "Available" -> AccentGreen
+                        "Full" -> AccentRed
+                        "Near Me" -> AccentOrange
+                        "Legal" -> AccentParking
+                        else -> PrimaryBlue
+                    }
+                    Surface(
+                        onClick = { quickFilter = if (isSelected && label != "All") "All" else label },
+                        shape = RoundedCornerShape(CornerRadius.Round),
+                        color = if (isSelected) chipColor.copy(alpha = 0.15f)
+                            else colors.surfaceVariant.copy(alpha = 0.5f),
+                        modifier = Modifier.height(30.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Text(
+                                label,
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                color = if (isSelected) chipColor else colors.textSecondary
+                            )
+                            Surface(
+                                shape = CircleShape,
+                                color = if (isSelected) chipColor.copy(alpha = 0.2f)
+                                    else colors.textTertiary.copy(alpha = 0.15f),
+                                modifier = Modifier.size(18.dp)
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Text(
+                                        "$count",
+                                        fontSize = 9.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (isSelected) chipColor else colors.textTertiary
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
 
             // ══════════════════════ View Toggle + Filter Chips ══════════════════════
             Row(
@@ -274,7 +462,7 @@ fun ParkingScreen(
                 if (showMap) {
                     // ──────── Map View ────────
                     ParkingMapView(
-                        spots = filteredSpots,
+                        spots = displaySpots,
                         parkingLive = state.parkingLive,
                         userLatLng = userLatLng,
                         onMarkerClick = { spot ->
@@ -284,7 +472,7 @@ fun ParkingScreen(
                     )
                 } else {
                     // ──────── List View ────────
-                    if (state.isLoading && filteredSpots.isEmpty()) {
+                    if (state.isLoading && displaySpots.isEmpty()) {
                         // Shimmer loading
                         Column(
                             modifier = Modifier.padding(horizontal = Spacing.XLarge),
@@ -293,7 +481,7 @@ fun ParkingScreen(
                             Spacer(Modifier.height(Spacing.Small))
                             repeat(5) { ShimmerParkingCard() }
                         }
-                    } else if (filteredSpots.isEmpty()) {
+                    } else if (displaySpots.isEmpty()) {
                         // Empty state
                         Box(
                             modifier = Modifier.fillMaxSize(),
@@ -337,7 +525,7 @@ fun ParkingScreen(
                             ),
                             verticalArrangement = Arrangement.spacedBy(Spacing.Medium)
                         ) {
-                            items(filteredSpots, key = { it.id }) { spot ->
+                            items(displaySpots, key = { it.id }) { spot ->
                                 ParkingCard(
                                     spot = spot,
                                     available = state.parkingLive[spot.id]?.availableSlots
@@ -600,11 +788,34 @@ private fun ParkingCard(
                         horizontalArrangement = Arrangement.spacedBy(Spacing.Small)
                     ) {
                         if (distance != null) {
-                            Text(
-                                formatDistance(distance),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = colors.textTertiary
-                            )
+                            val distColor = when {
+                                distance < 500f -> AccentGreen
+                                distance < 2000f -> AccentOrange
+                                else -> AccentRed
+                            }
+                            Surface(
+                                shape = RoundedCornerShape(4.dp),
+                                color = distColor.copy(alpha = 0.12f)
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(3.dp)
+                                ) {
+                                    Icon(
+                                        Icons.Outlined.NearMe,
+                                        null,
+                                        tint = distColor,
+                                        modifier = Modifier.size(10.dp)
+                                    )
+                                    Text(
+                                        formatDistance(distance),
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = distColor
+                                    )
+                                }
+                            }
                             Text("·", color = colors.textTertiary)
                         }
                         Text(
@@ -1153,68 +1364,107 @@ private fun ParkingTopBar(
     totalAvailable: Int,
     isLoading: Boolean
 ) {
-    Row(
+    Box(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = Spacing.XLarge, vertical = Spacing.Medium),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween
+            .background(
+                Brush.verticalGradient(
+                    listOf(
+                        AccentParking.copy(alpha = 0.15f),
+                        AccentParking.copy(alpha = 0.03f),
+                        Color.Transparent
+                    )
+                )
+            )
+            .padding(horizontal = Spacing.XLarge, vertical = Spacing.Medium)
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            // Icon badge (police style)
-            Box(
-                modifier = Modifier
-                    .size(44.dp)
-                    .clip(CircleShape)
-                    .background(
-                        Brush.linearGradient(
-                            listOf(AccentParking, AccentParking.copy(alpha = 0.7f))
-                        )
-                    ),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = Icons.Filled.LocalParking,
-                    contentDescription = null,
-                    tint = Color.White,
-                    modifier = Modifier.size(24.dp)
-                )
-            }
-            Spacer(Modifier.width(Spacing.Medium))
-            Column {
-                Text(
-                    "Nearby Parking",
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold,
-                    color = colors.textPrimary
-                )
-                Text(
-                    if (isLoading) "Finding parking spots..."
-                    else "$totalSpots spots · $totalAvailable slots available",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = colors.textSecondary
-                )
-            }
-        }
-
-        // Live indicator
-        Surface(
-            shape = RoundedCornerShape(CornerRadius.Round),
-            color = AccentGreen.copy(alpha = 0.12f)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            Row(
-                modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                // Glowing icon badge
+                Box(contentAlignment = Alignment.Center) {
+                    // Outer glow
+                    val infiniteTransition = rememberInfiniteTransition(label = "parking_glow")
+                    val glowAlpha by infiniteTransition.animateFloat(
+                        initialValue = 0.2f,
+                        targetValue = 0.5f,
+                        animationSpec = infiniteRepeatable(
+                            animation = tween(1500, easing = FastOutSlowInEasing),
+                            repeatMode = RepeatMode.Reverse
+                        ),
+                        label = "glow"
+                    )
+                    Box(
+                        modifier = Modifier
+                            .size(56.dp)
+                            .clip(CircleShape)
+                            .background(AccentParking.copy(alpha = glowAlpha))
+                    )
+                    Box(
+                        modifier = Modifier
+                            .size(46.dp)
+                            .clip(CircleShape)
+                            .background(
+                                Brush.linearGradient(
+                                    listOf(AccentParking, AccentParking.copy(alpha = 0.8f))
+                                )
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            Icons.Filled.LocalParking,
+                            null,
+                            tint = Color.White,
+                            modifier = Modifier.size(26.dp)
+                        )
+                    }
+                }
+                Spacer(Modifier.width(Spacing.Medium))
+                Column {
+                    Text(
+                        "Nearby Parking",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = colors.textPrimary
+                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        ParkingPulsingDot(color = AccentGreen, size = 6.dp)
+                        Text(
+                            if (isLoading) "Scanning nearby areas..."
+                            else "Live Tracking · $totalAvailable slots free",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = colors.textSecondary,
+                            fontSize = 11.sp
+                        )
+                    }
+                }
+            }
+
+            // Live badge
+            Surface(
+                shape = RoundedCornerShape(CornerRadius.Round),
+                color = AccentGreen.copy(alpha = 0.12f)
             ) {
-                ParkingPulsingDot(color = AccentGreen, size = 8.dp)
-                Text(
-                    "LIVE",
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = AccentGreen,
-                    letterSpacing = 1.sp
-                )
+                Row(
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    ParkingPulsingDot(color = AccentGreen, size = 8.dp)
+                    Text(
+                        "LIVE",
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = AccentGreen,
+                        letterSpacing = 1.sp
+                    )
+                }
             }
         }
     }
@@ -1238,4 +1488,50 @@ private fun ParkingPulsingDot(color: Color, size: androidx.compose.ui.unit.Dp) {
             .clip(CircleShape)
             .background(color.copy(alpha = alpha))
     )
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Stats Strip — Glass-morphism mini stat cards
+// ═══════════════════════════════════════════════════════════════════
+
+@Composable
+private fun ParkingStatMiniCard(
+    label: String,
+    value: String,
+    icon: ImageVector,
+    color: Color,
+    modifier: Modifier = Modifier
+) {
+    val colors = MaterialTheme.cityFluxColors
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(CornerRadius.Medium),
+        color = color.copy(alpha = 0.08f)
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 10.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Icon(
+                icon,
+                null,
+                tint = color,
+                modifier = Modifier.size(16.dp)
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(
+                value,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Bold,
+                color = color
+            )
+            Text(
+                label,
+                fontSize = 9.sp,
+                fontWeight = FontWeight.Medium,
+                color = colors.textSecondary,
+                maxLines = 1
+            )
+        }
+    }
 }
