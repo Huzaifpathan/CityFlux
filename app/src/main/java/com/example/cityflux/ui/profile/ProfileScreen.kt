@@ -2188,7 +2188,9 @@ private fun AppInfoCard(
     snackbarHostState: SnackbarHostState
 ) {
     val colors = MaterialTheme.cityFluxColors
-    val scope = rememberCoroutineScope()
+    var showPrivacyPolicy by remember { mutableStateOf(false) }
+    var showTermsOfService by remember { mutableStateOf(false) }
+    var showRateApp by remember { mutableStateOf(false) }
     val versionName = remember {
         try {
             context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "1.0.0"
@@ -2219,30 +2221,14 @@ private fun AppInfoCard(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .clickable { scope.launch { snackbarHostState.showSnackbar("Coming soon") } }
+                .clickable { showPrivacyPolicy = true }
                 .padding(vertical = Spacing.Medium),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(
-                Icons.Outlined.Security,
-                contentDescription = null,
-                tint = PrimaryBlue,
-                modifier = Modifier.size(18.dp)
-            )
+            Icon(Icons.Outlined.Security, contentDescription = null, tint = PrimaryBlue, modifier = Modifier.size(18.dp))
             Spacer(Modifier.width(Spacing.Medium))
-            Text(
-                "Privacy Policy",
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.Medium,
-                color = colors.textPrimary,
-                modifier = Modifier.weight(1f)
-            )
-            Icon(
-                Icons.Outlined.ChevronRight,
-                contentDescription = null,
-                tint = colors.textTertiary,
-                modifier = Modifier.size(18.dp)
-            )
+            Text("Privacy Policy", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium, color = colors.textPrimary, modifier = Modifier.weight(1f))
+            Icon(Icons.Outlined.ChevronRight, contentDescription = null, tint = colors.textTertiary, modifier = Modifier.size(18.dp))
         }
 
         HorizontalDivider(
@@ -2254,30 +2240,14 @@ private fun AppInfoCard(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .clickable { scope.launch { snackbarHostState.showSnackbar("Coming soon") } }
+                .clickable { showTermsOfService = true }
                 .padding(vertical = Spacing.Medium),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(
-                Icons.Outlined.Description,
-                contentDescription = null,
-                tint = PrimaryBlue,
-                modifier = Modifier.size(18.dp)
-            )
+            Icon(Icons.Outlined.Description, contentDescription = null, tint = PrimaryBlue, modifier = Modifier.size(18.dp))
             Spacer(Modifier.width(Spacing.Medium))
-            Text(
-                "Terms of Service",
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.Medium,
-                color = colors.textPrimary,
-                modifier = Modifier.weight(1f)
-            )
-            Icon(
-                Icons.Outlined.ChevronRight,
-                contentDescription = null,
-                tint = colors.textTertiary,
-                modifier = Modifier.size(18.dp)
-            )
+            Text("Terms of Service", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium, color = colors.textPrimary, modifier = Modifier.weight(1f))
+            Icon(Icons.Outlined.ChevronRight, contentDescription = null, tint = colors.textTertiary, modifier = Modifier.size(18.dp))
         }
 
         HorizontalDivider(
@@ -2289,30 +2259,14 @@ private fun AppInfoCard(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .clickable { scope.launch { snackbarHostState.showSnackbar("Coming soon") } }
+                .clickable { showRateApp = true }
                 .padding(vertical = Spacing.Medium),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(
-                Icons.Outlined.Star,
-                contentDescription = null,
-                tint = PrimaryBlue,
-                modifier = Modifier.size(18.dp)
-            )
+            Icon(Icons.Outlined.Star, contentDescription = null, tint = PrimaryBlue, modifier = Modifier.size(18.dp))
             Spacer(Modifier.width(Spacing.Medium))
-            Text(
-                "Rate App",
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.Medium,
-                color = colors.textPrimary,
-                modifier = Modifier.weight(1f)
-            )
-            Icon(
-                Icons.Outlined.ChevronRight,
-                contentDescription = null,
-                tint = colors.textTertiary,
-                modifier = Modifier.size(18.dp)
-            )
+            Text("Rate App", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium, color = colors.textPrimary, modifier = Modifier.weight(1f))
+            Icon(Icons.Outlined.ChevronRight, contentDescription = null, tint = colors.textTertiary, modifier = Modifier.size(18.dp))
         }
 
         Spacer(Modifier.height(Spacing.Medium))
@@ -2323,6 +2277,146 @@ private fun AppInfoCard(
             color = colors.textTertiary,
             textAlign = TextAlign.Center,
             modifier = Modifier.fillMaxWidth()
+        )
+    }
+
+    // ── Privacy Policy Dialog ──
+    if (showPrivacyPolicy) {
+        AlertDialog(
+            onDismissRequest = { showPrivacyPolicy = false },
+            containerColor = colors.cardBackground,
+            shape = RoundedCornerShape(CornerRadius.XLarge),
+            icon = { Icon(Icons.Outlined.Security, contentDescription = null, tint = PrimaryBlue, modifier = Modifier.size(32.dp)) },
+            title = {
+                Text("Privacy Policy", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = colors.textPrimary)
+            },
+            text = {
+                Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                    val sections = listOf(
+                        "1. Information We Collect" to "CityFlux collects your name, email, phone number, and location data to provide city services. Report data including photos, descriptions, and GPS coordinates are stored to process your submissions.",
+                        "2. How We Use Your Data" to "Your data is used to: process issue reports, send relevant city alerts, display nearby parking availability, calculate your citizen score, and improve our services. We never sell your personal data to third parties.",
+                        "3. Location Data" to "We collect location data only when the app is in use, to show nearby services, enable map features, and tag report locations accurately. You can revoke location access anytime from device settings.",
+                        "4. Data Storage & Security" to "All data is stored securely on Firebase (Google Cloud) servers with encryption at rest and in transit. Profile images are stored in Firebase Storage with secure access rules.",
+                        "5. Data Retention" to "Your account data is retained as long as your account is active. Reports are kept for city records. You can export or delete your data anytime from the Profile > Data & Storage section.",
+                        "6. Third-Party Services" to "We use Google Maps for navigation, Firebase for authentication and storage, and Open-Meteo for weather data. Each service has its own privacy policy.",
+                        "7. Your Rights" to "You have the right to: access your data (Export My Data), correct your information (Edit Profile), delete your account, and opt out of notifications (Alert Preferences).",
+                        "8. Contact Us" to "For privacy concerns, contact us at privacy@cityflux.app"
+                    )
+                    sections.forEach { (title, body) ->
+                        Text(title, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold, color = colors.textPrimary)
+                        Spacer(Modifier.height(4.dp))
+                        Text(body, style = MaterialTheme.typography.bodySmall, color = colors.textSecondary)
+                        Spacer(Modifier.height(Spacing.Medium))
+                    }
+                    Text("Last updated: March 2026", style = MaterialTheme.typography.labelSmall, color = colors.textTertiary)
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showPrivacyPolicy = false }) {
+                    Text("Close", color = PrimaryBlue, fontWeight = FontWeight.SemiBold)
+                }
+            }
+        )
+    }
+
+    // ── Terms of Service Dialog ──
+    if (showTermsOfService) {
+        AlertDialog(
+            onDismissRequest = { showTermsOfService = false },
+            containerColor = colors.cardBackground,
+            shape = RoundedCornerShape(CornerRadius.XLarge),
+            icon = { Icon(Icons.Outlined.Description, contentDescription = null, tint = PrimaryBlue, modifier = Modifier.size(32.dp)) },
+            title = {
+                Text("Terms of Service", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = colors.textPrimary)
+            },
+            text = {
+                Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                    val sections = listOf(
+                        "1. Acceptance of Terms" to "By using CityFlux, you agree to these Terms of Service. If you do not agree, please discontinue use of the application.",
+                        "2. User Accounts" to "You must provide accurate information during registration. You are responsible for maintaining the security of your account credentials. One account per person is allowed.",
+                        "3. Acceptable Use" to "You agree to: submit truthful and accurate reports, not misuse the SOS or emergency features, not upload inappropriate or offensive content, and not attempt to manipulate the citizen score system.",
+                        "4. Report Submissions" to "Reports you submit become part of the city's public record system. City authorities may act on, reassign, or close reports at their discretion. False reports may result in account suspension.",
+                        "5. Citizen Score & Badges" to "Citizen scores and badges are awarded based on your participation. They are for engagement purposes and do not guarantee any privileges or rewards beyond the app.",
+                        "6. Content Ownership" to "You retain ownership of photos and content you submit. By submitting, you grant CityFlux a license to use this content for processing reports and improving city services.",
+                        "7. Service Availability" to "CityFlux is provided \"as-is\". We strive for uptime but do not guarantee uninterrupted service. Features may be modified or discontinued with notice.",
+                        "8. Termination" to "We reserve the right to suspend or terminate accounts that violate these terms. You may delete your account at any time from profile settings.",
+                        "9. Limitation of Liability" to "CityFlux is not liable for actions taken or not taken by city authorities based on submitted reports. Emergency situations should always be reported via official emergency services (112).",
+                        "10. Contact" to "For questions about these terms, email legal@cityflux.app"
+                    )
+                    sections.forEach { (title, body) ->
+                        Text(title, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold, color = colors.textPrimary)
+                        Spacer(Modifier.height(4.dp))
+                        Text(body, style = MaterialTheme.typography.bodySmall, color = colors.textSecondary)
+                        Spacer(Modifier.height(Spacing.Medium))
+                    }
+                    Text("Last updated: March 2026", style = MaterialTheme.typography.labelSmall, color = colors.textTertiary)
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showTermsOfService = false }) {
+                    Text("Close", color = PrimaryBlue, fontWeight = FontWeight.SemiBold)
+                }
+            }
+        )
+    }
+
+    // ── Rate App Dialog ──
+    if (showRateApp) {
+        AlertDialog(
+            onDismissRequest = { showRateApp = false },
+            containerColor = colors.cardBackground,
+            shape = RoundedCornerShape(CornerRadius.XLarge),
+            icon = { Icon(Icons.Filled.Star, contentDescription = null, tint = AccentYellow, modifier = Modifier.size(40.dp)) },
+            title = {
+                Text("Rate CityFlux", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = colors.textPrimary, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
+            },
+            text = {
+                Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        "Enjoying CityFlux? Your rating helps us improve and reach more citizens!",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = colors.textSecondary,
+                        textAlign = TextAlign.Center
+                    )
+                    Spacer(Modifier.height(Spacing.Large))
+                    // Star rating display
+                    Row(horizontalArrangement = Arrangement.Center, modifier = Modifier.fillMaxWidth()) {
+                        repeat(5) {
+                            Icon(
+                                Icons.Filled.Star,
+                                contentDescription = null,
+                                tint = AccentYellow,
+                                modifier = Modifier.size(36.dp)
+                            )
+                            if (it < 4) Spacer(Modifier.width(4.dp))
+                        }
+                    }
+                    Spacer(Modifier.height(Spacing.Medium))
+                    Text(
+                        "⭐ 5/5 — Excellent!",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = AccentYellow
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    showRateApp = false
+                    try {
+                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=${context.packageName}")))
+                    } catch (_: Exception) {
+                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://play.google.com/store/apps/details?id=${context.packageName}")))
+                    }
+                }) {
+                    Text("Rate on Play Store", color = PrimaryBlue, fontWeight = FontWeight.SemiBold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showRateApp = false }) {
+                    Text("Maybe Later", color = colors.textSecondary)
+                }
+            }
         )
     }
 }
