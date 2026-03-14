@@ -1391,39 +1391,96 @@ private fun PremiumReportCard(
 
                         Spacer(Modifier.height(Spacing.Medium))
 
-                        // Location card with map link
+                        // Location card with in-app map
+                        var showLocationMap by remember { mutableStateOf(false) }
                         Surface(
+                            onClick = { showLocationMap = !showLocationMap },
                             shape = RoundedCornerShape(CornerRadius.Medium),
                             color = PrimaryBlue.copy(alpha = 0.06f)
                         ) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(Spacing.Small),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Icon(Icons.Outlined.LocationOn, null, tint = PrimaryBlue, modifier = Modifier.size(16.dp))
-                                Spacer(Modifier.width(6.dp))
-                                Text(
-                                    "${"%.4f".format(report.latitude)}, ${"%.4f".format(report.longitude)}",
-                                    fontSize = 11.sp, color = colors.textSecondary,
-                                    modifier = Modifier.weight(1f)
-                                )
-                                Surface(
-                                    onClick = {
-                                        val uri = Uri.parse("geo:${report.latitude},${report.longitude}?q=${report.latitude},${report.longitude}")
-                                        context.startActivity(Intent(Intent.ACTION_VIEW, uri))
-                                    },
-                                    shape = RoundedCornerShape(CornerRadius.Round),
-                                    color = PrimaryBlue.copy(alpha = 0.12f)
+                            Column {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(Spacing.Small),
+                                    verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Row(
-                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                                        verticalAlignment = Alignment.CenterVertically
+                                    Icon(Icons.Outlined.LocationOn, null, tint = PrimaryBlue, modifier = Modifier.size(16.dp))
+                                    Spacer(Modifier.width(6.dp))
+                                    Text(
+                                        "${"%.4f".format(report.latitude)}, ${"%.4f".format(report.longitude)}",
+                                        fontSize = 11.sp, color = colors.textSecondary,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    Surface(
+                                        shape = RoundedCornerShape(CornerRadius.Round),
+                                        color = PrimaryBlue.copy(alpha = 0.12f)
                                     ) {
-                                        Icon(Icons.Outlined.Map, null, tint = PrimaryBlue, modifier = Modifier.size(12.dp))
-                                        Spacer(Modifier.width(4.dp))
-                                        Text("Map", fontSize = 10.sp, fontWeight = FontWeight.SemiBold, color = PrimaryBlue)
+                                        Row(
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Icon(
+                                                if (showLocationMap) Icons.Outlined.ExpandLess else Icons.Outlined.Map,
+                                                null, tint = PrimaryBlue, modifier = Modifier.size(12.dp)
+                                            )
+                                            Spacer(Modifier.width(4.dp))
+                                            Text(
+                                                if (showLocationMap) "Hide" else "Map",
+                                                fontSize = 10.sp, fontWeight = FontWeight.SemiBold, color = PrimaryBlue
+                                            )
+                                        }
+                                    }
+                                }
+                                // In-app map
+                                AnimatedVisibility(visible = showLocationMap) {
+                                    val reportLatLng = LatLng(report.latitude, report.longitude)
+                                    val cameraState = rememberCameraPositionState {
+                                        position = CameraPosition.fromLatLngZoom(reportLatLng, 16f)
+                                    }
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .height(180.dp)
+                                            .clip(RoundedCornerShape(bottomStart = CornerRadius.Medium, bottomEnd = CornerRadius.Medium))
+                                    ) {
+                                        GoogleMap(
+                                            modifier = Modifier.fillMaxSize(),
+                                            cameraPositionState = cameraState,
+                                            uiSettings = MapUiSettings(
+                                                zoomControlsEnabled = true,
+                                                scrollGesturesEnabled = true,
+                                                zoomGesturesEnabled = true,
+                                                rotationGesturesEnabled = false,
+                                                tiltGesturesEnabled = false,
+                                                compassEnabled = false,
+                                                myLocationButtonEnabled = false,
+                                                mapToolbarEnabled = false
+                                            )
+                                        ) {
+                                            Marker(
+                                                state = MarkerState(position = reportLatLng),
+                                                title = typeLabel,
+                                                snippet = report.description.take(50)
+                                            )
+                                        }
+                                        // Type badge on map
+                                        Surface(
+                                            modifier = Modifier
+                                                .align(Alignment.TopStart)
+                                                .padding(8.dp),
+                                            shape = RoundedCornerShape(CornerRadius.Round),
+                                            color = typeColor.copy(alpha = 0.9f)
+                                        ) {
+                                            Row(
+                                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Icon(typeIcon, null, tint = Color.White, modifier = Modifier.size(12.dp))
+                                                Spacer(Modifier.width(4.dp))
+                                                Text(typeLabel, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                                            }
+                                        }
                                     }
                                 }
                             }
