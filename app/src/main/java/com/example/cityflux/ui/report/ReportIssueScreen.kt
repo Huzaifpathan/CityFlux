@@ -49,6 +49,7 @@ import com.google.android.gms.location.LocationServices
 import com.google.android.gms.maps.model.CameraPosition
 import com.google.android.gms.maps.model.LatLng
 import com.google.firebase.analytics.ktx.analytics
+import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.ktx.Firebase
 import com.google.maps.android.compose.*
 import kotlinx.coroutines.tasks.await
@@ -116,7 +117,7 @@ fun ReportIssueScreen(
         ActivityResultContracts.TakePicture()
     ) { success ->
         if (success && cameraImageUri != null) {
-            vm.setPhoto(cameraImageUri)
+            cameraImageUri?.let { vm.addPhoto(it) }
             try { Firebase.analytics.logEvent("photo_captured", null) } catch (_: Exception) {}
         }
     }
@@ -139,7 +140,7 @@ fun ReportIssueScreen(
         ActivityResultContracts.GetContent()
     ) { uri ->
         uri?.let {
-            vm.setPhoto(it)
+            vm.addPhoto(it)
             try { Firebase.analytics.logEvent("photo_captured", null) } catch (_: Exception) {}
         }
     }
@@ -283,7 +284,7 @@ fun ReportIssueScreen(
                                 }
                             },
                             onGalleryClick = { galleryLauncher.launch("image/*") },
-                            onRetakeClick = { vm.setPhoto(null) },
+                            onRemovePhoto = { vm.removePhoto(it) },
                             onRefreshLocation = {
                                 if (hasLocation) {
                                     try {
@@ -298,6 +299,8 @@ fun ReportIssueScreen(
                                     )
                                 }
                             },
+                            onAnonymousChanged = { vm.setAnonymous(it) },
+                            onPriorityChanged = { vm.setPriority(it) },
                             onSubmit = {
                                 try { Firebase.analytics.logEvent("report_submitted", null) } catch (_: Exception) {}
                                 vm.submitReport()
@@ -308,7 +311,10 @@ fun ReportIssueScreen(
                         MyReportsContent(
                             state = state,
                             colors = colors,
-                            onRetry = { vm.retryReports() }
+                            onRetry = { vm.retryReports() },
+                            onDeleteReport = { vm.deleteReport(it) },
+                            onUpvoteReport = { vm.upvoteReport(it) },
+                            onSendChatMessage = { reportId, message -> vm.sendChatMessage(reportId, message) }
                         )
                     }
                 }
@@ -391,10 +397,42 @@ private fun NewReportContent(
     onDescriptionChanged: (String) -> Unit,
     onCameraClick: () -> Unit,
     onGalleryClick: () -> Unit,
-    onRetakeClick: () -> Unit,
+    onRemovePhoto: (Int) -> Unit,
     onRefreshLocation: () -> Unit,
+    onAnonymousChanged: (Boolean) -> Unit,
+    onPriorityChanged: (ReportViewModel.Priority) -> Unit,
     onSubmit: () -> Unit
 ) {
+    // ── Draft persistence (Feature 8) ──
+    val context = LocalContext.current
+    val prefs = remember { context.getSharedPreferences("report_draft", Context.MODE_PRIVATE) }
+    var draftSaved by remember { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) {
+        val desc = prefs.getString("description", "") ?: ""
+        val type = prefs.getString("type", "") ?: ""
+        val priority = prefs.getString("priority", "") ?: ""
+        val anon = prefs.getBoolean("isAnonymous", false)
+        if (desc.isNotBlank()) onDescriptionChanged(desc)
+        if (type.isNotBlank()) {
+            try { onTypeSelected(ReportViewModel.IssueType.valueOf(type)) } catch (_: Exception) {}
+        }
+        if (priority.isNotBlank()) {
+            try { onPriorityChanged(ReportViewModel.Priority.valueOf(priority)) } catch (_: Exception) {}
+        }
+        onAnonymousChanged(anon)
+    }
+
+    LaunchedEffect(state.description, state.selectedType, state.selectedPriority, state.isAnonymous) {
+        prefs.edit()
+            .putString("description", state.description)
+            .putString("type", state.selectedType?.name ?: "")
+            .putString("priority", state.selectedPriority.name)
+            .putBoolean("isAnonymous", state.isAnonymous)
+            .apply()
+        draftSaved = state.description.isNotBlank()
+    }
+
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(
@@ -403,6 +441,68 @@ private fun NewReportContent(
         ),
         verticalArrangement = Arrangement.spacedBy(Spacing.Large)
     ) {
+        // ── Reporting Tips (Feature 9) ──
+        item {
+            var tipsExpanded by remember { mutableStateOf(false) }
+            Surface(
+                onClick = { tipsExpanded = !tipsExpanded },
+                shape = RoundedCornerShape(CornerRadius.Large),
+                color = PrimaryBlue.copy(alpha = 0.06f)
+            ) {
+                Column(modifier = Modifier.padding(Spacing.Large)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("📝", fontSize = 16.sp)
+                            Spacer(Modifier.width(Spacing.Small))
+                            Text(
+                                "Tips for a good report",
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.SemiBold,
+                                color = colors.textPrimary
+                            )
+                        }
+                        Icon(
+                            if (tipsExpanded) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore,
+                            null, tint = colors.textTertiary, modifier = Modifier.size(20.dp)
+                        )
+                    }
+                    AnimatedVisibility(visible = tipsExpanded) {
+                        Column(modifier = Modifier.padding(top = Spacing.Small)) {
+                            listOf(
+                                "📷 Take clear, well-lit photos of the issue",
+                                "📍 Include the exact location for faster response",
+                                "📝 Describe what you see in detail",
+                                "⏰ Report immediately for best results",
+                                "🔢 Include any relevant numbers (license plates, etc.)"
+                            ).forEach { tip ->
+                                Text(
+                                    tip,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = colors.textSecondary,
+                                    modifier = Modifier.padding(vertical = 2.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // ── Draft Saved Indicator (Feature 8) ──
+        if (draftSaved) {
+            item {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Outlined.Save, null, tint = AccentGreen, modifier = Modifier.size(14.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("Draft saved", fontSize = 11.sp, color = AccentGreen, fontWeight = FontWeight.Medium)
+                }
+            }
+        }
+
         // ── Issue Type Selector ──
         item {
             SectionLabel("What's the issue?")
@@ -420,19 +520,103 @@ private fun NewReportContent(
             }
         }
 
-        // ── Photo Section ──
+        // ── Priority Selector (Feature 10) ──
         item {
-            SectionLabel("Attach a photo")
+            SectionLabel("Priority Level")
             Spacer(Modifier.height(Spacing.Small))
-            if (state.photoUri != null) {
-                // Preview with retake
-                PhotoPreviewCard(
-                    uri = state.photoUri,
-                    colors = colors,
-                    onRetake = onRetakeClick
-                )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(Spacing.Small)
+            ) {
+                ReportViewModel.Priority.entries.forEach { priority ->
+                    val chipColor = when (priority) {
+                        ReportViewModel.Priority.LOW -> AccentGreen
+                        ReportViewModel.Priority.MEDIUM -> PrimaryBlue
+                        ReportViewModel.Priority.HIGH -> AccentOrange
+                        ReportViewModel.Priority.CRITICAL -> AccentRed
+                    }
+                    val isSelected = state.selectedPriority == priority
+                    Surface(
+                        onClick = { onPriorityChanged(priority) },
+                        shape = RoundedCornerShape(CornerRadius.Round),
+                        color = if (isSelected) chipColor.copy(alpha = 0.15f) else colors.surfaceVariant.copy(alpha = 0.5f),
+                        border = BorderStroke(
+                            if (isSelected) 1.5.dp else 0.dp,
+                            if (isSelected) chipColor else Color.Transparent
+                        ),
+                        modifier = Modifier.weight(1f).height(34.dp)
+                    ) {
+                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            Text(
+                                priority.label,
+                                fontSize = 12.sp,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                color = if (isSelected) chipColor else colors.textSecondary
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        // ── Photo Section (Feature 2: Multiple Photos) ──
+        item {
+            SectionLabel("Attach photos (up to 5)")
+            Spacer(Modifier.height(Spacing.Small))
+            if (state.photoUris.isNotEmpty()) {
+                LazyRow(
+                    horizontalArrangement = Arrangement.spacedBy(Spacing.Small)
+                ) {
+                    itemsIndexed(state.photoUris) { index, uri ->
+                        Box(modifier = Modifier.size(80.dp)) {
+                            Image(
+                                painter = rememberAsyncImagePainter(uri),
+                                contentDescription = "Photo ${index + 1}",
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .clip(RoundedCornerShape(CornerRadius.Small)),
+                                contentScale = ContentScale.Crop
+                            )
+                            Surface(
+                                onClick = { onRemovePhoto(index) },
+                                modifier = Modifier
+                                    .align(Alignment.TopEnd)
+                                    .padding(2.dp)
+                                    .size(22.dp),
+                                shape = CircleShape,
+                                color = Color.Black.copy(alpha = 0.6f)
+                            ) {
+                                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                    Icon(Icons.Filled.Close, "Remove", tint = Color.White, modifier = Modifier.size(14.dp))
+                                }
+                            }
+                        }
+                    }
+                    if (state.photoUris.size < 5) {
+                        item {
+                            Card(
+                                modifier = Modifier.size(80.dp),
+                                shape = RoundedCornerShape(CornerRadius.Small),
+                                colors = CardDefaults.cardColors(containerColor = colors.surfaceVariant.copy(alpha = 0.5f)),
+                                border = BorderStroke(1.dp, colors.divider)
+                            ) {
+                                Column(
+                                    modifier = Modifier.fillMaxSize(),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.Center
+                                ) {
+                                    IconButton(onClick = onCameraClick, modifier = Modifier.size(28.dp)) {
+                                        Icon(Icons.Outlined.CameraAlt, "Camera", tint = PrimaryBlue, modifier = Modifier.size(18.dp))
+                                    }
+                                    IconButton(onClick = onGalleryClick, modifier = Modifier.size(28.dp)) {
+                                        Icon(Icons.Outlined.PhotoLibrary, "Gallery", tint = colors.textSecondary, modifier = Modifier.size(18.dp))
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             } else {
-                // Camera + Gallery buttons
                 PhotoCaptureCard(
                     colors = colors,
                     onCameraClick = onCameraClick,
@@ -480,6 +664,49 @@ private fun NewReportContent(
             )
         }
 
+        // ── Anonymous Toggle (Feature 7) ──
+        item {
+            Surface(
+                shape = RoundedCornerShape(CornerRadius.Medium),
+                color = colors.surfaceVariant.copy(alpha = 0.5f)
+            ) {
+                Column(modifier = Modifier.padding(Spacing.Large)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Outlined.Shield, null, tint = PrimaryBlue, modifier = Modifier.size(20.dp))
+                            Spacer(Modifier.width(Spacing.Small))
+                            Text(
+                                "Report Anonymously",
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.SemiBold,
+                                color = colors.textPrimary
+                            )
+                        }
+                        Switch(
+                            checked = state.isAnonymous,
+                            onCheckedChange = onAnonymousChanged,
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = Color.White,
+                                checkedTrackColor = PrimaryBlue
+                            )
+                        )
+                    }
+                    AnimatedVisibility(visible = state.isAnonymous) {
+                        Text(
+                            "Your identity will be hidden from public view",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = colors.textTertiary,
+                            modifier = Modifier.padding(top = Spacing.Small)
+                        )
+                    }
+                }
+            }
+        }
+
         // ── Submit + Error ──
         item {
             // Error retry
@@ -515,7 +742,11 @@ private fun NewReportContent(
 
             // Submit button
             Button(
-                onClick = onSubmit,
+                onClick = {
+                    prefs.edit().clear().apply()
+                    draftSaved = false
+                    onSubmit()
+                },
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(52.dp),
@@ -874,7 +1105,10 @@ private fun LocationCard(
 private fun MyReportsContent(
     state: ReportViewModel.ReportUiState,
     colors: CityFluxColors,
-    onRetry: () -> Unit
+    onRetry: () -> Unit,
+    onDeleteReport: (String) -> Unit,
+    onUpvoteReport: (String) -> Unit,
+    onSendChatMessage: (String, String) -> Unit
 ) {
     // ── Local filters ──
     var searchQuery by remember { mutableStateOf("") }
@@ -1148,7 +1382,10 @@ private fun MyReportsContent(
                             isExpanded = expandedReportId == report.id,
                             onToggleExpand = {
                                 expandedReportId = if (expandedReportId == report.id) null else report.id
-                            }
+                            },
+                            onDeleteReport = onDeleteReport,
+                            onUpvoteReport = onUpvoteReport,
+                            onSendChatMessage = onSendChatMessage
                         )
                     }
                 }
@@ -1167,9 +1404,14 @@ private fun PremiumReportCard(
     report: Report,
     colors: CityFluxColors,
     isExpanded: Boolean,
-    onToggleExpand: () -> Unit
+    onToggleExpand: () -> Unit,
+    onDeleteReport: (String) -> Unit,
+    onUpvoteReport: (String) -> Unit,
+    onSendChatMessage: (String, String) -> Unit
 ) {
     val context = LocalContext.current
+    var showDeleteDialog by remember { mutableStateOf(false) }
+    val currentUid = remember { FirebaseAuth.getInstance().currentUser?.uid ?: "" }
     val statusColor = when (report.status.lowercase()) {
         "resolved" -> AccentGreen
         "in progress" -> AccentAlerts
@@ -1198,6 +1440,28 @@ private fun PremiumReportCard(
         "road_damage" -> "Road Damage"
         "traffic_violation" -> "Traffic Violation"
         else -> "Other"
+    }
+
+    // ── Delete Confirmation Dialog (Feature 4) ──
+    if (showDeleteDialog) {
+        AlertDialog(
+            onDismissRequest = { showDeleteDialog = false },
+            title = { Text("Delete Report?", fontWeight = FontWeight.Bold) },
+            text = { Text("This action cannot be undone. Are you sure you want to delete this report?") },
+            confirmButton = {
+                TextButton(onClick = {
+                    showDeleteDialog = false
+                    onDeleteReport(report.id)
+                }) {
+                    Text("Delete", color = AccentRed, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
     }
 
     Card(
@@ -1261,8 +1525,8 @@ private fun PremiumReportCard(
                         }
                     }
 
-                    // Status badge + Priority badge
-                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    // Status badge + Priority badge + Delete
+                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
                         if (report.status.lowercase() == "pending") {
                             Surface(
                                 shape = RoundedCornerShape(4.dp),
@@ -1289,6 +1553,15 @@ private fun PremiumReportCard(
                                 color = statusColor,
                                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
                             )
+                        }
+                        // Delete button (Feature 4) — only for Pending reports
+                        if (report.status.lowercase() == "pending") {
+                            IconButton(
+                                onClick = { showDeleteDialog = true },
+                                modifier = Modifier.size(28.dp)
+                            ) {
+                                Icon(Icons.Outlined.Delete, "Delete", tint = AccentRed, modifier = Modifier.size(16.dp))
+                            }
                         }
                     }
                 }
@@ -1334,8 +1607,38 @@ private fun PremiumReportCard(
                                 fontSize = 10.sp, color = colors.textTertiary
                             )
                         }
-                        // Expand hint
-                        Icon(Icons.Outlined.ExpandMore, null, tint = colors.textTertiary, modifier = Modifier.size(18.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Spacing.Small)) {
+                            // Upvote button (Feature 6)
+                            val hasUpvoted = currentUid.isNotBlank() && report.upvotedBy.contains(currentUid)
+                            Surface(
+                                onClick = { onUpvoteReport(report.id) },
+                                shape = RoundedCornerShape(CornerRadius.Round),
+                                color = if (hasUpvoted) PrimaryBlue.copy(alpha = 0.12f) else Color.Transparent
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    Icon(
+                                        if (hasUpvoted) Icons.Filled.ThumbUp else Icons.Outlined.ThumbUp,
+                                        "Upvote",
+                                        tint = if (hasUpvoted) PrimaryBlue else colors.textTertiary,
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                    if (report.upvoteCount > 0) {
+                                        Text(
+                                            "${report.upvoteCount}",
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = if (hasUpvoted) PrimaryBlue else colors.textTertiary
+                                        )
+                                    }
+                                }
+                            }
+                            // Expand hint
+                            Icon(Icons.Outlined.ExpandMore, null, tint = colors.textTertiary, modifier = Modifier.size(18.dp))
+                        }
                     }
                 }
 
@@ -1388,6 +1691,11 @@ private fun PremiumReportCard(
                                 modifier = Modifier.weight(1f)
                             )
                         }
+
+                        Spacer(Modifier.height(Spacing.Medium))
+
+                        // Status Timeline (Feature 3)
+                        StatusTimeline(report = report, colors = colors)
 
                         Spacer(Modifier.height(Spacing.Medium))
 
@@ -1488,8 +1796,65 @@ private fun PremiumReportCard(
 
                         Spacer(Modifier.height(Spacing.Medium))
 
-                        // Chat History from subcollection
-                        ReportChatSection(reportId = report.id, colors = colors)
+                        // Chat History from subcollection (Feature 1)
+                        ReportChatSection(
+                            reportId = report.id,
+                            colors = colors,
+                            onSendMessage = { message -> onSendChatMessage(report.id, message) }
+                        )
+
+                        // Action Row: Share (Feature 5) + Upvote
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(Spacing.Small)
+                        ) {
+                            // Share button (Feature 5)
+                            OutlinedButton(
+                                onClick = {
+                                    val shareText = buildString {
+                                        append("CityFlux Report\n")
+                                        append("Type: $typeLabel\n")
+                                        append("Description: ${report.description}\n")
+                                        append("Location: ${report.latitude}, ${report.longitude}\n")
+                                        append("Status: ${report.status}")
+                                    }
+                                    val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                        type = "text/plain"
+                                        putExtra(Intent.EXTRA_TEXT, shareText)
+                                    }
+                                    context.startActivity(Intent.createChooser(shareIntent, "Share Report"))
+                                },
+                                modifier = Modifier.weight(1f).height(36.dp),
+                                shape = RoundedCornerShape(CornerRadius.Round),
+                                border = BorderStroke(1.dp, colors.divider)
+                            ) {
+                                Icon(Icons.Outlined.Share, null, Modifier.size(16.dp), tint = colors.textSecondary)
+                                Spacer(Modifier.width(6.dp))
+                                Text("Share", fontSize = 12.sp, color = colors.textSecondary)
+                            }
+                            // Upvote button expanded
+                            val hasUpvotedExpanded = currentUid.isNotBlank() && report.upvotedBy.contains(currentUid)
+                            OutlinedButton(
+                                onClick = { onUpvoteReport(report.id) },
+                                modifier = Modifier.weight(1f).height(36.dp),
+                                shape = RoundedCornerShape(CornerRadius.Round),
+                                border = BorderStroke(1.dp, if (hasUpvotedExpanded) PrimaryBlue else colors.divider)
+                            ) {
+                                Icon(
+                                    if (hasUpvotedExpanded) Icons.Filled.ThumbUp else Icons.Outlined.ThumbUp,
+                                    null, Modifier.size(16.dp),
+                                    tint = if (hasUpvotedExpanded) PrimaryBlue else colors.textSecondary
+                                )
+                                Spacer(Modifier.width(6.dp))
+                                Text(
+                                    "Upvote${if (report.upvoteCount > 0) " (${report.upvoteCount})" else ""}",
+                                    fontSize = 12.sp,
+                                    color = if (hasUpvotedExpanded) PrimaryBlue else colors.textSecondary
+                                )
+                            }
+                        }
+
+                        Spacer(Modifier.height(Spacing.Small))
 
                         // Collapse hint
                         Row(
@@ -1536,9 +1901,10 @@ private fun ReportMetaItem(
 // ═══════════════════════════════════════════════════════════════════
 
 @Composable
-private fun ReportChatSection(reportId: String, colors: CityFluxColors) {
+private fun ReportChatSection(reportId: String, colors: CityFluxColors, onSendMessage: (String) -> Unit) {
     var chatMessages by remember { mutableStateOf<List<Map<String, Any>>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
+    var chatInput by remember { mutableStateOf("") }
 
     LaunchedEffect(reportId) {
         isLoading = true
@@ -1618,6 +1984,133 @@ private fun ReportChatSection(reportId: String, colors: CityFluxColors) {
             }
         }
         Spacer(Modifier.height(Spacing.Small))
+    }
+
+    // Chat input (Feature 1)
+    Surface(
+        shape = RoundedCornerShape(CornerRadius.Round),
+        color = colors.surfaceVariant.copy(alpha = 0.5f),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = Spacing.Small, vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            BasicTextField(
+                value = chatInput,
+                onValueChange = { chatInput = it },
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(horizontal = Spacing.Small, vertical = Spacing.Small),
+                singleLine = true,
+                textStyle = MaterialTheme.typography.bodySmall.copy(color = colors.textPrimary),
+                decorationBox = { inner ->
+                    if (chatInput.isEmpty()) {
+                        Text("Type a message...", style = MaterialTheme.typography.bodySmall, color = colors.textTertiary)
+                    }
+                    inner()
+                }
+            )
+            IconButton(
+                onClick = {
+                    if (chatInput.isNotBlank()) {
+                        onSendMessage(chatInput.trim())
+                        chatInput = ""
+                    }
+                },
+                modifier = Modifier.size(32.dp),
+                enabled = chatInput.isNotBlank()
+            ) {
+                Icon(
+                    Icons.AutoMirrored.Outlined.Send,
+                    "Send",
+                    tint = if (chatInput.isNotBlank()) PrimaryBlue else colors.textTertiary,
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+        }
+    }
+    Spacer(Modifier.height(Spacing.Small))
+}
+
+
+// ═══════════════════════════════════════════════════════════════════
+// Status Timeline (Feature 3) — Order-tracking style vertical timeline
+// ═══════════════════════════════════════════════════════════════════
+
+@Composable
+private fun StatusTimeline(report: Report, colors: CityFluxColors) {
+    val steps = listOf("Submitted", "Assigned", "In Progress", "Resolved")
+    val currentStep = when (report.status.lowercase()) {
+        "resolved" -> 4
+        "in progress" -> 3
+        else -> if (report.assignedTo.isNotBlank()) 2 else 1
+    }
+
+    Surface(
+        shape = RoundedCornerShape(CornerRadius.Medium),
+        color = colors.surfaceVariant.copy(alpha = 0.3f)
+    ) {
+        Column(modifier = Modifier.padding(Spacing.Large)) {
+            Text(
+                "Status Timeline",
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = colors.textPrimary
+            )
+            Spacer(Modifier.height(Spacing.Small))
+            steps.forEachIndexed { index, step ->
+                val stepNumber = index + 1
+                val isCompleted = stepNumber <= currentStep
+                val isCurrent = stepNumber == currentStep
+                val stepColor = when {
+                    isCompleted -> AccentGreen
+                    else -> colors.textTertiary.copy(alpha = 0.4f)
+                }
+
+                Row(verticalAlignment = Alignment.Top) {
+                    // Circle + connecting line
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Surface(
+                            modifier = Modifier.size(20.dp),
+                            shape = CircleShape,
+                            color = if (isCompleted) stepColor else Color.Transparent,
+                            border = BorderStroke(2.dp, stepColor)
+                        ) {
+                            if (isCompleted) {
+                                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                    Icon(Icons.Filled.Check, null, tint = Color.White, modifier = Modifier.size(12.dp))
+                                }
+                            }
+                        }
+                        if (index < steps.size - 1) {
+                            Box(
+                                Modifier
+                                    .width(2.dp)
+                                    .height(24.dp)
+                                    .background(if (stepNumber < currentStep) AccentGreen else colors.textTertiary.copy(alpha = 0.2f))
+                            )
+                        }
+                    }
+                    Spacer(Modifier.width(Spacing.Small))
+                    Column {
+                        Text(
+                            step,
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Medium,
+                            color = if (isCompleted) colors.textPrimary else colors.textTertiary
+                        )
+                        if (isCurrent && report.timestamp != null) {
+                            Text(
+                                formatTimestamp(report.timestamp),
+                                fontSize = 9.sp,
+                                color = colors.textTertiary
+                            )
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
