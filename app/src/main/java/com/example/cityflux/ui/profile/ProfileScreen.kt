@@ -92,6 +92,9 @@ fun ProfileScreen(
     // ── Logout Confirmation Dialog ──
     var showLogoutDialog by remember { mutableStateOf(false) }
 
+    // ── Help Center Dialog ──
+    var showHelpCenter by remember { mutableStateOf(false) }
+
     // ── Image Picker ──
     val imagePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
@@ -293,7 +296,7 @@ fun ProfileScreen(
                     // ═══════════════════════════════════════════════
                     QuickActionsSection(
                         context = context,
-                        snackbarHostState = snackbarHostState
+                        onHelpCenter = { showHelpCenter = true }
                     )
 
                     Spacer(Modifier.height(Spacing.XXLarge))
@@ -519,7 +522,8 @@ fun ProfileScreen(
                     // ═══════════════════════════════════════════════
                     DataStorageSection(
                         context = context,
-                        snackbarHostState = snackbarHostState
+                        snackbarHostState = snackbarHostState,
+                        state = state
                     )
 
                     Spacer(Modifier.height(Spacing.XXLarge))
@@ -694,12 +698,74 @@ fun ProfileScreen(
             }
         )
     }
+
+    // ═══════════════════════════════════════════════════════
+    // HELP CENTER DIALOG
+    // ═══════════════════════════════════════════════════════
+    if (showHelpCenter) {
+        AlertDialog(
+            onDismissRequest = { showHelpCenter = false },
+            containerColor = colors.cardBackground,
+            shape = RoundedCornerShape(CornerRadius.XLarge),
+            icon = {
+                Icon(
+                    Icons.Outlined.HelpOutline,
+                    contentDescription = null,
+                    tint = PrimaryBlue,
+                    modifier = Modifier.size(32.dp)
+                )
+            },
+            title = {
+                Text(
+                    "Help Center",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = colors.textPrimary
+                )
+            },
+            text = {
+                Column(
+                    modifier = Modifier.verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(Spacing.Medium)
+                ) {
+                    HelpItem(
+                        question = "How do I report an issue?",
+                        answer = "Go to the Report tab, tap '+' button, select the issue type, add photos and description, then submit."
+                    )
+                    HelpItem(
+                        question = "How do I track my report?",
+                        answer = "In the Report tab, tap 'My Reports' to see all your submissions with real-time status updates."
+                    )
+                    HelpItem(
+                        question = "How does Citizen Score work?",
+                        answer = "You earn 10 points for each report submitted and 25 bonus points when a report gets resolved. Unlock badges as you reach milestones!"
+                    )
+                    HelpItem(
+                        question = "How do I find parking?",
+                        answer = "Use the Parking tab to see nearby available spots with real-time occupancy data and navigation."
+                    )
+                    HelpItem(
+                        question = "What are alerts?",
+                        answer = "Alerts notify you about traffic updates, emergencies, and city announcements in your area. Customize them in Alert Preferences."
+                    )
+                    HelpItem(
+                        question = "How to contact support?",
+                        answer = "Email us at support@cityflux.app or use the Emergency Contacts section for urgent matters."
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showHelpCenter = false }) {
+                    Text(
+                        "Got it",
+                        color = PrimaryBlue,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+            }
+        )
+    }
 }
-
-
-// ═══════════════════════════════════════════════════════════════════
-// PROFILE HEADER — Hero section with avatar, name, badge
-// ═══════════════════════════════════════════════════════════════════
 
 @Composable
 private fun ProfileHeader(
@@ -1586,10 +1652,8 @@ private fun MiniStatCard(
 @Composable
 private fun QuickActionsSection(
     context: android.content.Context,
-    snackbarHostState: SnackbarHostState
+    onHelpCenter: () -> Unit
 ) {
-    val scope = rememberCoroutineScope()
-
     ProfileSection(title = "Quick Actions", icon = Icons.Outlined.Speed) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -1602,7 +1666,7 @@ private fun QuickActionsSection(
                 context.startActivity(Intent(Intent.ACTION_DIAL, Uri.parse("tel:100")))
             }
             QuickActionButton("Help Center", Icons.Outlined.HelpOutline, PrimaryBlue) {
-                scope.launch { snackbarHostState.showSnackbar("Coming soon") }
+                onHelpCenter()
             }
         }
     }
@@ -1936,7 +2000,8 @@ private fun EmergencyContactsSection(context: android.content.Context) {
 @Composable
 private fun DataStorageSection(
     context: android.content.Context,
-    snackbarHostState: SnackbarHostState
+    snackbarHostState: SnackbarHostState,
+    state: ProfileViewModel.ProfileUiState
 ) {
     val colors = MaterialTheme.cityFluxColors
     val scope = rememberCoroutineScope()
@@ -2015,17 +2080,72 @@ private fun DataStorageSection(
 
         HorizontalDivider(color = colors.divider, thickness = 0.5.dp)
 
-        // Export My Data
+        // Export My Data — real user data
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .clickable {
+                    val user = state.user
+                    val exportData = buildString {
+                        appendLine("═══════════════════════════════════")
+                        appendLine("   CityFlux — My Data Export")
+                        appendLine("═══════════════════════════════════")
+                        appendLine()
+                        appendLine("👤 Profile")
+                        appendLine("   Name: ${user?.name ?: "N/A"}")
+                        appendLine("   Email: ${user?.email ?: "N/A"}")
+                        appendLine("   Phone: ${user?.phone ?: "N/A"}")
+                        appendLine("   Role: ${user?.role ?: "Citizen"}")
+                        user?.createdAt?.let {
+                            val fmt = java.text.SimpleDateFormat("dd MMM yyyy", Locale.getDefault())
+                            appendLine("   Member since: ${fmt.format(it.toDate())}")
+                        }
+                        appendLine()
+                        appendLine("📊 Report Statistics")
+                        appendLine("   Total Reports: ${state.totalReports}")
+                        appendLine("   Resolved: ${state.resolvedReports}")
+                        appendLine("   In Progress: ${state.inProgressReports}")
+                        appendLine("   Pending: ${state.pendingReports}")
+                        appendLine()
+                        appendLine("📈 Today's Activity")
+                        appendLine("   Reports Today: ${state.todayReports}")
+                        appendLine("   Resolved Today: ${state.todayResolved}")
+                        appendLine()
+                        appendLine("🏆 Citizen Score: ${state.citizenScore} points")
+                        appendLine()
+                        appendLine("📅 Weekly Activity (last 7 days)")
+                        val dayLabels = listOf("Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat")
+                        state.weeklyStats.takeLast(7).forEachIndexed { i, count ->
+                            val cal = Calendar.getInstance()
+                            cal.add(Calendar.DAY_OF_YEAR, i - 6)
+                            val day = dayLabels[cal.get(Calendar.DAY_OF_WEEK) - 1]
+                            appendLine("   $day: $count reports")
+                        }
+                        appendLine()
+                        if (state.savedPlaces.isNotEmpty()) {
+                            appendLine("📍 Saved Places (${state.savedPlaces.size})")
+                            state.savedPlaces.forEach { place ->
+                                appendLine("   • ${place.name.ifEmpty { "Unnamed" }} — ${place.address}")
+                            }
+                            appendLine()
+                        }
+                        if (state.recentActivities.isNotEmpty()) {
+                            appendLine("📋 Recent Activity")
+                            state.recentActivities.forEach { activity ->
+                                appendLine("   • ${activity.title} — ${activity.status}")
+                            }
+                            appendLine()
+                        }
+                        appendLine("───────────────────────────────────")
+                        appendLine("Exported from CityFlux App")
+                        val now = java.text.SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.getDefault())
+                            .format(Date())
+                        appendLine("Date: $now")
+                    }
                     val shareIntent = Intent(Intent.ACTION_SEND).apply {
                         type = "text/plain"
-                        putExtra(
-                            Intent.EXTRA_TEXT,
-                            "CityFlux User Data Export\n\nThis is a summary of your report data."
-                        )
+                        putExtra(Intent.EXTRA_SUBJECT, "CityFlux — My Data Export")
+                        putExtra(Intent.EXTRA_TEXT, exportData)
                     }
                     context.startActivity(Intent.createChooser(shareIntent, "Export Data"))
                 }
@@ -2204,5 +2324,56 @@ private fun AppInfoCard(
             textAlign = TextAlign.Center,
             modifier = Modifier.fillMaxWidth()
         )
+    }
+}
+
+
+// ═══════════════════════════════════════════════════════════════════
+// HELP ITEM — FAQ row for Help Center dialog
+// ═══════════════════════════════════════════════════════════════════
+
+@Composable
+private fun HelpItem(question: String, answer: String) {
+    val colors = MaterialTheme.cityFluxColors
+    var expanded by remember { mutableStateOf(false) }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(CornerRadius.Medium))
+            .background(colors.surfaceVariant.copy(alpha = 0.5f))
+            .clickable { expanded = !expanded }
+            .padding(Spacing.Medium)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                Icons.Outlined.QuestionAnswer,
+                contentDescription = null,
+                tint = PrimaryBlue,
+                modifier = Modifier.size(18.dp)
+            )
+            Spacer(Modifier.width(Spacing.Small))
+            Text(
+                text = question,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = colors.textPrimary,
+                modifier = Modifier.weight(1f)
+            )
+            Icon(
+                if (expanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+                contentDescription = null,
+                tint = colors.textTertiary,
+                modifier = Modifier.size(20.dp)
+            )
+        }
+        AnimatedVisibility(visible = expanded) {
+            Text(
+                text = answer,
+                style = MaterialTheme.typography.bodySmall,
+                color = colors.textSecondary,
+                modifier = Modifier.padding(top = Spacing.Small, start = 26.dp)
+            )
+        }
     }
 }
