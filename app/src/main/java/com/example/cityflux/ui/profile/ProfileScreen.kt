@@ -2191,6 +2191,7 @@ private fun AppInfoCard(
     var showPrivacyPolicy by remember { mutableStateOf(false) }
     var showTermsOfService by remember { mutableStateOf(false) }
     var showRateApp by remember { mutableStateOf(false) }
+    var selectedRating by remember { mutableIntStateOf(0) }
     val versionName = remember {
         try {
             context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "1.0.0"
@@ -2259,7 +2260,10 @@ private fun AppInfoCard(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .clickable { showRateApp = true }
+                .clickable {
+                    selectedRating = 0
+                    showRateApp = true
+                }
                 .padding(vertical = Spacing.Medium),
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -2362,14 +2366,27 @@ private fun AppInfoCard(
 
     // ── Rate App Dialog ──
     if (showRateApp) {
-        var selectedRating by remember { mutableStateOf(0) }
-        val ratingLabels = listOf("", "Poor", "Fair", "Good", "Great", "Excellent!")
-
+        val ratingColor = when (selectedRating) {
+            1 -> AccentRed
+            2 -> AccentOrange
+            3 -> AccentAlerts
+            4 -> AccentGreen
+            5 -> PrimaryBlue
+            else -> colors.textTertiary
+        }
+        val ratingLabel = when (selectedRating) {
+            1 -> "Poor"
+            2 -> "Fair"
+            3 -> "Good"
+            4 -> "Very Good"
+            5 -> "Excellent"
+            else -> "Tap a star to rate"
+        }
         AlertDialog(
             onDismissRequest = { showRateApp = false },
             containerColor = colors.cardBackground,
             shape = RoundedCornerShape(CornerRadius.XLarge),
-            icon = { Icon(Icons.Filled.Star, contentDescription = null, tint = AccentYellow, modifier = Modifier.size(40.dp)) },
+            icon = { Icon(Icons.Filled.Star, contentDescription = null, tint = ratingColor, modifier = Modifier.size(40.dp)) },
             title = {
                 Text("Rate CityFlux", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = colors.textPrimary, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
             },
@@ -2382,54 +2399,39 @@ private fun AppInfoCard(
                         textAlign = TextAlign.Center
                     )
                     Spacer(Modifier.height(Spacing.Large))
-                    // Interactive star rating
+                    // Interactive star rating (1-5)
                     Row(horizontalArrangement = Arrangement.Center, modifier = Modifier.fillMaxWidth()) {
-                        (1..5).forEach { star ->
-                            Icon(
-                                if (star <= selectedRating) Icons.Filled.Star else Icons.Outlined.StarOutline,
-                                contentDescription = "Rate $star stars",
-                                tint = if (star <= selectedRating) AccentYellow else colors.textTertiary.copy(alpha = 0.4f),
-                                modifier = Modifier
-                                    .size(40.dp)
-                                    .clickable { selectedRating = star }
-                            )
-                            if (star < 5) Spacer(Modifier.width(4.dp))
+                        repeat(5) { index ->
+                            val star = index + 1
+                            IconButton(onClick = { selectedRating = star }) {
+                                Icon(
+                                    imageVector = if (star <= selectedRating) Icons.Filled.Star else Icons.Outlined.StarBorder,
+                                    contentDescription = "Rate $star",
+                                    tint = if (star <= selectedRating) ratingColor else colors.textTertiary,
+                                    modifier = Modifier.size(34.dp)
+                                )
+                            }
                         }
                     }
                     Spacer(Modifier.height(Spacing.Medium))
-                    if (selectedRating > 0) {
-                        Text(
-                            "⭐ $selectedRating/5 — ${ratingLabels[selectedRating]}",
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = FontWeight.SemiBold,
-                            color = AccentYellow
-                        )
-                    } else {
-                        Text(
-                            "Tap a star to rate",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = colors.textTertiary
-                        )
-                    }
+                    Text(
+                        if (selectedRating > 0) "$selectedRating/5 - $ratingLabel" else ratingLabel,
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = ratingColor
+                    )
                 }
             },
             confirmButton = {
-                TextButton(
-                    onClick = {
-                        showRateApp = false
-                        try {
-                            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=${context.packageName}")))
-                        } catch (_: Exception) {
-                            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://play.google.com/store/apps/details?id=${context.packageName}")))
-                        }
-                    },
-                    enabled = selectedRating > 0
-                ) {
-                    Text(
-                        "Rate on Play Store",
-                        color = if (selectedRating > 0) PrimaryBlue else colors.textTertiary,
-                        fontWeight = FontWeight.SemiBold
-                    )
+                TextButton(onClick = {
+                    showRateApp = false
+                    try {
+                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=${context.packageName}")))
+                    } catch (_: Exception) {
+                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://play.google.com/store/apps/details?id=${context.packageName}")))
+                    }
+                }, enabled = selectedRating > 0) {
+                    Text("Rate on Play Store", color = PrimaryBlue, fontWeight = FontWeight.SemiBold)
                 }
             },
             dismissButton = {
