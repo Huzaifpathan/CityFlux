@@ -2369,7 +2369,7 @@ private fun AppInfoCard(
         val ratingColor = when (selectedRating) {
             1 -> AccentRed
             2 -> AccentOrange
-            3 -> AccentAlerts
+            3 -> AccentYellow
             4 -> AccentGreen
             5 -> PrimaryBlue
             else -> colors.textTertiary
