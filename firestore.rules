@@ -118,6 +118,51 @@ service cloud.firestore {
     }
 
     // ═══════════════════════════════════════════════════════════
+    // 🆘 SOS ALERTS COLLECTION
+    // - Any authenticated user can create an SOS alert
+    // - All authenticated users can read SOS alerts
+    // - Only the creator or police/admin can update
+    // ═══════════════════════════════════════════════════════════
+    match /sos_alerts/{alertId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated()
+        && request.resource.data.userId == request.auth.uid;
+      allow update: if isAuthenticated() && (
+        resource.data.userId == request.auth.uid
+        || isPolice()
+        || isAdmin()
+      );
+      allow delete: if false;
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // 📢 ANNOUNCEMENTS COLLECTION
+    // - All authenticated users can read
+    // - Only police/admin can create/update
+    // ═══════════════════════════════════════════════════════════
+    match /announcements/{announcementId} {
+      allow read: if isAuthenticated();
+      allow write: if isPolice() || isAdmin();
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // 🅿️ PARKING REPORTS COLLECTION
+    // - Any authenticated user can create
+    // - All authenticated users can read
+    // ═══════════════════════════════════════════════════════════
+    match /parking_reports/{reportId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated()
+        && request.resource.data.userId == request.auth.uid;
+      allow update: if isAuthenticated() && (
+        resource.data.userId == request.auth.uid
+        || isPolice()
+        || isAdmin()
+      );
+      allow delete: if false;
+    }
+
+    // ═══════════════════════════════════════════════════════════
     // � PARKING VIOLATIONS COLLECTION
     // - Police can create violations (officerId must match auth uid)
     // - All authenticated users can read violations

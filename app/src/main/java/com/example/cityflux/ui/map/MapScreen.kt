@@ -539,36 +539,6 @@ fun MapScreen(
                     geodesic = true
                 )
 
-                // Dotted walking line: user location → nearest route point
-                if (userLocation != null) {
-                    val nearestPt = routePoints.minByOrNull { pt ->
-                        haversineDistance(userLocation!!, pt)
-                    }
-                    if (nearestPt != null) {
-                        Polyline(
-                            points = listOf(userLocation!!, nearestPt),
-                            color = Color(0xFF555555),
-                            width = 6f,
-                            pattern = listOf(Dot(), Gap(12f)),
-                            geodesic = true
-                        )
-                    }
-                }
-
-                // Dotted walking line: route end → destination marker
-                routeEnd?.let { dest ->
-                    val routeEndPt = routePoints.lastOrNull()
-                    if (routeEndPt != null && haversineDistance(routeEndPt, dest) > 0.01) {
-                        Polyline(
-                            points = listOf(routeEndPt, dest),
-                            color = Color(0xFF555555),
-                            width = 6f,
-                            pattern = listOf(Dot(), Gap(12f)),
-                            geodesic = true
-                        )
-                    }
-                }
-
                 // Start marker
                 routePoints.firstOrNull()?.let { start ->
                     Marker(
