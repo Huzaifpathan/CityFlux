@@ -1,15 +1,18 @@
 package com.example.cityflux.ui.dashboard
 
 import androidx.compose.animation.*
-import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
@@ -37,6 +40,7 @@ enum class CitizenTab(
  * Single-activity citizen shell with persistent bottom navigation.
  * Hosts 5 bottom tabs: Home, Map, Parking, Report, Alerts.
  * Profile is accessible from the Home screen header icon.
+ * Features: Crossfade transitions, animated tab icons, context-aware FAB.
  */
 @Composable
 fun CitizenMainScreen(
@@ -49,6 +53,18 @@ fun CitizenMainScreen(
     val notificationsVm: NotificationsViewModel = viewModel()
     val unreadCount by notificationsVm.unreadCount.collectAsState()
 
+    // Context-aware FAB config per tab
+    val fabConfig = when {
+        showProfile -> null
+        else -> when (tabs[selectedTab]) {
+            CitizenTab.HOME -> null // Home has its own SOS FAB
+            CitizenTab.MAP -> null  // Map has its own Go Live FAB
+            CitizenTab.PARKING -> FabConfig("Find Parking", Icons.Outlined.NearMe, AccentParking)
+            CitizenTab.REPORT -> null // Report screen has its own submit
+            CitizenTab.ALERTS -> null
+        }
+    }
+
     Scaffold(
         bottomBar = {
             NavigationBar(
@@ -59,11 +75,32 @@ fun CitizenMainScreen(
                     .height(64.dp)
             ) {
                 tabs.forEachIndexed { index, tab ->
-                    val selected = selectedTab == index
+                    val selected = selectedTab == index && !showProfile
+
+                    // Animated icon scale
+                    val iconScale by animateFloatAsState(
+                        targetValue = if (selected) 1.15f else 1f,
+                        animationSpec = spring(
+                            dampingRatio = Spring.DampingRatioMediumBouncy,
+                            stiffness = Spring.StiffnessLow
+                        ),
+                        label = "iconScale_$index"
+                    )
+
                     NavigationBarItem(
                         selected = selected,
                         onClick = { showProfile = false; selectedTab = index },
                         icon = {
+                            val iconContent: @Composable () -> Unit = {
+                                Icon(
+                                    imageVector = if (selected) tab.selectedIcon else tab.unselectedIcon,
+                                    contentDescription = tab.label,
+                                    modifier = Modifier
+                                        .size(24.dp)
+                                        .scale(iconScale)
+                                )
+                            }
+
                             if (tab == CitizenTab.ALERTS && unreadCount > 0) {
                                 BadgedBox(
                                     badge = {
@@ -77,32 +114,30 @@ fun CitizenMainScreen(
                                             )
                                         }
                                     }
-                                ) {
-                                    Icon(
-                                        imageVector = if (selected) tab.selectedIcon else tab.unselectedIcon,
-                                        contentDescription = tab.label,
-                                        modifier = Modifier.size(if (selected) 24.dp else 22.dp)
-                                    )
-                                }
+                                ) { iconContent() }
                             } else {
-                                Icon(
-                                    imageVector = if (selected) tab.selectedIcon else tab.unselectedIcon,
-                                    contentDescription = tab.label,
-                                    modifier = Modifier.size(if (selected) 24.dp else 22.dp)
-                                )
+                                iconContent()
                             }
                         },
                         label = {
-                            Text(
-                                text = tab.label,
-                                style = MaterialTheme.typography.labelSmall.copy(
-                                    fontSize = 10.sp,
-                                    lineHeight = 12.sp
-                                ),
-                                fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
+                            AnimatedContent(
+                                targetState = selected,
+                                transitionSpec = {
+                                    fadeIn(tween(200)) togetherWith fadeOut(tween(150))
+                                },
+                                label = "tabLabel_$index"
+                            ) { isSelected ->
+                                Text(
+                                    text = tab.label,
+                                    style = MaterialTheme.typography.labelSmall.copy(
+                                        fontSize = if (isSelected) 11.sp else 10.sp,
+                                        lineHeight = 12.sp
+                                    ),
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
                         },
                         alwaysShowLabel = true,
                         colors = NavigationBarItemDefaults.colors(
@@ -116,22 +151,44 @@ fun CitizenMainScreen(
                 }
             }
         },
+        // Context-aware FAB
+        floatingActionButton = {
+            fabConfig?.let { config ->
+                AnimatedVisibility(
+                    visible = true,
+                    enter = scaleIn(spring(dampingRatio = Spring.DampingRatioMediumBouncy)) + fadeIn(),
+                    exit = scaleOut() + fadeOut()
+                ) {
+                    FloatingActionButton(
+                        onClick = { /* Tab-specific action */ },
+                        containerColor = config.color,
+                        contentColor = Color.White,
+                        shape = CircleShape,
+                        modifier = Modifier.size(52.dp)
+                    ) {
+                        Icon(config.icon, config.label, modifier = Modifier.size(24.dp))
+                    }
+                }
+            }
+        },
         containerColor = MaterialTheme.colorScheme.background
     ) { innerPadding ->
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding)
-        ) {
+        // Crossfade transition between tabs
+        Crossfade(
+            targetState = if (showProfile) -1 else selectedTab,
+            animationSpec = tween(250),
+            label = "citizen_tab_crossfade",
+            modifier = Modifier.padding(innerPadding)
+        ) { tabIndex ->
             when {
-                showProfile -> com.example.cityflux.ui.profile.ProfileScreen(
+                tabIndex == -1 -> com.example.cityflux.ui.profile.ProfileScreen(
                     onLogout = onLogout,
                     onNavigateToMap = { _, _ ->
                         showProfile = false
                         selectedTab = tabs.indexOf(CitizenTab.MAP)
                     }
                 )
-                else -> when (tabs[selectedTab]) {
+                else -> when (tabs[tabIndex]) {
                     CitizenTab.HOME -> CitizenHomeContent(
                         onNavigateToTab = { tab -> selectedTab = tabs.indexOf(tab) },
                         onProfileClick = { showProfile = true }
@@ -156,3 +213,9 @@ fun CitizenMainScreen(
         }
     }
 }
+
+private data class FabConfig(
+    val label: String,
+    val icon: ImageVector,
+    val color: Color
+)
