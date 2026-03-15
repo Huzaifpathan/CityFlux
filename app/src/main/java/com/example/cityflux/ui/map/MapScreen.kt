@@ -260,11 +260,17 @@ fun MapScreen(
     var routeDistanceKm by remember { mutableStateOf(0.0) }
     var isRouteLoading by remember { mutableStateOf(false) }
 
-    // ── Live Location Tracking ──
-    var showLiveUsers by remember { mutableStateOf(false) }
-    var isLiveSharing by remember { mutableStateOf(false) }
+    // ── Live Location Tracking (synced with SharedPreferences) ──
+    val livePrefs = remember { context.getSharedPreferences("profile_settings", android.content.Context.MODE_PRIVATE) }
+    var isLiveSharing by remember { mutableStateOf(livePrefs.getBoolean("live_location", false)) }
+    var showLiveUsers by remember { mutableStateOf(isLiveSharing) } // auto-show if already sharing
     var liveLocations by remember { mutableStateOf<Map<String, LiveUserLocation>>(emptyMap()) }
     val currentUserId = remember { FirebaseAuth.getInstance().currentUser?.uid ?: "" }
+
+    // Check if service is actually running (own UID in RTDB = sharing)
+    LaunchedEffect(Unit) {
+        if (isLiveSharing) showLiveUsers = true
+    }
 
     // ── RTDB Listener for live locations ──
     DisposableEffect(showLiveUsers) {
@@ -1587,6 +1593,7 @@ fun MapScreen(
                         serviceIntent.action = LocationTrackingService.ACTION_STOP
                         context.startService(serviceIntent)
                         isLiveSharing = false
+                        livePrefs.edit().putBoolean("live_location", false).apply()
                         scope.launch {
                             snackbarHostState.showSnackbar("📍 Location sharing stopped")
                         }
@@ -1598,7 +1605,8 @@ fun MapScreen(
                             context.startService(serviceIntent)
                         }
                         isLiveSharing = true
-                        showLiveUsers = true // auto-enable live layer
+                        showLiveUsers = true
+                        livePrefs.edit().putBoolean("live_location", true).apply()
                         scope.launch {
                             snackbarHostState.showSnackbar("📍 Sharing your live location")
                         }

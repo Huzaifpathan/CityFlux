@@ -13,7 +13,6 @@ import android.os.Looper
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.example.cityflux.MainActivity
-import com.example.cityflux.R
 import com.google.android.gms.location.*
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.database.FirebaseDatabase
@@ -95,7 +94,7 @@ class LocationTrackingService : Service() {
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("CityFlux Live")
             .setContentText("Sharing your location with nearby citizens")
-            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setSmallIcon(android.R.drawable.ic_menu_mylocation)
             .setContentIntent(pendingIntent)
             .addAction(0, "Stop Sharing", stopPendingIntent)
             .setOngoing(true)
