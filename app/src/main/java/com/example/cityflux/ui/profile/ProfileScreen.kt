@@ -427,6 +427,45 @@ fun ProfileScreen(
                         )
 
                         SettingsInfoRow(
+                            icon = Icons.Outlined.ShareLocation,
+                            title = "Share Live Location",
+                            trailing = {
+                                var liveEnabled by remember {
+                                    mutableStateOf(prefs.getBoolean("live_location", false))
+                                }
+                                Switch(
+                                    checked = liveEnabled,
+                                    onCheckedChange = {
+                                        liveEnabled = it
+                                        prefs.edit().putBoolean("live_location", it).apply()
+                                        val serviceIntent = Intent(
+                                            context,
+                                            com.example.cityflux.service.LocationTrackingService::class.java
+                                        )
+                                        if (it) {
+                                            serviceIntent.action = com.example.cityflux.service.LocationTrackingService.ACTION_START
+                                            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                                                context.startForegroundService(serviceIntent)
+                                            } else {
+                                                context.startService(serviceIntent)
+                                            }
+                                        } else {
+                                            serviceIntent.action = com.example.cityflux.service.LocationTrackingService.ACTION_STOP
+                                            context.startService(serviceIntent)
+                                        }
+                                    },
+                                    colors = SwitchDefaults.colors(checkedTrackColor = AccentGreen)
+                                )
+                            }
+                        )
+
+                        HorizontalDivider(
+                            color = colors.divider,
+                            thickness = 0.5.dp,
+                            modifier = Modifier.padding(horizontal = Spacing.Small)
+                        )
+
+                        SettingsInfoRow(
                             icon = Icons.Outlined.VolumeUp,
                             title = "Alert Sounds",
                             trailing = {

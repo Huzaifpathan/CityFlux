@@ -63,11 +63,26 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.database.DataSnapshot
+import com.google.firebase.database.DatabaseError
+import com.google.firebase.database.FirebaseDatabase
+import com.google.firebase.database.ValueEventListener
+import com.example.cityflux.service.LocationTrackingService
 import java.util.Locale
 
 // ═══════════════════════════════════════════════════════════════════
 // MapScreen — Full-screen Google Map with live Firebase data
 // ═══════════════════════════════════════════════════════════════════
+
+data class LiveUserLocation(
+    val lat: Double = 0.0,
+    val lng: Double = 0.0,
+    val speed: Int = 0,
+    val heading: Double = 0.0,
+    val name: String = "Citizen",
+    val timestamp: Long = 0L
+)
 
 @SuppressLint("MissingPermission")
 @Composable
@@ -244,6 +259,49 @@ fun MapScreen(
     var routeDurationMin by remember { mutableStateOf(0) }
     var routeDistanceKm by remember { mutableStateOf(0.0) }
     var isRouteLoading by remember { mutableStateOf(false) }
+
+    // ── Live Location Tracking ──
+    var showLiveUsers by remember { mutableStateOf(false) }
+    var isLiveSharing by remember { mutableStateOf(false) }
+    var liveLocations by remember { mutableStateOf<Map<String, LiveUserLocation>>(emptyMap()) }
+    val currentUserId = remember { FirebaseAuth.getInstance().currentUser?.uid ?: "" }
+
+    // ── RTDB Listener for live locations ──
+    DisposableEffect(showLiveUsers) {
+        val rtdb = FirebaseDatabase.getInstance()
+        val ref = rtdb.getReference("live_locations")
+        val listener = if (showLiveUsers) {
+            object : ValueEventListener {
+                override fun onDataChange(snapshot: DataSnapshot) {
+                    val map = mutableMapOf<String, LiveUserLocation>()
+                    snapshot.children.forEach { child ->
+                        val uid = child.key ?: return@forEach
+                        val loc = LiveUserLocation(
+                            lat = child.child("lat").getValue(Double::class.java) ?: 0.0,
+                            lng = child.child("lng").getValue(Double::class.java) ?: 0.0,
+                            speed = child.child("speed").getValue(Int::class.java) ?: 0,
+                            heading = child.child("heading").getValue(Double::class.java) ?: 0.0,
+                            name = child.child("name").getValue(String::class.java) ?: "Citizen",
+                            timestamp = child.child("timestamp").getValue(Long::class.java) ?: 0L
+                        )
+                        // Only show users updated within last 2 minutes
+                        if (System.currentTimeMillis() - loc.timestamp < 120_000) {
+                            map[uid] = loc
+                        }
+                    }
+                    liveLocations = map
+                }
+                override fun onCancelled(error: DatabaseError) {
+                    Log.e("MapScreen", "Live locations listener cancelled", error.toException())
+                }
+            }.also { ref.addValueEventListener(it) }
+        } else null
+
+        onDispose {
+            listener?.let { ref.removeEventListener(it) }
+            if (!showLiveUsers) liveLocations = emptyMap()
+        }
+    }
 
     // ── Emergency Services Marker Bitmaps ──
     val hospitalBitmap = remember { createCircleMarkerBitmap(AccentGreen.toArgb(), 34) }
@@ -584,6 +642,34 @@ fun MapScreen(
                     )
                 }
             }
+
+            // ──────── Live User Location Markers ────────
+            if (showLiveUsers) {
+                liveLocations.forEach { (uid, loc) ->
+                    val isMe = uid == currentUserId
+                    val position = LatLng(loc.lat, loc.lng)
+                    val markerColor = if (isMe) BitmapDescriptorFactory.HUE_AZURE 
+                                      else BitmapDescriptorFactory.HUE_GREEN
+                    
+                    Marker(
+                        state = MarkerState(position = position),
+                        title = if (isMe) "You" else loc.name,
+                        snippet = "${loc.speed} km/h",
+                        icon = BitmapDescriptorFactory.defaultMarker(markerColor),
+                        rotation = loc.heading.toFloat(),
+                        flat = true,
+                        anchor = Offset(0.5f, 0.5f),
+                        onClick = {
+                            scope.launch {
+                                snackbarHostState.showSnackbar(
+                                    "${if (isMe) "You" else loc.name} • ${loc.speed} km/h"
+                                )
+                            }
+                            true
+                        }
+                    )
+                }
+            }
         }
 
         // ══════════════════════ Top Row: Back + Title + Toggles ══════════════════════
@@ -775,6 +861,14 @@ fun MapScreen(
                     activeColor = AccentRed,
                     badge = null,
                     onClick = { showHeatmap = !showHeatmap }
+                )
+                LayerChipWithBadge(
+                    label = "Live",
+                    icon = Icons.Outlined.People,
+                    isActive = showLiveUsers,
+                    activeColor = AccentGreen,
+                    badge = if (showLiveUsers && liveLocations.isNotEmpty()) "${liveLocations.size}" else null,
+                    onClick = { showLiveUsers = !showLiveUsers }
                 )
                 LayerChipWithBadge(
                     label = "Route",
@@ -1463,6 +1557,95 @@ fun MapScreen(
                     elevation = FloatingActionButtonDefaults.elevation(8.dp)
                 ) {
                     Icon(Icons.Outlined.ZoomOutMap, "Fit Route", Modifier.size(18.dp))
+                }
+            }
+        }
+
+        // ── Go Live Toggle Button ──
+        AnimatedVisibility(
+            visible = mapLoaded,
+            enter = fadeIn() + slideInVertically { it },
+            exit = fadeOut(),
+            modifier = Modifier
+                .align(Alignment.BottomStart)
+                .padding(start = Spacing.Large, bottom = 100.dp)
+        ) {
+            val liveButtonAlpha by infiniteTransition.animateFloat(
+                initialValue = 0.8f,
+                targetValue = 1.0f,
+                animationSpec = infiniteRepeatable(
+                    animation = tween(800),
+                    repeatMode = RepeatMode.Reverse
+                ),
+                label = "live_button_pulse"
+            )
+            
+            FloatingActionButton(
+                onClick = {
+                    val serviceIntent = Intent(context, LocationTrackingService::class.java)
+                    if (isLiveSharing) {
+                        serviceIntent.action = LocationTrackingService.ACTION_STOP
+                        context.startService(serviceIntent)
+                        isLiveSharing = false
+                        scope.launch {
+                            snackbarHostState.showSnackbar("📍 Location sharing stopped")
+                        }
+                    } else {
+                        serviceIntent.action = LocationTrackingService.ACTION_START
+                        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                            context.startForegroundService(serviceIntent)
+                        } else {
+                            context.startService(serviceIntent)
+                        }
+                        isLiveSharing = true
+                        showLiveUsers = true // auto-enable live layer
+                        scope.launch {
+                            snackbarHostState.showSnackbar("📍 Sharing your live location")
+                        }
+                    }
+                },
+                containerColor = if (isLiveSharing) AccentGreen.copy(alpha = liveButtonAlpha) else MaterialTheme.cityFluxColors.cardBackground,
+                contentColor = if (isLiveSharing) Color.White else MaterialTheme.cityFluxColors.textPrimary,
+                modifier = Modifier.size(48.dp),
+                shape = CircleShape,
+                elevation = FloatingActionButtonDefaults.elevation(4.dp)
+            ) {
+                Icon(
+                    if (isLiveSharing) Icons.Filled.LocationOn else Icons.Outlined.LocationOn,
+                    contentDescription = if (isLiveSharing) "Stop sharing" else "Go live",
+                    modifier = Modifier.size(22.dp)
+                )
+            }
+        }
+
+        // ── Live Users Count Badge ──
+        if (showLiveUsers && liveLocations.isNotEmpty()) {
+            Surface(
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .padding(start = Spacing.Large, bottom = 155.dp),
+                shape = RoundedCornerShape(CornerRadius.Round),
+                color = AccentGreen,
+                shadowElevation = 4.dp
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(6.dp)
+                            .clip(CircleShape)
+                            .background(Color.White)
+                    )
+                    Text(
+                        "${liveLocations.size} live",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White,
+                        fontSize = 10.sp
+                    )
                 }
             }
         }

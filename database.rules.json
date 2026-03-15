@@ -60,6 +60,34 @@
           ".validate": "newData.isNumber() && newData.val() <= now"
         }
       }
+    },
+
+    "live_locations": {
+      ".read": "auth != null",
+
+      "$userId": {
+        ".write": "auth != null && auth.uid === $userId",
+        ".validate": "newData.hasChildren(['lat','lng','timestamp'])",
+
+        "lat": {
+          ".validate": "newData.isNumber() && newData.val() >= -90 && newData.val() <= 90"
+        },
+        "lng": {
+          ".validate": "newData.isNumber() && newData.val() >= -180 && newData.val() <= 180"
+        },
+        "speed": {
+          ".validate": "newData.isNumber() && newData.val() >= 0"
+        },
+        "heading": {
+          ".validate": "newData.isNumber()"
+        },
+        "name": {
+          ".validate": "newData.isString()"
+        },
+        "timestamp": {
+          ".validate": "newData.isNumber()"
+        }
+      }
     }
   }
 }
