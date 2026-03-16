@@ -44,6 +44,8 @@ class LocationTrackingService : Service() {
     private val firestore = FirebaseFirestore.getInstance()
     private var userName: String = "Citizen"
 
+    private var isTracking = false
+
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onCreate() {
@@ -54,6 +56,10 @@ class LocationTrackingService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        // MUST call startForeground() immediately to satisfy the system requirement
+        // from startForegroundService(), even if we're about to stop.
+        showForegroundNotification()
+
         when (intent?.action) {
             ACTION_STOP -> {
                 stopTracking()
@@ -61,8 +67,10 @@ class LocationTrackingService : Service() {
                 stopSelf()
             }
             else -> {
-                startForeground()
-                startLocationUpdates()
+                if (!isTracking) {
+                    startLocationUpdates()
+                    isTracking = true
+                }
             }
         }
         return START_STICKY
@@ -76,7 +84,7 @@ class LocationTrackingService : Service() {
             }
     }
 
-    private fun startForeground() {
+    private fun showForegroundNotification() {
         val notificationIntent = Intent(this, MainActivity::class.java)
         val pendingIntent = PendingIntent.getActivity(
             this, 0, notificationIntent,
@@ -151,13 +159,20 @@ class LocationTrackingService : Service() {
             "timestamp" to System.currentTimeMillis()
         )
 
+        // Auto-remove entry if device goes offline unexpectedly
+        ref.onDisconnect().removeValue()
+
         ref.setValue(data)
+            .addOnSuccessListener {
+                Log.d(TAG, "Location pushed: ${location.latitude}, ${location.longitude}")
+            }
             .addOnFailureListener { e ->
                 Log.e(TAG, "Failed to push location", e)
             }
     }
 
     private fun stopTracking() {
+        isTracking = false
         try {
             if (::locationCallback.isInitialized) {
                 fusedLocationClient.removeLocationUpdates(locationCallback)
@@ -165,9 +180,13 @@ class LocationTrackingService : Service() {
         } catch (_: Exception) {}
 
         // Remove from RTDB so marker disappears
-        val uid = auth.currentUser?.uid ?: return
-        rtdb.getReference("live_locations").child(uid).removeValue()
-        Log.d(TAG, "Location tracking stopped, RTDB entry removed")
+        try {
+            val uid = auth.currentUser?.uid ?: return
+            rtdb.getReference("live_locations").child(uid).removeValue()
+            Log.d(TAG, "Location tracking stopped, RTDB entry removed")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to remove RTDB entry", e)
+        }
     }
 
     override fun onDestroy() {

@@ -2,13 +2,17 @@ package com.example.cityflux.ui.register
 
 import android.util.Log
 import android.util.Patterns
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.foundation.clickable
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.outlined.Email
+import androidx.compose.material.icons.outlined.LocalPolice
+import androidx.compose.material.icons.outlined.Lock
+import androidx.compose.material.icons.outlined.Person
+import androidx.compose.material.icons.outlined.Phone
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -17,6 +21,7 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.example.cityflux.ui.theme.*
 import com.google.firebase.auth.FirebaseAuth
@@ -38,7 +43,6 @@ fun RegisterScreen(
     var passwordVisible by remember { mutableStateOf(false) }
     var confirmPasswordVisible by remember { mutableStateOf(false) }
     var selectedRole by remember { mutableStateOf("") }
-    var roleDropdownExpanded by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var loading by remember { mutableStateOf(false) }
 
@@ -115,20 +119,24 @@ fun RegisterScreen(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
 
-            Spacer(modifier = Modifier.height(Spacing.Section))
+            Spacer(modifier = Modifier.height(Spacing.XXLarge))
+
+            CityFluxLogo(size = 64.dp)
+
+            Spacer(modifier = Modifier.height(Spacing.Medium))
 
             Text(
-                text = "CityFlux",
-                style = MaterialTheme.typography.headlineLarge,
+                text = "Join CityFlux",
+                style = MaterialTheme.typography.headlineMedium,
                 fontWeight = FontWeight.Bold,
                 color = colors.textPrimary
             )
 
             Text(
-                text = "Smart Traffic & Parking Mobility System",
+                text = "Create your account to get started",
                 style = MaterialTheme.typography.bodyMedium,
                 color = colors.textSecondary,
-                modifier = Modifier.padding(bottom = Spacing.Section)
+                modifier = Modifier.padding(bottom = Spacing.XLarge)
             )
 
             Card(
@@ -159,6 +167,14 @@ fun RegisterScreen(
                         color = colors.textPrimary,
                         modifier = Modifier
                             .align(Alignment.Start)
+                    )
+
+                    Text(
+                        text = "Fill in the details below",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = colors.textSecondary,
+                        modifier = Modifier
+                            .align(Alignment.Start)
                             .padding(bottom = Spacing.XLarge)
                     )
 
@@ -171,7 +187,14 @@ fun RegisterScreen(
                         },
                         label = "Full Name",
                         isError = nameTouched && nameError != null,
-                        errorMessage = if (nameTouched) nameError else null
+                        errorMessage = if (nameTouched) nameError else null,
+                        leadingIcon = {
+                            Icon(
+                                Icons.Outlined.Person,
+                                contentDescription = null,
+                                tint = colors.textSecondary
+                            )
+                        }
                     )
 
                     Spacer(modifier = Modifier.height(Spacing.Medium))
@@ -185,7 +208,14 @@ fun RegisterScreen(
                         },
                         label = "Email Address",
                         isError = emailTouched && emailError != null,
-                        errorMessage = if (emailTouched) emailError else null
+                        errorMessage = if (emailTouched) emailError else null,
+                        leadingIcon = {
+                            Icon(
+                                Icons.Outlined.Email,
+                                contentDescription = null,
+                                tint = colors.textSecondary
+                            )
+                        }
                     )
 
                     Spacer(modifier = Modifier.height(Spacing.Medium))
@@ -201,7 +231,14 @@ fun RegisterScreen(
                         },
                         label = "Mobile Number",
                         isError = mobileTouched && mobileError != null,
-                        errorMessage = if (mobileTouched) mobileError else null
+                        errorMessage = if (mobileTouched) mobileError else null,
+                        leadingIcon = {
+                            Icon(
+                                Icons.Outlined.Phone,
+                                contentDescription = null,
+                                tint = colors.textSecondary
+                            )
+                        }
                     )
 
                     Spacer(modifier = Modifier.height(Spacing.Medium))
@@ -218,6 +255,13 @@ fun RegisterScreen(
                         isError = passwordTouched && passwordError != null,
                         errorMessage = if (passwordTouched) passwordError else null,
                         visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                        leadingIcon = {
+                            Icon(
+                                Icons.Outlined.Lock,
+                                contentDescription = null,
+                                tint = colors.textSecondary
+                            )
+                        },
                         trailingIcon = {
                             TextButton(onClick = { passwordVisible = !passwordVisible }) {
                                 Text(
@@ -242,6 +286,13 @@ fun RegisterScreen(
                         isError = confirmPasswordTouched && confirmPasswordError != null,
                         errorMessage = if (confirmPasswordTouched) confirmPasswordError else null,
                         visualTransformation = if (confirmPasswordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                        leadingIcon = {
+                            Icon(
+                                Icons.Outlined.Lock,
+                                contentDescription = null,
+                                tint = colors.textSecondary
+                            )
+                        },
                         trailingIcon = {
                             TextButton(onClick = { confirmPasswordVisible = !confirmPasswordVisible }) {
                                 Text(
@@ -255,65 +306,75 @@ fun RegisterScreen(
 
                     Spacer(modifier = Modifier.height(Spacing.Medium))
 
-                    // ── Role Selection Dropdown ──
-                    Box(
+                    // ── Role Selection — Modern Chips ──
+                    Text(
+                        text = "I am a",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = colors.textPrimary,
                         modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { roleDropdownExpanded = !roleDropdownExpanded }
+                            .align(Alignment.Start)
+                            .padding(bottom = Spacing.Small)
+                    )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(Spacing.Medium)
                     ) {
-                        OutlinedTextField(
-                            value = roleOptions.find { it.second == selectedRole }?.first ?: "",
-                            onValueChange = {},
-                            readOnly = true,
-                            label = { Text("Select Your Role", style = MaterialTheme.typography.bodyMedium) },
-                            modifier = Modifier.fillMaxWidth(),
-                            isError = roleError != null,
-                            trailingIcon = {
-                                IconButton(onClick = { roleDropdownExpanded = !roleDropdownExpanded }) {
+                        roleOptions.forEach { (displayName, roleValue) ->
+                            val isSelected = selectedRole == roleValue
+                            val roleIcon = if (roleValue == "citizen")
+                                Icons.Outlined.Person else Icons.Outlined.LocalPolice
+                            val chipBorderColor = if (isSelected) PrimaryBlue
+                                else if (roleError != null) AccentRed
+                                else colors.inputBorder
+
+                            Card(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(80.dp)
+                                    .then(
+                                        if (isSelected) Modifier.border(
+                                            2.dp, PrimaryBlue,
+                                            RoundedCornerShape(CornerRadius.Medium)
+                                        ) else Modifier.border(
+                                            1.dp, chipBorderColor,
+                                            RoundedCornerShape(CornerRadius.Medium)
+                                        )
+                                    ),
+                                shape = RoundedCornerShape(CornerRadius.Medium),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = if (isSelected)
+                                        PrimaryBlue.copy(alpha = 0.08f)
+                                    else colors.inputBackground
+                                ),
+                                onClick = {
+                                    selectedRole = roleValue
+                                    roleError = null
+                                }
+                            ) {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .padding(Spacing.Small),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.Center
+                                ) {
                                     Icon(
-                                        Icons.Filled.ArrowDropDown,
-                                        contentDescription = "Select role",
-                                        tint = if (roleError != null) AccentRed else colors.textSecondary
+                                        imageVector = roleIcon,
+                                        contentDescription = displayName,
+                                        tint = if (isSelected) PrimaryBlue else colors.textSecondary,
+                                        modifier = Modifier.size(28.dp)
+                                    )
+                                    Spacer(modifier = Modifier.height(Spacing.XSmall))
+                                    Text(
+                                        text = displayName,
+                                        style = MaterialTheme.typography.labelMedium,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                        color = if (isSelected) PrimaryBlue else colors.textPrimary,
+                                        textAlign = TextAlign.Center
                                     )
                                 }
-                            },
-                            shape = RoundedCornerShape(CornerRadius.Medium),
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedBorderColor = if (roleError != null) AccentRed else colors.inputBorderFocused,
-                                unfocusedBorderColor = if (roleError != null) AccentRed else colors.inputBorder,
-                                focusedLabelColor = if (roleError != null) AccentRed else PrimaryBlue,
-                                unfocusedLabelColor = if (roleError != null) AccentRed else colors.textSecondary,
-                                cursorColor = PrimaryBlue,
-                                focusedContainerColor = colors.inputBackground,
-                                unfocusedContainerColor = colors.inputBackground,
-                                focusedTextColor = colors.textPrimary,
-                                unfocusedTextColor = colors.textPrimary,
-                                errorBorderColor = AccentRed,
-                                errorLabelColor = AccentRed
-                            )
-                        )
-
-                        DropdownMenu(
-                            expanded = roleDropdownExpanded,
-                            onDismissRequest = { roleDropdownExpanded = false },
-                            modifier = Modifier.fillMaxWidth(0.7f)
-                        ) {
-                            roleOptions.forEach { (displayName, roleValue) ->
-                                DropdownMenuItem(
-                                    text = {
-                                        Text(
-                                            text = displayName,
-                                            style = MaterialTheme.typography.bodyLarge,
-                                            fontWeight = if (selectedRole == roleValue) FontWeight.SemiBold else FontWeight.Normal,
-                                            color = if (selectedRole == roleValue) PrimaryBlue else colors.textPrimary
-                                        )
-                                    },
-                                    onClick = {
-                                        selectedRole = roleValue
-                                        roleError = null
-                                        roleDropdownExpanded = false
-                                    }
-                                )
                             }
                         }
                     }
@@ -341,7 +402,7 @@ fun RegisterScreen(
                     Spacer(modifier = Modifier.height(Spacing.XLarge))
 
                     PrimaryButton(
-                        text = "CREATE ACCOUNT",
+                        text = "Create Account",
                         onClick = {
                             errorMessage = null
 
@@ -395,21 +456,46 @@ fun RegisterScreen(
                         modifier = Modifier.fillMaxWidth()
                     )
 
-                    Spacer(modifier = Modifier.height(Spacing.Large))
+                    Spacer(modifier = Modifier.height(Spacing.XLarge))
 
+                    // ── OR Divider ──
                     Row(
+                        modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
+                        HorizontalDivider(
+                            modifier = Modifier.weight(1f),
+                            color = colors.inputBorder
+                        )
                         Text(
-                            text = "Already have an account? ",
+                            "  OR  ",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = colors.textTertiary
+                        )
+                        HorizontalDivider(
+                            modifier = Modifier.weight(1f),
+                            color = colors.inputBorder
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(Spacing.Medium))
+
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = "Already have an account?",
                             style = MaterialTheme.typography.bodyMedium,
                             color = colors.textSecondary
                         )
                         TextButton(onClick = onLoginClick) {
                             Text(
-                                "Login",
+                                "Sign In",
                                 color = PrimaryBlue,
-                                fontWeight = FontWeight.SemiBold
+                                fontWeight = FontWeight.Bold,
+                                style = MaterialTheme.typography.bodyLarge
                             )
                         }
                     }

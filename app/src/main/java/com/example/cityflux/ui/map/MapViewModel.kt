@@ -4,10 +4,12 @@ import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.cityflux.data.RealtimeDbService
+import com.example.cityflux.model.LiveUserLocation
 import com.example.cityflux.model.ParkingLive
 import com.example.cityflux.model.ParkingSpot
 import com.example.cityflux.model.Report
 import com.example.cityflux.model.TrafficStatus
+import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
 import kotlinx.coroutines.flow.*
@@ -34,6 +36,7 @@ class MapViewModel : ViewModel() {
         val parkingSpots: List<ParkingSpot> = emptyList(),
         val parkingLive: Map<String, ParkingLive> = emptyMap(),
         val incidents: List<Report> = emptyList(),
+        val liveLocations: Map<String, LiveUserLocation> = emptyMap(),
         val isOffline: Boolean = false,
         val error: String? = null
     )
@@ -42,10 +45,12 @@ class MapViewModel : ViewModel() {
     val uiState: StateFlow<MapUiState> = _uiState.asStateFlow()
 
     private val firestore = FirebaseFirestore.getInstance()
+    private val currentUserId = FirebaseAuth.getInstance().currentUser?.uid ?: ""
 
     init {
         observeTraffic()
         observeParkingLive()
+        observeLiveLocations()
         fetchParkingSpots()
         fetchIncidents()
     }
@@ -88,6 +93,21 @@ class MapViewModel : ViewModel() {
         }
     }
 
+    private fun observeLiveLocations() {
+        viewModelScope.launch {
+            RealtimeDbService.observeLiveLocations()
+                .catch { e ->
+                    Log.e(TAG, "Live locations observe error", e)
+                    _uiState.update { it.copy(error = "Live locations unavailable") }
+                }
+                .collect { map ->
+                    _uiState.update {
+                        it.copy(liveLocations = map, isLoading = false)
+                    }
+                }
+        }
+    }
+
     // ═══════════════════════════════════════════════════════
     // Firestore one-shot + real-time listeners
     // ═══════════════════════════════════════════════════════
@@ -111,7 +131,9 @@ class MapViewModel : ViewModel() {
     }
 
     private fun fetchIncidents() {
+        if (currentUserId.isEmpty()) return
         firestore.collection("reports")
+            .whereEqualTo("userId", currentUserId)
             .orderBy("timestamp", Query.Direction.DESCENDING)
             .limit(50)
             .addSnapshotListener { snapshot, error ->
@@ -127,7 +149,7 @@ class MapViewModel : ViewModel() {
                 _uiState.update {
                     it.copy(incidents = reports, isLoading = false)
                 }
-                Log.d(TAG, "Loaded ${reports.size} incidents from Firestore")
+                Log.d(TAG, "Loaded ${reports.size} of my incidents from Firestore")
             }
     }
 
@@ -139,6 +161,7 @@ class MapViewModel : ViewModel() {
         _uiState.update { it.copy(isLoading = true, error = null, isOffline = false) }
         observeTraffic()
         observeParkingLive()
+        observeLiveLocations()
         fetchParkingSpots()
         fetchIncidents()
     }

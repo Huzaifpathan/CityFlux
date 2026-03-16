@@ -95,7 +95,7 @@ fun ReportsScreen(
 
     // ── Dialog State ──
     var photoDialogUrl by remember { mutableStateOf<String?>(null) }
-    var expandedReportId by remember { mutableStateOf<String?>(null) }
+    var selectedReport by remember { mutableStateOf<Report?>(null) }
 
     val statusFilters = listOf("All", "Pending", "In Progress", "Resolved")
     val typeFilters = listOf(
@@ -618,29 +618,34 @@ fun ReportsScreen(
                                 visible = true,
                                 delay = staggeredDelay(index)
                             ) {
-                                PremiumReportCard(
+                                PoliceCompactReportCard(
                                     report = report,
-                                    isExpanded = expandedReportId == report.id,
-                                    onToggleExpand = {
-                                        expandedReportId = if (expandedReportId == report.id) null else report.id
-                                    },
-                                    onViewPhoto = { url -> photoDialogUrl = url },
-                                    onViewLocation = { lat, lng ->
-                                        try {
-                                            val uri = Uri.parse("geo:$lat,$lng?q=$lat,$lng")
-                                            context.startActivity(Intent(Intent.ACTION_VIEW, uri))
-                                        } catch (_: Exception) {
-                                            val webUri = Uri.parse("https://www.google.com/maps?q=$lat,$lng")
-                                            context.startActivity(Intent(Intent.ACTION_VIEW, webUri))
-                                        }
-                                    },
-                                    onTakeAction = { onTakeAction(report) }
+                                    onClick = { selectedReport = report }
                                 )
                             }
                         }
                     }
                 }
             }
+        }
+
+        // ══════════════════════ Report Detail Dialog ══════════════════════
+        if (selectedReport != null) {
+            PoliceReportDetailDialog(
+                report = selectedReport!!,
+                onDismiss = { selectedReport = null },
+                onViewPhoto = { url -> photoDialogUrl = url },
+                onViewLocation = { lat, lng ->
+                    try {
+                        val uri = Uri.parse("geo:$lat,$lng?q=$lat,$lng")
+                        context.startActivity(Intent(Intent.ACTION_VIEW, uri))
+                    } catch (_: Exception) {
+                        val webUri = Uri.parse("https://www.google.com/maps?q=$lat,$lng")
+                        context.startActivity(Intent(Intent.ACTION_VIEW, webUri))
+                    }
+                },
+                onTakeAction = { onTakeAction(selectedReport!!) }
+            )
         }
 
         // ══════════════════════ Photo Viewer Dialog ══════════════════════
@@ -1059,15 +1064,160 @@ private fun ReportTypeCategoryChip(
 
 
 // ═══════════════════════════════════════════════════════════════════
-// Premium Report Card
+// Police Compact Report Card
 // ═══════════════════════════════════════════════════════════════════
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun PremiumReportCard(
+private fun PoliceCompactReportCard(
     report: Report,
-    isExpanded: Boolean,
-    onToggleExpand: () -> Unit,
+    onClick: () -> Unit
+) {
+    val colors = MaterialTheme.cityFluxColors
+    val accentColor = when (report.type.lowercase()) {
+        "accident" -> AccentRed
+        "illegal_parking" -> AccentAlerts
+        "hawker" -> AccentOrange
+        "road_damage" -> AccentIssues
+        "traffic_violation" -> AccentTraffic
+        else -> PrimaryBlue
+    }
+    val typeLabel = report.type.replace("_", " ").replaceFirstChar { it.uppercase() }
+    val typeIcon = when (report.type.lowercase()) {
+        "accident" -> Icons.Outlined.CarCrash
+        "illegal_parking" -> Icons.Outlined.LocalParking
+        "hawker" -> Icons.Outlined.Store
+        "road_damage" -> Icons.Outlined.Warning
+        "traffic_violation" -> Icons.Outlined.Traffic
+        else -> Icons.Outlined.ReportProblem
+    }
+    val timeAgo = report.timestamp?.let {
+        DateUtils.getRelativeTimeSpanString(
+            it.toDate().time, System.currentTimeMillis(), DateUtils.MINUTE_IN_MILLIS
+        ).toString()
+    } ?: "Unknown"
+
+    Card(
+        onClick = onClick,
+        modifier = Modifier
+            .fillMaxWidth()
+            .shadow(4.dp, RoundedCornerShape(CornerRadius.Large), ambientColor = colors.cardShadow),
+        shape = RoundedCornerShape(CornerRadius.Large),
+        colors = CardDefaults.cardColors(containerColor = colors.cardBackground)
+    ) {
+        Row(modifier = Modifier.height(IntrinsicSize.Min)) {
+            // Accent bar
+            Box(
+                modifier = Modifier
+                    .width(4.dp)
+                    .fillMaxHeight()
+                    .clip(RoundedCornerShape(topStart = CornerRadius.Large, bottomStart = CornerRadius.Large))
+                    .background(Brush.verticalGradient(listOf(accentColor, accentColor.copy(alpha = 0.4f))))
+            )
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(Spacing.Medium),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Thumbnail or type icon
+                if (report.imageUrl.isNotBlank()) {
+                    AsyncImage(
+                        model = ImageRequest.Builder(LocalContext.current)
+                            .data(report.imageUrl).crossfade(true).build(),
+                        contentDescription = null,
+                        modifier = Modifier
+                            .size(48.dp)
+                            .clip(RoundedCornerShape(12.dp)),
+                        contentScale = ContentScale.Crop
+                    )
+                } else {
+                    Box(
+                        modifier = Modifier
+                            .size(48.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(accentColor.copy(alpha = 0.1f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(typeIcon, null, tint = accentColor, modifier = Modifier.size(24.dp))
+                    }
+                }
+
+                Spacer(Modifier.width(12.dp))
+
+                // Title + description + badges
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        report.title.ifBlank { typeLabel },
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = colors.textPrimary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    if (report.description.isNotBlank()) {
+                        Text(
+                            report.description,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = colors.textSecondary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            lineHeight = 16.sp
+                        )
+                    }
+                    Spacer(Modifier.height(4.dp))
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Surface(
+                            shape = RoundedCornerShape(4.dp),
+                            color = accentColor.copy(alpha = 0.1f)
+                        ) {
+                            Text(
+                                typeLabel,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = accentColor,
+                                fontWeight = FontWeight.SemiBold,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
+                        Text(
+                            "· $timeAgo",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = colors.textTertiary
+                        )
+                    }
+                }
+
+                Spacer(Modifier.width(8.dp))
+
+                // Status + chevron
+                Column(horizontalAlignment = Alignment.End) {
+                    StatusChip(status = report.status)
+                    Spacer(Modifier.height(6.dp))
+                    Icon(
+                        Icons.Outlined.ChevronRight,
+                        contentDescription = "View details",
+                        tint = colors.textTertiary.copy(alpha = 0.5f),
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+            }
+        }
+    }
+}
+
+
+// ═══════════════════════════════════════════════════════════════════
+// Police Report Detail Dialog — Full-screen detail view
+// ═══════════════════════════════════════════════════════════════════
+
+@Composable
+private fun PoliceReportDetailDialog(
+    report: Report,
+    onDismiss: () -> Unit,
     onViewPhoto: (String) -> Unit,
     onViewLocation: (Double, Double) -> Unit,
     onTakeAction: () -> Unit
@@ -1095,89 +1245,102 @@ private fun PremiumReportCard(
             it.toDate().time, System.currentTimeMillis(), DateUtils.MINUTE_IN_MILLIS
         ).toString()
     } ?: "Unknown"
+    val formattedTime = report.timestamp?.let {
+        SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.getDefault()).format(it.toDate())
+    } ?: "Unknown"
 
-    Card(
-        onClick = onToggleExpand,
-        modifier = Modifier
-            .fillMaxWidth()
-            .shadow(
-                elevation = if (isExpanded) 12.dp else 4.dp,
-                shape = RoundedCornerShape(CornerRadius.Large),
-                ambientColor = if (isExpanded) accentColor.copy(alpha = 0.15f) else colors.cardShadow,
-                spotColor = if (isExpanded) accentColor.copy(alpha = 0.1f) else colors.cardShadowMedium
-            ),
-        shape = RoundedCornerShape(CornerRadius.Large),
-        colors = CardDefaults.cardColors(containerColor = colors.cardBackground),
-        border = if (isExpanded) BorderStroke(1.dp, accentColor.copy(alpha = 0.3f)) else null
-    ) {
-        Row(modifier = Modifier.height(IntrinsicSize.Min)) {
-            // Accent gradient bar
-            Box(
-                modifier = Modifier
-                    .width(4.dp)
-                    .fillMaxHeight()
-                    .clip(
-                        RoundedCornerShape(
-                            topStart = CornerRadius.Large,
-                            bottomStart = CornerRadius.Large
-                        )
-                    )
-                    .background(
-                        Brush.verticalGradient(
-                            listOf(accentColor, accentColor.copy(alpha = 0.4f))
-                        )
-                    )
-            )
+    val isPending = report.status.equals("Pending", true) || report.status.equals("submitted", true)
+    val isResolved = report.status.equals("Resolved", true)
+    val isInProgress = report.status.equals("In Progress", true) || report.status.equals("in_progress", true)
 
-            Column(modifier = Modifier.padding(Spacing.Large)) {
-                // ── Header Row ──
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
+    // Priority computation
+    val ageMs = report.timestamp?.let { System.currentTimeMillis() - it.toDate().time } ?: 0L
+    val priority = when {
+        report.type.equals("accident", true) -> "URGENT"
+        isPending && ageMs > 24 * 60 * 60 * 1000 -> "HIGH"
+        isInProgress -> "MEDIUM"
+        else -> "NORMAL"
+    }
+    val priorityColor = when (priority) {
+        "URGENT" -> AccentRed
+        "HIGH" -> AccentOrange
+        "MEDIUM" -> AccentAlerts
+        else -> colors.textTertiary
+    }
+
+    val context = LocalContext.current
+
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .fillMaxHeight(0.92f),
+            shape = RoundedCornerShape(CornerRadius.XLarge),
+            colors = CardDefaults.cardColors(containerColor = colors.cardBackground),
+            elevation = CardDefaults.cardElevation(defaultElevation = 16.dp)
+        ) {
+            Column(modifier = Modifier.fillMaxSize()) {
+                // ── Gradient Header ──
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(
+                            Brush.verticalGradient(
+                                listOf(accentColor.copy(alpha = 0.15f), Color.Transparent)
+                            )
+                        )
+                        .padding(Spacing.Large)
                 ) {
-                    // Type icon badge with gradient background
-                    Box(
-                        modifier = Modifier
-                            .size(44.dp)
-                            .clip(RoundedCornerShape(14.dp))
-                            .background(
-                                Brush.linearGradient(
-                                    listOf(
-                                        accentColor.copy(alpha = 0.15f),
-                                        accentColor.copy(alpha = 0.05f)
+                    Column {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(44.dp)
+                                        .clip(RoundedCornerShape(14.dp))
+                                        .background(
+                                            Brush.linearGradient(
+                                                listOf(accentColor.copy(alpha = 0.15f), accentColor.copy(alpha = 0.05f))
+                                            )
+                                        ),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(typeIcon, null, tint = accentColor, modifier = Modifier.size(24.dp))
+                                }
+                                Spacer(Modifier.width(12.dp))
+                                Column {
+                                    Text(
+                                        report.title.ifBlank { typeLabel },
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = colors.textPrimary,
+                                        maxLines = 2,
+                                        overflow = TextOverflow.Ellipsis
                                     )
-                                )
-                            ),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            typeIcon,
-                            null,
-                            tint = accentColor,
-                            modifier = Modifier.size(24.dp)
-                        )
-                    }
+                                }
+                            }
+                            IconButton(
+                                onClick = onDismiss,
+                                modifier = Modifier
+                                    .size(32.dp)
+                                    .background(colors.textTertiary.copy(alpha = 0.1f), CircleShape)
+                            ) {
+                                Icon(Icons.Filled.Close, "Close", tint = colors.textPrimary, modifier = Modifier.size(18.dp))
+                            }
+                        }
 
-                    Spacer(Modifier.width(12.dp))
+                        Spacer(Modifier.height(10.dp))
 
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            report.title.ifBlank { typeLabel },
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.Bold,
-                            color = colors.textPrimary,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                        Spacer(Modifier.height(3.dp))
+                        // Badges row
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
-                            Surface(
-                                shape = RoundedCornerShape(4.dp),
-                                color = accentColor.copy(alpha = 0.1f)
-                            ) {
+                            Surface(shape = RoundedCornerShape(4.dp), color = accentColor.copy(alpha = 0.1f)) {
                                 Text(
                                     typeLabel,
                                     style = MaterialTheme.typography.labelSmall,
@@ -1186,14 +1349,9 @@ private fun PremiumReportCard(
                                     modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                                 )
                             }
-                            // Priority badge
-                            val isPending = report.status.equals("Pending", true) ||
-                                    report.status.equals("submitted", true)
+                            StatusChip(status = report.status)
                             if (isPending) {
-                                Surface(
-                                    shape = RoundedCornerShape(4.dp),
-                                    color = AccentRed.copy(alpha = 0.1f)
-                                ) {
+                                Surface(shape = RoundedCornerShape(4.dp), color = AccentRed.copy(alpha = 0.1f)) {
                                     Text(
                                         "NEEDS ACTION",
                                         style = MaterialTheme.typography.labelSmall,
@@ -1205,299 +1363,191 @@ private fun PremiumReportCard(
                                     )
                                 }
                             }
+                            if (priority != "NORMAL") {
+                                Surface(shape = RoundedCornerShape(4.dp), color = priorityColor.copy(alpha = 0.15f)) {
+                                    Text(
+                                        priority,
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = priorityColor,
+                                        fontSize = 9.sp
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // ── Scrollable Content ──
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .verticalScroll(rememberScrollState())
+                        .padding(horizontal = Spacing.Large)
+                ) {
+                    // Photo section
+                    if (report.imageUrl.isNotBlank()) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(200.dp)
+                                .clip(RoundedCornerShape(CornerRadius.Medium))
+                                .clickable { onViewPhoto(report.imageUrl) }
+                        ) {
+                            AsyncImage(
+                                model = ImageRequest.Builder(LocalContext.current)
+                                    .data(report.imageUrl).crossfade(true).build(),
+                                contentDescription = "Report photo",
+                                modifier = Modifier.fillMaxSize(),
+                                contentScale = ContentScale.Crop
+                            )
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .background(
+                                        Brush.verticalGradient(
+                                            listOf(Color.Transparent, Color.Black.copy(alpha = 0.4f))
+                                        )
+                                    ),
+                                contentAlignment = Alignment.BottomEnd
+                            ) {
+                                Surface(
+                                    modifier = Modifier.padding(8.dp),
+                                    shape = RoundedCornerShape(CornerRadius.Small),
+                                    color = Color.Black.copy(alpha = 0.5f)
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                    ) {
+                                        Icon(Icons.Outlined.ZoomIn, null, tint = Color.White, modifier = Modifier.size(14.dp))
+                                        Text("Tap to enlarge", fontSize = 10.sp, color = Color.White)
+                                    }
+                                }
+                            }
+                        }
+                        Spacer(Modifier.height(Spacing.Medium))
+                    }
+
+                    // Description
+                    if (report.description.isNotBlank()) {
+                        Text(
+                            "Description",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = colors.textPrimary
+                        )
+                        Spacer(Modifier.height(Spacing.Small))
+                        Text(
+                            report.description,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = colors.textSecondary,
+                            lineHeight = 18.sp
+                        )
+                        Spacer(Modifier.height(Spacing.Large))
+                    }
+
+                    // Details section
+                    Text(
+                        "Details",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = colors.textPrimary
+                    )
+                    Spacer(Modifier.height(Spacing.Small))
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(CornerRadius.Medium),
+                        color = colors.textTertiary.copy(alpha = 0.04f)
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            DetailRow(icon = Icons.Outlined.Tag, label = "Report ID", value = report.id.take(8) + "...", colors = colors)
+                            DetailRow(icon = Icons.Outlined.PriorityHigh, label = "Priority", value = priority, colors = colors)
+                            DetailRow(icon = Icons.Outlined.AccessTime, label = "Time", value = formattedTime, colors = colors)
+                            DetailRow(icon = Icons.Outlined.Schedule, label = "Ago", value = timeAgo, colors = colors)
+                            if (report.latitude != 0.0 && report.longitude != 0.0) {
+                                DetailRow(
+                                    icon = Icons.Outlined.LocationOn,
+                                    label = "Location",
+                                    value = "%.5f, %.5f".format(report.latitude, report.longitude),
+                                    colors = colors
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(Modifier.height(Spacing.Large))
+
+                    // Resolved Proofs & Chat sections
+                    if (isResolved || isInProgress) {
+                        ResolvedProofsSection(reportId = report.id, onViewPhoto = onViewPhoto)
+                        Spacer(Modifier.height(Spacing.Medium))
+                        ResolvedChatSection(reportId = report.id)
+                        Spacer(Modifier.height(Spacing.Medium))
+                    }
+
+                    Spacer(Modifier.height(Spacing.Medium))
+                }
+
+                // ── Bottom Action Bar ──
+                HorizontalDivider(color = colors.cardBorder.copy(alpha = 0.15f))
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = Spacing.Large, vertical = Spacing.Medium),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    if (!isResolved) {
+                        Button(
+                            onClick = onTakeAction,
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(44.dp),
+                            shape = RoundedCornerShape(CornerRadius.Medium),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (isInProgress) PrimaryBlue else AccentOrange
+                            ),
+                            elevation = ButtonDefaults.buttonElevation(2.dp, 0.dp)
+                        ) {
+                            Icon(Icons.Outlined.OpenInNew, null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(6.dp))
                             Text(
-                                "· $timeAgo",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = colors.textTertiary
+                                if (isInProgress) "Continue Action" else "Take Action",
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = TextOnPrimary
                             )
                         }
                     }
 
-                    // Status chip + expand icon
-                    Column(horizontalAlignment = Alignment.End) {
-                        StatusChip(status = report.status)
-                        Spacer(Modifier.height(4.dp))
-                        Icon(
-                            if (isExpanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
-                            "Toggle details",
-                            tint = colors.textTertiary.copy(alpha = 0.5f),
-                            modifier = Modifier.size(18.dp)
-                        )
-                    }
-                }
-
-                // ── Full description (expanded only) ──
-                if (report.description.isNotBlank() && isExpanded) {
-                    Spacer(Modifier.height(Spacing.Medium))
-                    Text(
-                        report.description,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = colors.textSecondary,
-                        maxLines = 10,
-                        overflow = TextOverflow.Ellipsis,
-                        lineHeight = 18.sp
-                    )
-                }
-
-                // ── Collapsed preview info ──
-                if (!isExpanded) {
-                    if (report.description.isNotBlank() || report.imageUrl.isNotBlank() ||
-                        (report.latitude != 0.0 && report.longitude != 0.0)
-                    ) {
-                        Spacer(Modifier.height(Spacing.Small))
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            // Photo thumbnail
-                            if (report.imageUrl.isNotBlank()) {
-                                AsyncImage(
-                                    model = ImageRequest.Builder(LocalContext.current)
-                                        .data(report.imageUrl).crossfade(true).build(),
-                                    contentDescription = null,
-                                    modifier = Modifier
-                                        .size(42.dp)
-                                        .clip(RoundedCornerShape(10.dp)),
-                                    contentScale = ContentScale.Crop
-                                )
-                            }
-                            Column(modifier = Modifier.weight(1f)) {
-                                if (report.description.isNotBlank()) {
-                                    Text(
-                                        report.description,
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = colors.textSecondary,
-                                        maxLines = 2,
-                                        overflow = TextOverflow.Ellipsis,
-                                        lineHeight = 16.sp
-                                    )
-                                }
-                                if (report.latitude != 0.0 && report.longitude != 0.0) {
-                                    Spacer(Modifier.height(2.dp))
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(3.dp)
-                                    ) {
-                                        Icon(
-                                            Icons.Outlined.LocationOn,
-                                            null,
-                                            tint = colors.textTertiary,
-                                            modifier = Modifier.size(12.dp)
-                                        )
-                                        Text(
-                                            "%.4f, %.4f".format(report.latitude, report.longitude),
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = colors.textTertiary,
-                                            fontSize = 10.sp
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-
-                // ══════════════════════ Expanded Section ══════════════════════
-                AnimatedVisibility(
-                    visible = isExpanded,
-                    enter = expandVertically(animationSpec = tween(300)) + fadeIn(),
-                    exit = shrinkVertically(animationSpec = tween(200)) + fadeOut()
-                ) {
-                    Column {
-                        Spacer(Modifier.height(Spacing.Medium))
-                        HorizontalDivider(
-                            color = colors.cardBorder.copy(alpha = 0.15f),
-                            thickness = 1.dp
-                        )
-                        Spacer(Modifier.height(Spacing.Medium))
-
-                        // ── Photo (Expanded) ──
-                        if (report.imageUrl.isNotBlank()) {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(180.dp)
-                                    .clip(RoundedCornerShape(CornerRadius.Medium))
-                                    .clickable { onViewPhoto(report.imageUrl) }
-                            ) {
-                                AsyncImage(
-                                    model = ImageRequest.Builder(LocalContext.current)
-                                        .data(report.imageUrl).crossfade(true).build(),
-                                    contentDescription = "Report photo",
-                                    modifier = Modifier.fillMaxSize(),
-                                    contentScale = ContentScale.Crop
-                                )
-                                // Overlay: tap to enlarge
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxSize()
-                                        .background(
-                                            Brush.verticalGradient(
-                                                listOf(
-                                                    Color.Transparent,
-                                                    Color.Black.copy(alpha = 0.4f)
-                                                )
-                                            )
-                                        ),
-                                    contentAlignment = Alignment.BottomEnd
-                                ) {
-                                    Surface(
-                                        modifier = Modifier.padding(8.dp),
-                                        shape = RoundedCornerShape(CornerRadius.Small),
-                                        color = Color.Black.copy(alpha = 0.5f)
-                                    ) {
-                                        Row(
-                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.spacedBy(4.dp)
-                                        ) {
-                                            Icon(
-                                                Icons.Outlined.ZoomIn,
-                                                null,
-                                                tint = Color.White,
-                                                modifier = Modifier.size(14.dp)
-                                            )
-                                            Text(
-                                                "Tap to enlarge",
-                                                fontSize = 10.sp,
-                                                color = Color.White
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-                            Spacer(Modifier.height(Spacing.Medium))
-                        }
-
-                        // ── Location Card ──
-                        if (report.latitude != 0.0 && report.longitude != 0.0) {
-                            Surface(
-                                modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(CornerRadius.Medium),
-                                color = AccentTraffic.copy(alpha = 0.06f),
-                                border = BorderStroke(1.dp, AccentTraffic.copy(alpha = 0.15f))
-                            ) {
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(12.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.SpaceBetween
-                                ) {
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                    ) {
-                                        Icon(
-                                            Icons.Filled.LocationOn,
-                                            null,
-                                            tint = AccentTraffic,
-                                            modifier = Modifier.size(20.dp)
-                                        )
-                                        Column {
-                                            Text(
-                                                "Location",
-                                                style = MaterialTheme.typography.labelSmall,
-                                                color = colors.textTertiary
-                                            )
-                                            Text(
-                                                "%.5f, %.5f".format(report.latitude, report.longitude),
-                                                style = MaterialTheme.typography.bodySmall,
-                                                fontWeight = FontWeight.SemiBold,
-                                                color = colors.textPrimary
-                                            )
-                                        }
-                                    }
-                                    FilledTonalButton(
-                                        onClick = { onViewLocation(report.latitude, report.longitude) },
-                                        shape = RoundedCornerShape(CornerRadius.Round),
-                                        colors = ButtonDefaults.filledTonalButtonColors(
-                                            containerColor = AccentTraffic.copy(alpha = 0.15f),
-                                            contentColor = AccentTraffic
-                                        ),
-                                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
-                                    ) {
-                                        Icon(
-                                            Icons.Outlined.OpenInNew,
-                                            null,
-                                            modifier = Modifier.size(14.dp)
-                                        )
-                                        Spacer(Modifier.width(4.dp))
-                                        Text(
-                                            "Map",
-                                            fontSize = 12.sp,
-                                            fontWeight = FontWeight.SemiBold
-                                        )
-                                    }
-                                }
-                            }
-                            Spacer(Modifier.height(Spacing.Medium))
-                        }
-
-                        // ── Report Meta Info ──
-                        Surface(
-                            modifier = Modifier.fillMaxWidth(),
+                    if (report.latitude != 0.0 && report.longitude != 0.0) {
+                        OutlinedButton(
+                            onClick = { onViewLocation(report.latitude, report.longitude) },
+                            modifier = Modifier.height(44.dp),
                             shape = RoundedCornerShape(CornerRadius.Medium),
-                            color = colors.textTertiary.copy(alpha = 0.04f)
+                            border = BorderStroke(1.dp, AccentTraffic.copy(alpha = 0.5f))
                         ) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(10.dp),
-                                horizontalArrangement = Arrangement.SpaceEvenly
-                            ) {
-                                MetaInfoItem("Report ID", report.id.take(8) + "...")
-                                MetaInfoItem("Time", timeAgo)
-                                MetaInfoItem("Status", report.status)
+                            Icon(Icons.Outlined.LocationOn, null, tint = AccentTraffic, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("Map", fontWeight = FontWeight.SemiBold, color = AccentTraffic, fontSize = 12.sp)
+                        }
+                    }
+
+                    IconButton(
+                        onClick = {
+                            val shareText = "Report: ${report.title.ifBlank { typeLabel }}\nType: $typeLabel\nStatus: ${report.status}\nID: ${report.id}"
+                            val intent = Intent(Intent.ACTION_SEND).apply {
+                                type = "text/plain"
+                                putExtra(Intent.EXTRA_TEXT, shareText)
                             }
-                        }
-
-                        Spacer(Modifier.height(Spacing.Large))
-
-                        // ── In Progress / Resolved: Show Proofs & Chat ──
-                        if (report.status.equals("Resolved", true) ||
-                            report.status.equals("In Progress", true) ||
-                            report.status.equals("in_progress", true)
-                        ) {
-                            ResolvedProofsSection(reportId = report.id, onViewPhoto = onViewPhoto)
-                            Spacer(Modifier.height(Spacing.Medium))
-                            ResolvedChatSection(reportId = report.id)
-                        }
-
-                        // ── Take Action Button (only for non-resolved) ──
-                        val isResolved = report.status.equals("Resolved", true)
-                        val isInProgress = report.status.equals("In Progress", true) ||
-                                report.status.equals("in_progress", true)
-
-                        if (!isResolved) {
-                            Spacer(Modifier.height(Spacing.Medium))
-
-                            Button(
-                                onClick = onTakeAction,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(46.dp),
-                                shape = RoundedCornerShape(CornerRadius.Medium),
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = if (isInProgress) PrimaryBlue else AccentOrange
-                                ),
-                                elevation = ButtonDefaults.buttonElevation(2.dp, 0.dp)
-                            ) {
-                                Icon(
-                                    Icons.Outlined.OpenInNew,
-                                    null,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                                Spacer(Modifier.width(8.dp))
-                                Text(
-                                    if (isInProgress) "Continue Action" else "Take Action",
-                                    style = MaterialTheme.typography.labelLarge,
-                                    fontWeight = FontWeight.Bold,
-                                    color = TextOnPrimary
-                                )
-                            }
-                        }
+                            context.startActivity(Intent.createChooser(intent, "Share Report"))
+                        },
+                        modifier = Modifier.size(44.dp)
+                    ) {
+                        Icon(Icons.Outlined.Share, "Share", tint = colors.textSecondary, modifier = Modifier.size(20.dp))
                     }
                 }
             }
@@ -1505,28 +1555,17 @@ private fun PremiumReportCard(
     }
 }
 
-
 @Composable
-private fun MetaInfoItem(label: String, value: String) {
-    val colors = MaterialTheme.cityFluxColors
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(
-            label.uppercase(),
-            style = MaterialTheme.typography.labelSmall,
-            color = colors.textTertiary,
-            fontSize = 9.sp,
-            letterSpacing = 0.8.sp,
-            fontWeight = FontWeight.Medium
-        )
-        Spacer(Modifier.height(2.dp))
-        Text(
-            value,
-            style = MaterialTheme.typography.bodySmall,
-            fontWeight = FontWeight.Bold,
-            color = colors.textPrimary,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
-        )
+private fun DetailRow(
+    icon: ImageVector,
+    label: String,
+    value: String,
+    colors: CityFluxColors
+) {
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Icon(icon, null, tint = colors.textTertiary, modifier = Modifier.size(14.dp))
+        Text(label, style = MaterialTheme.typography.labelSmall, color = colors.textTertiary, fontWeight = FontWeight.Medium, modifier = Modifier.width(70.dp))
+        Text(value, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold, color = colors.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 

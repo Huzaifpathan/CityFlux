@@ -552,17 +552,9 @@ fun ActionStatusScreen(
                     ) {
                         itemsIndexed(displayedReports, key = { _, r -> r.id }) { index, report ->
                             SlideUpFadeIn(visible = true, delay = staggeredDelay(index)) {
-                                ActionCaseCard(
+                                ActionCompactCard(
                                     report = report,
-                                    isExpanded = selectedCase?.id == report.id,
-                                    onToggle = { selectedCase = if (selectedCase?.id == report.id) null else report },
-                                    onChat = { showChatFor = report },
-                                    onUploadProof = { showProofFor = report },
-                                    onUpdateStatus = { newStatus ->
-                                        vm.updateReportStatus(report.id, newStatus) {
-                                            Toast.makeText(context, "Status updated to $newStatus", Toast.LENGTH_SHORT).show()
-                                        }
-                                    },
+                                    onClick = { selectedCase = report },
                                     colors = colors
                                 )
                             }
@@ -570,6 +562,22 @@ fun ActionStatusScreen(
                     }
                 }
             }
+        }
+
+        // ══════════════════════ Action Detail Dialog ══════════════════════
+        if (selectedCase != null) {
+            ActionDetailDialog(
+                report = selectedCase!!,
+                onDismiss = { selectedCase = null },
+                onChat = { showChatFor = selectedCase },
+                onUploadProof = { showProofFor = selectedCase },
+                onUpdateStatus = { newStatus ->
+                    vm.updateReportStatus(selectedCase!!.id, newStatus) {
+                        Toast.makeText(context, "Status updated to $newStatus", Toast.LENGTH_SHORT).show()
+                    }
+                },
+                colors = colors
+            )
         }
 
         // ══════════════════════ Chat Dialog ══════════════════════
@@ -781,18 +789,14 @@ private fun ActionStatChip(label: String, value: String, color: Color, icon: Ima
 
 
 // ═══════════════════════════════════════════════════════════════════
-// Action Case Card (Expandable with Timeline)
+// Action Compact Card
 // ═══════════════════════════════════════════════════════════════════
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun ActionCaseCard(
+private fun ActionCompactCard(
     report: Report,
-    isExpanded: Boolean,
-    onToggle: () -> Unit,
-    onChat: () -> Unit,
-    onUploadProof: () -> Unit,
-    onUpdateStatus: (String) -> Unit,
+    onClick: () -> Unit,
     colors: CityFluxColors
 ) {
     val typeLabel = report.type.replace("_", " ").replaceFirstChar { it.uppercase() }
@@ -814,7 +818,6 @@ private fun ActionCaseCard(
         DateUtils.getRelativeTimeSpanString(it.toDate().time, System.currentTimeMillis(), DateUtils.MINUTE_IN_MILLIS).toString()
     } ?: "Unknown"
 
-    // Priority computation
     val ageMs = report.timestamp?.let { System.currentTimeMillis() - it.toDate().time } ?: 0L
     val priority = when {
         report.type.equals("accident", true) -> "URGENT"
@@ -830,8 +833,7 @@ private fun ActionCaseCard(
     }
     val isUrgent = priority == "URGENT"
 
-    // Urgency pulse animation
-    val urgencyTransition = rememberInfiniteTransition(label = "urgencyPulse")
+    val urgencyTransition = rememberInfiniteTransition(label = "urgencyPulseCompact")
     val pulseAlpha by urgencyTransition.animateFloat(
         initialValue = 0f,
         targetValue = if (isUrgent) 0.6f else 0f,
@@ -839,24 +841,16 @@ private fun ActionCaseCard(
             animation = tween(1000, easing = FastOutSlowInEasing),
             repeatMode = RepeatMode.Reverse
         ),
-        label = "cardPulseAlpha"
+        label = "compactPulseAlpha"
     )
 
-    val cardBorder = when {
-        isUrgent -> BorderStroke(2.dp, AccentRed.copy(alpha = pulseAlpha))
-        isExpanded -> BorderStroke(1.dp, statusColor.copy(alpha = 0.3f))
-        else -> null
-    }
+    val cardBorder = if (isUrgent) BorderStroke(2.dp, AccentRed.copy(alpha = pulseAlpha)) else null
 
     Card(
-        onClick = onToggle,
+        onClick = onClick,
         modifier = Modifier
             .fillMaxWidth()
-            .shadow(
-                if (isExpanded) 8.dp else 4.dp,
-                RoundedCornerShape(CornerRadius.Large),
-                ambientColor = colors.cardShadow
-            ),
+            .shadow(4.dp, RoundedCornerShape(CornerRadius.Large), ambientColor = colors.cardShadow),
         shape = RoundedCornerShape(CornerRadius.Large),
         colors = CardDefaults.cardColors(containerColor = colors.cardBackground),
         border = cardBorder
@@ -870,241 +864,420 @@ private fun ActionCaseCard(
                     .clip(RoundedCornerShape(topStart = CornerRadius.Large, bottomStart = CornerRadius.Large))
                     .background(statusColor)
             )
-            Column(Modifier.padding(Spacing.Large)) {
-                // ── Header ──
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Surface(Modifier.size(42.dp), shape = RoundedCornerShape(CornerRadius.Medium), color = typeColor.copy(alpha = 0.1f)) {
-                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                            Icon(
-                                when (report.type.lowercase()) {
-                                    "illegal_parking" -> Icons.Outlined.LocalParking
-                                    "accident" -> Icons.Outlined.CarCrash
-                                    "hawker" -> Icons.Outlined.Store
-                                    "road_damage" -> Icons.Outlined.Warning
-                                    "traffic_violation" -> Icons.Outlined.Traffic
-                                    else -> Icons.Outlined.Report
-                                },
-                                null, tint = typeColor, modifier = Modifier.size(22.dp)
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(Spacing.Medium),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Type icon
+                Surface(Modifier.size(44.dp), shape = RoundedCornerShape(CornerRadius.Medium), color = typeColor.copy(alpha = 0.1f)) {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Icon(
+                            when (report.type.lowercase()) {
+                                "illegal_parking" -> Icons.Outlined.LocalParking
+                                "accident" -> Icons.Outlined.CarCrash
+                                "hawker" -> Icons.Outlined.Store
+                                "road_damage" -> Icons.Outlined.Warning
+                                "traffic_violation" -> Icons.Outlined.Traffic
+                                else -> Icons.Outlined.Report
+                            },
+                            null, tint = typeColor, modifier = Modifier.size(22.dp)
+                        )
+                    }
+                }
+
+                Spacer(Modifier.width(12.dp))
+
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        report.title.ifBlank { typeLabel },
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = colors.textPrimary,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis
+                    )
+                    if (report.description.isNotBlank()) {
+                        Text(
+                            report.description,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = colors.textSecondary,
+                            maxLines = 1, overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                    Spacer(Modifier.height(4.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Surface(shape = RoundedCornerShape(4.dp), color = typeColor.copy(alpha = 0.1f)) {
+                            Text(typeLabel, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold, color = typeColor, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
+                        }
+                        Text("· $timeAgo", style = MaterialTheme.typography.labelSmall, color = colors.textTertiary)
+                    }
+                }
+
+                Spacer(Modifier.width(8.dp))
+
+                Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    if (priority != "NORMAL") {
+                        Surface(shape = RoundedCornerShape(4.dp), color = priorityColor.copy(alpha = 0.15f)) {
+                            Text(
+                                priority,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = priorityColor,
+                                fontSize = 9.sp
                             )
                         }
                     }
-                    Spacer(Modifier.width(12.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text(
-                            report.title.ifBlank { typeLabel },
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.Bold,
-                            color = colors.textPrimary,
-                            maxLines = 1, overflow = TextOverflow.Ellipsis
+                    Surface(shape = RoundedCornerShape(CornerRadius.Small), color = statusColor.copy(alpha = 0.12f)) {
+                        Text(report.status, modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold, color = statusColor)
+                    }
+                    Icon(
+                        Icons.Outlined.ChevronRight,
+                        contentDescription = "View details",
+                        tint = colors.textTertiary.copy(alpha = 0.5f),
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+            }
+        }
+    }
+}
+
+
+// ═══════════════════════════════════════════════════════════════════
+// Action Detail Dialog — Full-screen detail view
+// ═══════════════════════════════════════════════════════════════════
+
+@Composable
+private fun ActionDetailDialog(
+    report: Report,
+    onDismiss: () -> Unit,
+    onChat: () -> Unit,
+    onUploadProof: () -> Unit,
+    onUpdateStatus: (String) -> Unit,
+    colors: CityFluxColors
+) {
+    val typeLabel = report.type.replace("_", " ").replaceFirstChar { it.uppercase() }
+    val statusColor = when (report.status.lowercase()) {
+        "pending", "submitted" -> AccentAlerts
+        "in progress", "in_progress" -> AccentOrange
+        "resolved" -> AccentGreen
+        else -> colors.textTertiary
+    }
+    val typeColor = when (report.type.lowercase()) {
+        "illegal_parking" -> AccentAlerts
+        "accident" -> AccentRed
+        "hawker" -> AccentOrange
+        "road_damage" -> Color(0xFFEF4444)
+        "traffic_violation" -> PrimaryBlue
+        else -> colors.textTertiary
+    }
+    val typeIcon = when (report.type.lowercase()) {
+        "illegal_parking" -> Icons.Outlined.LocalParking
+        "accident" -> Icons.Outlined.CarCrash
+        "hawker" -> Icons.Outlined.Store
+        "road_damage" -> Icons.Outlined.Warning
+        "traffic_violation" -> Icons.Outlined.Traffic
+        else -> Icons.Outlined.Report
+    }
+    val timeAgo = report.timestamp?.let {
+        DateUtils.getRelativeTimeSpanString(it.toDate().time, System.currentTimeMillis(), DateUtils.MINUTE_IN_MILLIS).toString()
+    } ?: "Unknown"
+    val formattedTime = report.timestamp?.let {
+        SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.getDefault()).format(it.toDate())
+    } ?: "Unknown"
+
+    val ageMs = report.timestamp?.let { System.currentTimeMillis() - it.toDate().time } ?: 0L
+    val isPending = report.status.equals("Pending", true) || report.status.equals("submitted", true)
+    val isInProgress = report.status.equals("In Progress", true) || report.status.equals("in_progress", true)
+    val priority = when {
+        report.type.equals("accident", true) -> "URGENT"
+        isPending && ageMs > 24 * 60 * 60 * 1000 -> "HIGH"
+        isInProgress -> "MEDIUM"
+        else -> "NORMAL"
+    }
+    val priorityColor = when (priority) {
+        "URGENT" -> AccentRed
+        "HIGH" -> AccentOrange
+        "MEDIUM" -> AccentAlerts
+        else -> colors.textTertiary
+    }
+    val currentStatus = report.status.lowercase()
+
+    // Proof data
+    var proofs by remember { mutableStateOf<List<ActionProof>>(emptyList()) }
+    DisposableEffect(report.id) {
+        val reg = FirebaseFirestore.getInstance()
+            .collection("reports").document(report.id)
+            .collection("proofs")
+            .orderBy("timestamp", Query.Direction.DESCENDING)
+            .addSnapshotListener { snap, _ ->
+                proofs = snap?.documents?.mapNotNull { doc ->
+                    doc.toObject(ActionProof::class.java)?.copy(id = doc.id)
+                } ?: emptyList()
+            }
+        onDispose { reg.remove() }
+    }
+
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .fillMaxHeight(0.92f),
+            shape = RoundedCornerShape(CornerRadius.XLarge),
+            colors = CardDefaults.cardColors(containerColor = colors.cardBackground),
+            elevation = CardDefaults.cardElevation(defaultElevation = 16.dp)
+        ) {
+            Column(modifier = Modifier.fillMaxSize()) {
+                // ── Gradient Header ──
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(
+                            Brush.verticalGradient(
+                                listOf(typeColor.copy(alpha = 0.15f), Color.Transparent)
+                            )
                         )
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        .padding(Spacing.Large)
+                ) {
+                    Column {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                                Surface(Modifier.size(44.dp), shape = RoundedCornerShape(CornerRadius.Medium), color = typeColor.copy(alpha = 0.1f)) {
+                                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                        Icon(typeIcon, null, tint = typeColor, modifier = Modifier.size(24.dp))
+                                    }
+                                }
+                                Spacer(Modifier.width(12.dp))
+                                Text(
+                                    report.title.ifBlank { typeLabel },
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = colors.textPrimary,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                            IconButton(
+                                onClick = onDismiss,
+                                modifier = Modifier
+                                    .size(32.dp)
+                                    .background(colors.textTertiary.copy(alpha = 0.1f), CircleShape)
+                            ) {
+                                Icon(Icons.Filled.Close, "Close", tint = colors.textPrimary, modifier = Modifier.size(18.dp))
+                            }
+                        }
+
+                        Spacer(Modifier.height(10.dp))
+
+                        // Badges
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Surface(shape = RoundedCornerShape(CornerRadius.Small), color = statusColor.copy(alpha = 0.12f)) {
+                                Text(report.status, modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold, color = statusColor)
+                            }
+                            if (priority != "NORMAL") {
+                                Surface(shape = RoundedCornerShape(4.dp), color = priorityColor.copy(alpha = 0.15f)) {
+                                    Text(
+                                        priority,
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = priorityColor,
+                                        fontSize = 9.sp
+                                    )
+                                }
+                            }
                             Surface(shape = RoundedCornerShape(4.dp), color = typeColor.copy(alpha = 0.1f)) {
                                 Text(typeLabel, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold, color = typeColor, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
                             }
-                            Text("\u00B7 $timeAgo", style = MaterialTheme.typography.labelSmall, color = colors.textTertiary)
-                        }
-                    }
-                    Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        // Priority badge
-                        if (priority != "NORMAL") {
-                            Surface(
-                                shape = RoundedCornerShape(4.dp),
-                                color = priorityColor.copy(alpha = 0.15f)
-                            ) {
-                                Text(
-                                    priority,
-                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                                    style = MaterialTheme.typography.labelSmall,
-                                    fontWeight = FontWeight.Bold,
-                                    color = priorityColor,
-                                    fontSize = 9.sp
-                                )
-                            }
-                        }
-                        // Status chip
-                        Surface(shape = RoundedCornerShape(CornerRadius.Small), color = statusColor.copy(alpha = 0.12f)) {
-                            Text(report.status, modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp), style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold, color = statusColor)
                         }
                     }
                 }
 
-                // Description
-                if (report.description.isNotBlank()) {
-                    Spacer(Modifier.height(Spacing.Small))
-                    Text(report.description, style = MaterialTheme.typography.bodySmall, color = colors.textSecondary, maxLines = if (isExpanded) 10 else 2, overflow = TextOverflow.Ellipsis)
-                }
-
-                // Collapsed hint
-                if (!isExpanded) {
-                    Spacer(Modifier.height(6.dp))
-                    Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                        Icon(Icons.Filled.ExpandMore, "Expand", tint = colors.textTertiary.copy(alpha = 0.4f), modifier = Modifier.size(20.dp))
-                    }
-                }
-
-                // ── Expanded Section ──
-                AnimatedVisibility(
-                    visible = isExpanded,
-                    enter = expandVertically(tween(300)) + fadeIn(),
-                    exit = shrinkVertically(tween(200)) + fadeOut()
+                // ── Scrollable Content ──
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .verticalScroll(rememberScrollState())
+                        .padding(horizontal = Spacing.Large)
                 ) {
-                    Column {
-                        Spacer(Modifier.height(Spacing.Medium))
-                        HorizontalDivider(color = colors.cardBorder.copy(alpha = 0.15f))
-                        Spacer(Modifier.height(Spacing.Medium))
-
-                        // ── Info Grid ──
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            InfoGridCell(
-                                icon = Icons.Outlined.LocationOn,
-                                label = "Location",
-                                value = if (report.latitude != 0.0) "%.4f, %.4f".format(report.latitude, report.longitude) else "Unknown",
-                                modifier = Modifier.weight(1f),
-                                colors = colors
+                    // Photo
+                    if (report.imageUrl.isNotBlank()) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(180.dp)
+                                .clip(RoundedCornerShape(CornerRadius.Medium))
+                        ) {
+                            AsyncImage(
+                                model = ImageRequest.Builder(LocalContext.current).data(report.imageUrl).crossfade(true).build(),
+                                contentDescription = "Report image",
+                                modifier = Modifier.fillMaxSize(),
+                                contentScale = ContentScale.Crop
                             )
-                            InfoGridCell(
-                                icon = Icons.Outlined.Person,
-                                label = "Reporter",
-                                value = if (report.userId.isNotBlank()) report.userId.take(8) + "..." else "Anonymous",
-                                modifier = Modifier.weight(1f),
-                                colors = colors
-                            )
-                        }
-                        Spacer(Modifier.height(8.dp))
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            InfoGridCell(
-                                icon = Icons.Outlined.AccessTime,
-                                label = "Time Posted",
-                                value = report.timestamp?.let {
-                                    SimpleDateFormat("dd MMM, hh:mm a", Locale.getDefault()).format(it.toDate())
-                                } ?: "Unknown",
-                                modifier = Modifier.weight(1f),
-                                colors = colors
-                            )
-                            InfoGridCell(
-                                icon = Icons.Outlined.Tag,
-                                label = "Case ID",
-                                value = report.id.take(8) + "...",
-                                modifier = Modifier.weight(1f),
-                                colors = colors
-                            )
-                        }
-
-                        Spacer(Modifier.height(Spacing.Medium))
-
-                        // Report Image with gradient overlay
-                        if (report.imageUrl.isNotBlank()) {
                             Box(
                                 Modifier
                                     .fillMaxWidth()
-                                    .height(160.dp)
-                                    .clip(RoundedCornerShape(CornerRadius.Medium))
-                            ) {
-                                AsyncImage(
-                                    model = ImageRequest.Builder(LocalContext.current).data(report.imageUrl).crossfade(true).build(),
-                                    contentDescription = "Report image",
-                                    modifier = Modifier.fillMaxSize(),
-                                    contentScale = ContentScale.Crop
-                                )
-                                Box(
-                                    Modifier
-                                        .fillMaxWidth()
-                                        .height(40.dp)
-                                        .align(Alignment.BottomCenter)
-                                        .background(
-                                            Brush.verticalGradient(
-                                                listOf(Color.Transparent, Color.Black.copy(alpha = 0.4f))
-                                            )
-                                        )
-                                )
-                            }
-                            Spacer(Modifier.height(Spacing.Medium))
-                        }
-
-                        // ── Status Timeline ──
-                        Text("Status Timeline", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = colors.textPrimary)
-                        Spacer(Modifier.height(Spacing.Small))
-                        StatusTimeline(currentStatus = report.status, colors = colors)
-
-                        Spacer(Modifier.height(Spacing.Large))
-
-                        // ── Quick Actions ──
-                        Text("Quick Actions", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = colors.textPrimary)
-                        Spacer(Modifier.height(Spacing.Small))
-
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            // Chat
-                            ActionQuickButton(
-                                icon = Icons.Outlined.Chat,
-                                label = "Chat",
-                                color = PrimaryBlue,
-                                onClick = onChat,
-                                modifier = Modifier.weight(1f)
-                            )
-                            // Upload Proof
-                            ActionQuickButton(
-                                icon = Icons.Outlined.CameraAlt,
-                                label = "Proof",
-                                color = AccentGreen,
-                                onClick = onUploadProof,
-                                modifier = Modifier.weight(1f)
+                                    .height(40.dp)
+                                    .align(Alignment.BottomCenter)
+                                    .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.4f))))
                             )
                         }
-
                         Spacer(Modifier.height(Spacing.Medium))
+                    }
 
-                        // ── Status Update Buttons ──
-                        val currentStatus = report.status.lowercase()
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            if (currentStatus == "pending" || currentStatus == "submitted") {
-                                Button(
-                                    onClick = { onUpdateStatus("In Progress") },
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .height(44.dp),
-                                    shape = RoundedCornerShape(CornerRadius.Medium),
-                                    colors = ButtonDefaults.buttonColors(containerColor = AccentOrange),
-                                    elevation = ButtonDefaults.buttonElevation(2.dp, 0.dp)
-                                ) {
-                                    Icon(Icons.Outlined.PlayArrow, null, Modifier.size(16.dp))
-                                    Spacer(Modifier.width(6.dp))
-                                    Text("Take Case", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold, color = TextOnPrimary)
-                                }
+                    // Description
+                    if (report.description.isNotBlank()) {
+                        Text("Description", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = colors.textPrimary)
+                        Spacer(Modifier.height(Spacing.Small))
+                        Text(report.description, style = MaterialTheme.typography.bodySmall, color = colors.textSecondary, lineHeight = 18.sp)
+                        Spacer(Modifier.height(Spacing.Large))
+                    }
+
+                    // Details
+                    Text("Details", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = colors.textPrimary)
+                    Spacer(Modifier.height(Spacing.Small))
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(CornerRadius.Medium),
+                        color = colors.textTertiary.copy(alpha = 0.04f)
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            ActionDetailRow(icon = Icons.Outlined.Tag, label = "Case ID", value = report.id.take(8) + "...", colors = colors)
+                            ActionDetailRow(icon = Icons.Outlined.PriorityHigh, label = "Priority", value = priority, colors = colors)
+                            ActionDetailRow(icon = Icons.Outlined.AccessTime, label = "Time", value = formattedTime, colors = colors)
+                            ActionDetailRow(icon = Icons.Outlined.Schedule, label = "Ago", value = timeAgo, colors = colors)
+                            if (report.latitude != 0.0 && report.longitude != 0.0) {
+                                ActionDetailRow(icon = Icons.Outlined.LocationOn, label = "Location", value = "%.4f, %.4f".format(report.latitude, report.longitude), colors = colors)
                             }
-                            if (currentStatus != "resolved") {
-                                Button(
-                                    onClick = { onUpdateStatus("Resolved") },
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .height(44.dp),
-                                    shape = RoundedCornerShape(CornerRadius.Medium),
-                                    colors = ButtonDefaults.buttonColors(containerColor = AccentGreen),
-                                    elevation = ButtonDefaults.buttonElevation(2.dp, 0.dp)
-                                ) {
-                                    Icon(Icons.Outlined.CheckCircle, null, Modifier.size(16.dp))
-                                    Spacer(Modifier.width(6.dp))
-                                    Text("Resolve", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold, color = TextOnPrimary)
-                                }
-                            }
-                            if (currentStatus == "resolved") {
-                                OutlinedButton(
-                                    onClick = { onUpdateStatus("In Progress") },
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .height(44.dp),
-                                    shape = RoundedCornerShape(CornerRadius.Medium),
-                                    border = BorderStroke(1.dp, AccentOrange)
-                                ) {
-                                    Icon(Icons.Outlined.Replay, null, tint = AccentOrange, modifier = Modifier.size(16.dp))
-                                    Spacer(Modifier.width(6.dp))
-                                    Text("Reopen", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold, color = AccentOrange)
-                                }
-                            }
+                        }
+                    }
+
+                    Spacer(Modifier.height(Spacing.Large))
+
+                    // Status Timeline
+                    Text("Status Timeline", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = colors.textPrimary)
+                    Spacer(Modifier.height(Spacing.Small))
+                    StatusTimeline(currentStatus = report.status, colors = colors)
+
+                    Spacer(Modifier.height(Spacing.Large))
+
+                    // Proof mini cards
+                    if (proofs.isNotEmpty()) {
+                        Text("Evidence & Proof (${proofs.size})", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = AccentGreen)
+                        Spacer(Modifier.height(Spacing.Small))
+                        proofs.forEach { proof ->
+                            ProofMiniCard(proof = proof, colors = colors)
+                            Spacer(Modifier.height(6.dp))
+                        }
+                    }
+
+                    Spacer(Modifier.height(Spacing.Medium))
+                }
+
+                // ── Bottom Action Bar ──
+                HorizontalDivider(color = colors.cardBorder.copy(alpha = 0.15f))
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = Spacing.Large, vertical = Spacing.Medium),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    // Chat button
+                    OutlinedButton(
+                        onClick = onChat,
+                        modifier = Modifier.height(42.dp),
+                        shape = RoundedCornerShape(CornerRadius.Medium),
+                        border = BorderStroke(1.dp, PrimaryBlue.copy(alpha = 0.4f)),
+                        colors = ButtonDefaults.outlinedButtonColors(containerColor = PrimaryBlue.copy(alpha = 0.06f))
+                    ) {
+                        Icon(Icons.Outlined.Chat, null, tint = PrimaryBlue, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("Chat", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold, color = PrimaryBlue)
+                    }
+
+                    // Upload Proof button
+                    OutlinedButton(
+                        onClick = onUploadProof,
+                        modifier = Modifier.height(42.dp),
+                        shape = RoundedCornerShape(CornerRadius.Medium),
+                        border = BorderStroke(1.dp, AccentGreen.copy(alpha = 0.4f)),
+                        colors = ButtonDefaults.outlinedButtonColors(containerColor = AccentGreen.copy(alpha = 0.06f))
+                    ) {
+                        Icon(Icons.Outlined.CameraAlt, null, tint = AccentGreen, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("Proof", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold, color = AccentGreen)
+                    }
+
+                    Spacer(Modifier.weight(1f))
+
+                    // Status update buttons
+                    if (currentStatus == "pending" || currentStatus == "submitted") {
+                        Button(
+                            onClick = { onUpdateStatus("In Progress") },
+                            modifier = Modifier.height(42.dp),
+                            shape = RoundedCornerShape(CornerRadius.Medium),
+                            colors = ButtonDefaults.buttonColors(containerColor = AccentOrange),
+                            contentPadding = PaddingValues(horizontal = 12.dp)
+                        ) {
+                            Icon(Icons.Outlined.PlayArrow, null, Modifier.size(16.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("Take", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold, color = TextOnPrimary)
+                        }
+                    }
+                    if (currentStatus != "resolved") {
+                        Button(
+                            onClick = { onUpdateStatus("Resolved") },
+                            modifier = Modifier.height(42.dp),
+                            shape = RoundedCornerShape(CornerRadius.Medium),
+                            colors = ButtonDefaults.buttonColors(containerColor = AccentGreen),
+                            contentPadding = PaddingValues(horizontal = 12.dp)
+                        ) {
+                            Icon(Icons.Outlined.CheckCircle, null, Modifier.size(16.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("Resolve", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold, color = TextOnPrimary)
+                        }
+                    }
+                    if (currentStatus == "resolved") {
+                        OutlinedButton(
+                            onClick = { onUpdateStatus("In Progress") },
+                            modifier = Modifier.height(42.dp),
+                            shape = RoundedCornerShape(CornerRadius.Medium),
+                            border = BorderStroke(1.dp, AccentOrange),
+                            contentPadding = PaddingValues(horizontal = 12.dp)
+                        ) {
+                            Icon(Icons.Outlined.Replay, null, tint = AccentOrange, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("Reopen", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold, color = AccentOrange)
                         }
                     }
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun ActionDetailRow(
+    icon: ImageVector,
+    label: String,
+    value: String,
+    colors: CityFluxColors
+) {
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Icon(icon, null, tint = colors.textTertiary, modifier = Modifier.size(14.dp))
+        Text(label, style = MaterialTheme.typography.labelSmall, color = colors.textTertiary, fontWeight = FontWeight.Medium, modifier = Modifier.width(70.dp))
+        Text(value, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold, color = colors.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 

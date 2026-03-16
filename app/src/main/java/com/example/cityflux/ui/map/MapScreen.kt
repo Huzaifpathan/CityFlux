@@ -52,6 +52,7 @@ import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.example.cityflux.model.ParkingSpot
 import com.example.cityflux.model.Report
+import com.example.cityflux.model.LiveUserLocation
 import com.example.cityflux.ui.theme.*
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.maps.CameraUpdateFactory
@@ -64,25 +65,12 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
 import com.google.firebase.auth.FirebaseAuth
-import com.google.firebase.database.DataSnapshot
-import com.google.firebase.database.DatabaseError
-import com.google.firebase.database.FirebaseDatabase
-import com.google.firebase.database.ValueEventListener
 import com.example.cityflux.service.LocationTrackingService
 import java.util.Locale
 
 // ═══════════════════════════════════════════════════════════════════
 // MapScreen — Full-screen Google Map with live Firebase data
 // ═══════════════════════════════════════════════════════════════════
-
-data class LiveUserLocation(
-    val lat: Double = 0.0,
-    val lng: Double = 0.0,
-    val speed: Int = 0,
-    val heading: Double = 0.0,
-    val name: String = "Citizen",
-    val timestamp: Long = 0L
-)
 
 @SuppressLint("MissingPermission")
 @Composable
@@ -264,51 +252,10 @@ fun MapScreen(
     // ── Live Location Tracking (synced with SharedPreferences) ──
     val livePrefs = remember { context.getSharedPreferences("profile_settings", android.content.Context.MODE_PRIVATE) }
     var isLiveSharing by remember { mutableStateOf(livePrefs.getBoolean("live_location", false)) }
-    var showLiveUsers by remember { mutableStateOf(isLiveSharing) } // auto-show if already sharing
-    var liveLocations by remember { mutableStateOf<Map<String, LiveUserLocation>>(emptyMap()) }
+    var showLiveUsers by remember { mutableStateOf(true) } // always show live traffic by default
+    // Live locations come from ViewModel (always observed via RealtimeDbService)
+    val liveLocations = state.liveLocations
     val currentUserId = remember { FirebaseAuth.getInstance().currentUser?.uid ?: "" }
-
-    // Check if service is actually running (own UID in RTDB = sharing)
-    LaunchedEffect(Unit) {
-        if (isLiveSharing) showLiveUsers = true
-    }
-
-    // ── RTDB Listener for live locations ──
-    DisposableEffect(showLiveUsers) {
-        val rtdb = FirebaseDatabase.getInstance()
-        val ref = rtdb.getReference("live_locations")
-        val listener = if (showLiveUsers) {
-            object : ValueEventListener {
-                override fun onDataChange(snapshot: DataSnapshot) {
-                    val map = mutableMapOf<String, LiveUserLocation>()
-                    snapshot.children.forEach { child ->
-                        val uid = child.key ?: return@forEach
-                        val loc = LiveUserLocation(
-                            lat = child.child("lat").getValue(Double::class.java) ?: 0.0,
-                            lng = child.child("lng").getValue(Double::class.java) ?: 0.0,
-                            speed = child.child("speed").getValue(Int::class.java) ?: 0,
-                            heading = child.child("heading").getValue(Double::class.java) ?: 0.0,
-                            name = child.child("name").getValue(String::class.java) ?: "Citizen",
-                            timestamp = child.child("timestamp").getValue(Long::class.java) ?: 0L
-                        )
-                        // Only show users updated within last 2 minutes
-                        if (System.currentTimeMillis() - loc.timestamp < 120_000) {
-                            map[uid] = loc
-                        }
-                    }
-                    liveLocations = map
-                }
-                override fun onCancelled(error: DatabaseError) {
-                    Log.e("MapScreen", "Live locations listener cancelled", error.toException())
-                }
-            }.also { ref.addValueEventListener(it) }
-        } else null
-
-        onDispose {
-            listener?.let { ref.removeEventListener(it) }
-            if (!showLiveUsers) liveLocations = emptyMap()
-        }
-    }
 
     // ── Emergency Services Marker Bitmaps ──
     val hospitalBitmap = remember { createCircleMarkerBitmap(AccentGreen.toArgb(), 34) }

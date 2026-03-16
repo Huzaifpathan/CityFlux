@@ -52,6 +52,7 @@ import com.google.firebase.analytics.ktx.analytics
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.ktx.Firebase
 import com.google.maps.android.compose.*
+import androidx.compose.ui.window.Dialog
 import kotlinx.coroutines.tasks.await
 import java.io.File
 import java.text.SimpleDateFormat
@@ -1117,6 +1118,9 @@ private fun MyReportsContent(
     var sortMode by remember { mutableStateOf("Newest") }
     var showSortMenu by remember { mutableStateOf(false) }
 
+    // ── Detail dialog state ──
+    var selectedReport by remember { mutableStateOf<Report?>(null) }
+
     // ── Filtered reports ──
     val filteredReports = remember(state.myReports, searchQuery, selectedStatus, selectedType, sortMode) {
         state.myReports
@@ -1137,6 +1141,18 @@ private fun MyReportsContent(
                     else -> list.sortedByDescending { it.timestamp }
                 }
             }
+    }
+
+    // ── Full-Screen Report Detail Dialog ──
+    selectedReport?.let { report ->
+        ReportFullDetailDialog(
+            report = report,
+            colors = colors,
+            onDismiss = { selectedReport = null },
+            onDeleteReport = onDeleteReport,
+            onUpvoteReport = onUpvoteReport,
+            onSendChatMessage = onSendChatMessage
+        )
     }
 
     Column(modifier = Modifier.fillMaxSize()) {
@@ -1364,9 +1380,6 @@ private fun MyReportsContent(
                 }
             }
             else -> {
-                // ── Expandable card state ──
-                var expandedReportId by remember { mutableStateOf<String?>(null) }
-
                 LazyColumn(
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(
@@ -1376,16 +1389,10 @@ private fun MyReportsContent(
                     verticalArrangement = Arrangement.spacedBy(Spacing.Medium)
                 ) {
                     itemsIndexed(filteredReports, key = { _, report -> report.id }) { _, report ->
-                        PremiumReportCard(
+                        CompactReportListCard(
                             report = report,
                             colors = colors,
-                            isExpanded = expandedReportId == report.id,
-                            onToggleExpand = {
-                                expandedReportId = if (expandedReportId == report.id) null else report.id
-                            },
-                            onDeleteReport = onDeleteReport,
-                            onUpvoteReport = onUpvoteReport,
-                            onSendChatMessage = onSendChatMessage
+                            onClick = { selectedReport = report }
                         )
                     }
                 }
@@ -1396,82 +1403,34 @@ private fun MyReportsContent(
 
 
 // ═══════════════════════════════════════════════════════════════════
-// Premium Report Card (Expandable with accent bar + priority badge + chat)
+// Compact Report List Card — Clean summary, opens full detail on tap
 // ═══════════════════════════════════════════════════════════════════
 
 @Composable
-private fun PremiumReportCard(
+private fun CompactReportListCard(
     report: Report,
     colors: CityFluxColors,
-    isExpanded: Boolean,
-    onToggleExpand: () -> Unit,
-    onDeleteReport: (String) -> Unit,
-    onUpvoteReport: (String) -> Unit,
-    onSendChatMessage: (String, String) -> Unit
+    onClick: () -> Unit
 ) {
-    val context = LocalContext.current
-    var showDeleteDialog by remember { mutableStateOf(false) }
-    val currentUid = remember { FirebaseAuth.getInstance().currentUser?.uid ?: "" }
     val statusColor = when (report.status.lowercase()) {
         "resolved" -> AccentGreen
         "in progress" -> AccentAlerts
+        "rejected" -> AccentRed
         else -> AccentIssues
     }
-    val typeIcon = when (report.type) {
-        "illegal_parking" -> Icons.Outlined.LocalParking
-        "accident" -> Icons.Outlined.Warning
-        "hawker" -> Icons.Outlined.Store
-        "road_damage" -> Icons.Outlined.Construction
-        "traffic_violation" -> Icons.Outlined.ReportProblem
-        else -> Icons.Outlined.MoreHoriz
-    }
-    val typeColor = when (report.type) {
-        "illegal_parking" -> AccentRed
-        "accident" -> AccentAlerts
-        "hawker" -> AccentOrange
-        "road_damage" -> AccentIssues
-        "traffic_violation" -> AccentTraffic
-        else -> Color.Gray
-    }
-    val typeLabel = when (report.type) {
-        "illegal_parking" -> "Illegal Parking"
-        "accident" -> "Accident"
-        "hawker" -> "Hawkers"
-        "road_damage" -> "Road Damage"
-        "traffic_violation" -> "Traffic Violation"
-        else -> "Other"
-    }
-
-    // ── Delete Confirmation Dialog (Feature 4) ──
-    if (showDeleteDialog) {
-        AlertDialog(
-            onDismissRequest = { showDeleteDialog = false },
-            title = { Text("Delete Report?", fontWeight = FontWeight.Bold) },
-            text = { Text("This action cannot be undone. Are you sure you want to delete this report?") },
-            confirmButton = {
-                TextButton(onClick = {
-                    showDeleteDialog = false
-                    onDeleteReport(report.id)
-                }) {
-                    Text("Delete", color = AccentRed, fontWeight = FontWeight.Bold)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showDeleteDialog = false }) {
-                    Text("Cancel")
-                }
-            }
-        )
-    }
+    val typeIcon = reportTypeIconFor(report.type)
+    val typeColor = reportTypeColorFor(report.type)
+    val typeLabel = reportTypeLabelFor(report.type)
 
     Card(
-        onClick = onToggleExpand,
+        onClick = onClick,
         modifier = Modifier
             .fillMaxWidth()
             .shadow(
-                if (isExpanded) 8.dp else 4.dp,
+                4.dp,
                 RoundedCornerShape(CornerRadius.Large),
-                ambientColor = colors.cardShadow, spotColor = colors.cardShadowMedium
+                ambientColor = colors.cardShadow,
+                spotColor = colors.cardShadowMedium
             ),
         shape = RoundedCornerShape(CornerRadius.Large),
         colors = CardDefaults.cardColors(containerColor = colors.cardBackground)
@@ -1482,227 +1441,336 @@ private fun PremiumReportCard(
                 Modifier
                     .width(4.dp)
                     .fillMaxHeight()
-                    .background(
-                        Brush.verticalGradient(
-                            listOf(typeColor, statusColor)
-                        )
-                    )
+                    .background(Brush.verticalGradient(listOf(typeColor, statusColor)))
             )
 
-            Column(modifier = Modifier.padding(Spacing.Large)) {
-                // ── Header Row ──
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
-                        Surface(
-                            modifier = Modifier.size(40.dp),
-                            shape = RoundedCornerShape(CornerRadius.Small),
-                            color = typeColor.copy(alpha = 0.1f)
-                        ) {
-                            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                Icon(typeIcon, null, tint = typeColor, modifier = Modifier.size(20.dp))
-                            }
-                        }
-                        Spacer(Modifier.width(Spacing.Small))
-                        Column {
-                            Text(
-                                typeLabel,
-                                style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.SemiBold,
-                                color = colors.textPrimary
-                            )
-                            // Timestamp
-                            report.timestamp?.let { ts ->
-                                Text(
-                                    formatTimestamp(ts),
-                                    fontSize = 10.sp,
-                                    color = colors.textTertiary
-                                )
-                            }
-                        }
-                    }
-
-                    // Status badge + Priority badge + Delete
-                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
-                        if (report.status.lowercase() == "pending") {
-                            Surface(
-                                shape = RoundedCornerShape(4.dp),
-                                color = AccentRed.copy(alpha = 0.12f)
-                            ) {
-                                Text(
-                                    "NEEDS ACTION",
-                                    fontSize = 8.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = AccentRed,
-                                    letterSpacing = 0.5.sp,
-                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                )
-                            }
-                        }
-                        Surface(
-                            shape = RoundedCornerShape(4.dp),
-                            color = statusColor.copy(alpha = 0.12f)
-                        ) {
-                            Text(
-                                report.status,
-                                style = MaterialTheme.typography.labelSmall,
-                                fontWeight = FontWeight.SemiBold,
-                                color = statusColor,
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
-                            )
-                        }
-                        // Delete button (Feature 4) — only for Pending reports
-                        if (report.status.lowercase() == "pending") {
-                            IconButton(
-                                onClick = { showDeleteDialog = true },
-                                modifier = Modifier.size(28.dp)
-                            ) {
-                                Icon(Icons.Outlined.Delete, "Delete", tint = AccentRed, modifier = Modifier.size(16.dp))
-                            }
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(Spacing.Medium),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Thumbnail or type icon
+                if (report.imageUrl.isNotBlank()) {
+                    Image(
+                        painter = rememberAsyncImagePainter(report.imageUrl),
+                        contentDescription = null,
+                        modifier = Modifier
+                            .size(56.dp)
+                            .clip(RoundedCornerShape(CornerRadius.Medium)),
+                        contentScale = ContentScale.Crop
+                    )
+                } else {
+                    Surface(
+                        modifier = Modifier.size(56.dp),
+                        shape = RoundedCornerShape(CornerRadius.Medium),
+                        color = typeColor.copy(alpha = 0.1f)
+                    ) {
+                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            Icon(typeIcon, null, tint = typeColor, modifier = Modifier.size(28.dp))
                         }
                     }
                 }
 
-                // ── Description (collapsed: 2 lines, expanded: full) ──
-                if (report.description.isNotBlank()) {
-                    Spacer(Modifier.height(Spacing.Small))
+                Spacer(Modifier.width(Spacing.Medium))
+
+                // Text content
+                Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        report.description,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = colors.textSecondary,
-                        maxLines = if (isExpanded) Int.MAX_VALUE else 2,
+                        text = typeLabel,
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = colors.textPrimary,
+                        maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
-                }
-
-                // ── Collapsed: Photo thumbnail + meta ──
-                if (!isExpanded) {
-                    Spacer(Modifier.height(Spacing.Small))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            // Mini thumbnail
-                            if (report.imageUrl.isNotBlank()) {
-                                Image(
-                                    painter = rememberAsyncImagePainter(report.imageUrl),
-                                    contentDescription = null,
-                                    modifier = Modifier
-                                        .size(42.dp)
-                                        .clip(RoundedCornerShape(CornerRadius.Small)),
-                                    contentScale = ContentScale.Crop
-                                )
-                                Spacer(Modifier.width(Spacing.Small))
-                            }
-                            // Location
-                            Icon(Icons.Outlined.LocationOn, null, tint = colors.textTertiary, modifier = Modifier.size(12.dp))
-                            Spacer(Modifier.width(2.dp))
+                    if (report.description.isNotBlank()) {
+                        Spacer(Modifier.height(2.dp))
+                        Text(
+                            text = report.description,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = colors.textSecondary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                    Spacer(Modifier.height(4.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        report.timestamp?.let { ts ->
                             Text(
-                                "${"%.3f".format(report.latitude)}, ${"%.3f".format(report.longitude)}",
-                                fontSize = 10.sp, color = colors.textTertiary
+                                formatTimestamp(ts),
+                                fontSize = 10.sp,
+                                color = colors.textTertiary
                             )
                         }
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Spacing.Small)) {
-                            // Upvote button (Feature 6)
-                            val hasUpvoted = currentUid.isNotBlank() && report.upvotedBy.contains(currentUid)
+                        if (report.upvoteCount > 0) {
+                            Text(" · ", fontSize = 10.sp, color = colors.textTertiary)
+                            Icon(Icons.Outlined.ThumbUp, null, tint = colors.textTertiary, modifier = Modifier.size(10.dp))
+                            Spacer(Modifier.width(2.dp))
+                            Text("${report.upvoteCount}", fontSize = 10.sp, color = colors.textTertiary)
+                        }
+                    }
+                }
+
+                Spacer(Modifier.width(Spacing.Small))
+
+                // Status + chevron
+                Column(horizontalAlignment = Alignment.End) {
+                    Surface(
+                        shape = RoundedCornerShape(4.dp),
+                        color = statusColor.copy(alpha = 0.12f)
+                    ) {
+                        Text(
+                            report.status,
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.SemiBold,
+                            color = statusColor,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                        )
+                    }
+                    Spacer(Modifier.height(6.dp))
+                    Icon(
+                        Icons.Outlined.ChevronRight,
+                        contentDescription = "View details",
+                        tint = colors.textTertiary.copy(alpha = 0.5f),
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+            }
+        }
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Full Detail Dialog — Opens when tapping a report card
+// ═══════════════════════════════════════════════════════════════════
+
+@Composable
+private fun ReportFullDetailDialog(
+    report: Report,
+    colors: CityFluxColors,
+    onDismiss: () -> Unit,
+    onDeleteReport: (String) -> Unit,
+    onUpvoteReport: (String) -> Unit,
+    onSendChatMessage: (String, String) -> Unit
+) {
+    val context = LocalContext.current
+    val currentUid = remember { FirebaseAuth.getInstance().currentUser?.uid ?: "" }
+    val hasUpvoted = currentUid.isNotBlank() && report.upvotedBy.contains(currentUid)
+    var showDeleteDialog by remember { mutableStateOf(false) }
+
+    val statusColor = when (report.status.lowercase()) {
+        "resolved" -> AccentGreen
+        "in progress" -> AccentAlerts
+        "rejected" -> AccentRed
+        else -> AccentIssues
+    }
+    val typeIcon = reportTypeIconFor(report.type)
+    val typeColor = reportTypeColorFor(report.type)
+    val typeLabel = reportTypeLabelFor(report.type)
+
+    // Delete confirmation
+    if (showDeleteDialog) {
+        AlertDialog(
+            onDismissRequest = { showDeleteDialog = false },
+            title = { Text("Delete Report?", fontWeight = FontWeight.Bold) },
+            text = { Text("This action cannot be undone. Are you sure you want to delete this report?") },
+            confirmButton = {
+                TextButton(onClick = {
+                    showDeleteDialog = false
+                    onDeleteReport(report.id)
+                    onDismiss()
+                }) { Text("Delete", color = AccentRed, fontWeight = FontWeight.Bold) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteDialog = false }) { Text("Cancel") }
+            }
+        )
+    }
+
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .fillMaxHeight(0.92f)
+                .shadow(16.dp, RoundedCornerShape(CornerRadius.XLarge), ambientColor = colors.cardShadow),
+            shape = RoundedCornerShape(CornerRadius.XLarge),
+            colors = CardDefaults.cardColors(containerColor = colors.cardBackground)
+        ) {
+            Column(modifier = Modifier.fillMaxSize()) {
+
+                // ── Header ──
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(
+                            Brush.verticalGradient(
+                                listOf(typeColor.copy(alpha = 0.12f), Color.Transparent)
+                            )
+                        )
+                        .padding(Spacing.Large)
+                ) {
+                    // Close button
+                    IconButton(
+                        onClick = onDismiss,
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .size(32.dp)
+                            .background(colors.surfaceVariant, CircleShape)
+                    ) {
+                        Icon(Icons.Default.Close, "Close", tint = colors.textPrimary, modifier = Modifier.size(18.dp))
+                    }
+
+                    Column {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
                             Surface(
-                                onClick = { onUpvoteReport(report.id) },
-                                shape = RoundedCornerShape(CornerRadius.Round),
-                                color = if (hasUpvoted) PrimaryBlue.copy(alpha = 0.12f) else Color.Transparent
+                                modifier = Modifier.size(48.dp),
+                                shape = RoundedCornerShape(CornerRadius.Medium),
+                                color = typeColor.copy(alpha = 0.15f)
                             ) {
-                                Row(
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                                ) {
-                                    Icon(
-                                        if (hasUpvoted) Icons.Filled.ThumbUp else Icons.Outlined.ThumbUp,
-                                        "Upvote",
-                                        tint = if (hasUpvoted) PrimaryBlue else colors.textTertiary,
-                                        modifier = Modifier.size(14.dp)
-                                    )
-                                    if (report.upvoteCount > 0) {
+                                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                    Icon(typeIcon, null, tint = typeColor, modifier = Modifier.size(26.dp))
+                                }
+                            }
+                            Spacer(Modifier.width(Spacing.Medium))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    typeLabel,
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = typeColor,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Spacer(Modifier.height(4.dp))
+                                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    Surface(
+                                        shape = RoundedCornerShape(4.dp),
+                                        color = statusColor.copy(alpha = 0.12f)
+                                    ) {
                                         Text(
-                                            "${report.upvoteCount}",
-                                            fontSize = 10.sp,
+                                            report.status,
+                                            style = MaterialTheme.typography.labelSmall,
                                             fontWeight = FontWeight.SemiBold,
-                                            color = if (hasUpvoted) PrimaryBlue else colors.textTertiary
+                                            color = statusColor,
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
                                         )
+                                    }
+                                    if (report.status.lowercase() == "pending") {
+                                        Surface(
+                                            shape = RoundedCornerShape(4.dp),
+                                            color = AccentRed.copy(alpha = 0.12f)
+                                        ) {
+                                            Text(
+                                                "NEEDS ACTION",
+                                                fontSize = 8.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = AccentRed,
+                                                letterSpacing = 0.5.sp,
+                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
+                                            )
+                                        }
                                     }
                                 }
                             }
-                            // Expand hint
-                            Icon(Icons.Outlined.ExpandMore, null, tint = colors.textTertiary, modifier = Modifier.size(18.dp))
+                        }
+
+                        if (report.title.isNotBlank()) {
+                            Spacer(Modifier.height(Spacing.Medium))
+                            Text(
+                                report.title,
+                                style = MaterialTheme.typography.headlineSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = colors.textPrimary
+                            )
                         }
                     }
                 }
 
-                // ── Expanded Content ──
-                AnimatedVisibility(visible = isExpanded) {
-                    Column {
-                        Spacer(Modifier.height(Spacing.Medium))
-
-                        // Full photo
-                        if (report.imageUrl.isNotBlank()) {
-                            Card(
-                                shape = RoundedCornerShape(CornerRadius.Medium),
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Image(
-                                    painter = rememberAsyncImagePainter(report.imageUrl),
-                                    contentDescription = "Report photo",
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .height(180.dp),
-                                    contentScale = ContentScale.Crop
-                                )
-                            }
-                        }
-
-                        Spacer(Modifier.height(Spacing.Medium))
-
-                        // Meta Info Row
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(Spacing.Medium)
+                // ── Scrollable content ──
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .verticalScroll(rememberScrollState())
+                        .padding(horizontal = Spacing.Large)
+                ) {
+                    // Photo
+                    if (report.imageUrl.isNotBlank()) {
+                        Spacer(Modifier.height(Spacing.Small))
+                        Card(
+                            shape = RoundedCornerShape(CornerRadius.Large),
+                            modifier = Modifier.fillMaxWidth()
                         ) {
-                            ReportMetaItem(
-                                icon = Icons.Outlined.Tag,
-                                label = "ID",
-                                value = report.id.take(8) + "...",
-                                modifier = Modifier.weight(1f)
-                            )
-                            ReportMetaItem(
-                                icon = Icons.Outlined.Schedule,
-                                label = "Time",
-                                value = report.timestamp?.let { formatTimestamp(it) } ?: "Unknown",
-                                modifier = Modifier.weight(1f)
-                            )
-                            ReportMetaItem(
-                                icon = Icons.Outlined.FlagCircle,
-                                label = "Status",
-                                value = report.status,
-                                color = statusColor,
-                                modifier = Modifier.weight(1f)
+                            Image(
+                                painter = rememberAsyncImagePainter(report.imageUrl),
+                                contentDescription = "Report photo",
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(220.dp),
+                                contentScale = ContentScale.Crop
                             )
                         }
+                    }
 
-                        Spacer(Modifier.height(Spacing.Medium))
+                    // Description
+                    if (report.description.isNotBlank()) {
+                        Spacer(Modifier.height(Spacing.XLarge))
+                        Text("Description", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = colors.textPrimary)
+                        Spacer(Modifier.height(Spacing.Small))
+                        Text(
+                            report.description,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = colors.textSecondary,
+                            lineHeight = 22.sp
+                        )
+                    }
 
-                        // Status Timeline (Feature 3)
-                        StatusTimeline(report = report, colors = colors)
+                    Spacer(Modifier.height(Spacing.XLarge))
+                    HorizontalDivider(color = colors.surfaceVariant, thickness = 0.5.dp)
+                    Spacer(Modifier.height(Spacing.XLarge))
 
-                        Spacer(Modifier.height(Spacing.Medium))
+                    // Details grid
+                    Text("Details", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = colors.textPrimary)
+                    Spacer(Modifier.height(Spacing.Medium))
 
-                        // Location card with in-app map
-                        var showLocationMap by remember { mutableStateOf(false) }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(Spacing.Medium)
+                    ) {
+                        DetailMetaChip(
+                            icon = Icons.Outlined.Tag,
+                            label = "ID",
+                            value = report.id.take(8) + "...",
+                            modifier = Modifier.weight(1f)
+                        )
+                        DetailMetaChip(
+                            icon = Icons.Outlined.Schedule,
+                            label = "Time",
+                            value = report.timestamp?.let { formatTimestamp(it) } ?: "Unknown",
+                            modifier = Modifier.weight(1f)
+                        )
+                        DetailMetaChip(
+                            icon = Icons.Outlined.FlagCircle,
+                            label = "Status",
+                            value = report.status,
+                            color = statusColor,
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+
+                    Spacer(Modifier.height(Spacing.XLarge))
+
+                    // Status Timeline
+                    StatusTimeline(report = report, colors = colors)
+
+                    Spacer(Modifier.height(Spacing.XLarge))
+
+                    // Location card with map
+                    if (report.latitude != 0.0 && report.longitude != 0.0) {
+                        val reportLatLng = LatLng(report.latitude, report.longitude)
+                        val cameraState = rememberCameraPositionState {
+                            position = CameraPosition.fromLatLngZoom(reportLatLng, 16f)
+                        }
+
                         Surface(
-                            onClick = { showLocationMap = !showLocationMap },
                             shape = RoundedCornerShape(CornerRadius.Medium),
                             color = PrimaryBlue.copy(alpha = 0.06f)
                         ) {
@@ -1717,151 +1785,133 @@ private fun PremiumReportCard(
                                     Spacer(Modifier.width(6.dp))
                                     Text(
                                         "${"%.4f".format(report.latitude)}, ${"%.4f".format(report.longitude)}",
-                                        fontSize = 11.sp, color = colors.textSecondary,
-                                        modifier = Modifier.weight(1f)
+                                        fontSize = 11.sp, color = colors.textSecondary
                                     )
+                                }
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(180.dp)
+                                        .clip(RoundedCornerShape(bottomStart = CornerRadius.Medium, bottomEnd = CornerRadius.Medium))
+                                ) {
+                                    GoogleMap(
+                                        modifier = Modifier.fillMaxSize(),
+                                        cameraPositionState = cameraState,
+                                        uiSettings = MapUiSettings(
+                                            zoomControlsEnabled = true,
+                                            scrollGesturesEnabled = true,
+                                            zoomGesturesEnabled = true,
+                                            rotationGesturesEnabled = false,
+                                            tiltGesturesEnabled = false,
+                                            compassEnabled = false,
+                                            myLocationButtonEnabled = false,
+                                            mapToolbarEnabled = false
+                                        )
+                                    ) {
+                                        Marker(
+                                            state = MarkerState(position = reportLatLng),
+                                            title = typeLabel,
+                                            snippet = report.description.take(50)
+                                        )
+                                    }
                                     Surface(
+                                        modifier = Modifier
+                                            .align(Alignment.TopStart)
+                                            .padding(8.dp),
                                         shape = RoundedCornerShape(CornerRadius.Round),
-                                        color = PrimaryBlue.copy(alpha = 0.12f)
+                                        color = typeColor.copy(alpha = 0.9f)
                                     ) {
                                         Row(
                                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
                                             verticalAlignment = Alignment.CenterVertically
                                         ) {
-                                            Icon(
-                                                if (showLocationMap) Icons.Outlined.ExpandLess else Icons.Outlined.Map,
-                                                null, tint = PrimaryBlue, modifier = Modifier.size(12.dp)
-                                            )
+                                            Icon(typeIcon, null, tint = Color.White, modifier = Modifier.size(12.dp))
                                             Spacer(Modifier.width(4.dp))
-                                            Text(
-                                                if (showLocationMap) "Hide" else "Map",
-                                                fontSize = 10.sp, fontWeight = FontWeight.SemiBold, color = PrimaryBlue
-                                            )
-                                        }
-                                    }
-                                }
-                                // In-app map
-                                AnimatedVisibility(visible = showLocationMap) {
-                                    val reportLatLng = LatLng(report.latitude, report.longitude)
-                                    val cameraState = rememberCameraPositionState {
-                                        position = CameraPosition.fromLatLngZoom(reportLatLng, 16f)
-                                    }
-                                    Box(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .height(180.dp)
-                                            .clip(RoundedCornerShape(bottomStart = CornerRadius.Medium, bottomEnd = CornerRadius.Medium))
-                                    ) {
-                                        GoogleMap(
-                                            modifier = Modifier.fillMaxSize(),
-                                            cameraPositionState = cameraState,
-                                            uiSettings = MapUiSettings(
-                                                zoomControlsEnabled = true,
-                                                scrollGesturesEnabled = true,
-                                                zoomGesturesEnabled = true,
-                                                rotationGesturesEnabled = false,
-                                                tiltGesturesEnabled = false,
-                                                compassEnabled = false,
-                                                myLocationButtonEnabled = false,
-                                                mapToolbarEnabled = false
-                                            )
-                                        ) {
-                                            Marker(
-                                                state = MarkerState(position = reportLatLng),
-                                                title = typeLabel,
-                                                snippet = report.description.take(50)
-                                            )
-                                        }
-                                        // Type badge on map
-                                        Surface(
-                                            modifier = Modifier
-                                                .align(Alignment.TopStart)
-                                                .padding(8.dp),
-                                            shape = RoundedCornerShape(CornerRadius.Round),
-                                            color = typeColor.copy(alpha = 0.9f)
-                                        ) {
-                                            Row(
-                                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                                                verticalAlignment = Alignment.CenterVertically
-                                            ) {
-                                                Icon(typeIcon, null, tint = Color.White, modifier = Modifier.size(12.dp))
-                                                Spacer(Modifier.width(4.dp))
-                                                Text(typeLabel, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.White)
-                                            }
+                                            Text(typeLabel, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.White)
                                         }
                                     }
                                 }
                             }
                         }
+                        Spacer(Modifier.height(Spacing.XLarge))
+                    }
 
-                        Spacer(Modifier.height(Spacing.Medium))
+                    // Chat section
+                    ReportChatSection(
+                        reportId = report.id,
+                        colors = colors,
+                        onSendMessage = { message -> onSendChatMessage(report.id, message) }
+                    )
 
-                        // Chat History from subcollection (Feature 1)
-                        ReportChatSection(
-                            reportId = report.id,
-                            colors = colors,
-                            onSendMessage = { message -> onSendChatMessage(report.id, message) }
+                    Spacer(Modifier.height(Spacing.Medium))
+                }
+
+                // ── Bottom action bar ──
+                HorizontalDivider(color = colors.surfaceVariant, thickness = 0.5.dp)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = Spacing.Large, vertical = Spacing.Medium),
+                    horizontalArrangement = Arrangement.spacedBy(Spacing.Small)
+                ) {
+                    // Share
+                    OutlinedButton(
+                        onClick = {
+                            val shareText = buildString {
+                                append("CityFlux Report\n")
+                                append("Type: $typeLabel\n")
+                                append("Description: ${report.description}\n")
+                                append("Location: ${report.latitude}, ${report.longitude}\n")
+                                append("Status: ${report.status}")
+                            }
+                            val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                type = "text/plain"
+                                putExtra(Intent.EXTRA_TEXT, shareText)
+                            }
+                            context.startActivity(Intent.createChooser(shareIntent, "Share Report"))
+                        },
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(40.dp),
+                        shape = RoundedCornerShape(CornerRadius.Round),
+                        border = BorderStroke(1.dp, colors.divider)
+                    ) {
+                        Icon(Icons.Outlined.Share, null, Modifier.size(16.dp), tint = colors.textSecondary)
+                        Spacer(Modifier.width(6.dp))
+                        Text("Share", fontSize = 12.sp, color = colors.textSecondary)
+                    }
+
+                    // Upvote
+                    OutlinedButton(
+                        onClick = { onUpvoteReport(report.id) },
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(40.dp),
+                        shape = RoundedCornerShape(CornerRadius.Round),
+                        border = BorderStroke(1.dp, if (hasUpvoted) PrimaryBlue else colors.divider)
+                    ) {
+                        Icon(
+                            if (hasUpvoted) Icons.Filled.ThumbUp else Icons.Outlined.ThumbUp,
+                            null, Modifier.size(16.dp),
+                            tint = if (hasUpvoted) PrimaryBlue else colors.textSecondary
                         )
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            "Upvote${if (report.upvoteCount > 0) " (${report.upvoteCount})" else ""}",
+                            fontSize = 12.sp,
+                            color = if (hasUpvoted) PrimaryBlue else colors.textSecondary
+                        )
+                    }
 
-                        // Action Row: Share (Feature 5) + Upvote
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(Spacing.Small)
+                    // Delete (only for pending)
+                    if (report.status.lowercase() == "pending") {
+                        IconButton(
+                            onClick = { showDeleteDialog = true },
+                            modifier = Modifier
+                                .size(40.dp)
+                                .background(AccentRed.copy(alpha = 0.08f), RoundedCornerShape(CornerRadius.Round))
                         ) {
-                            // Share button (Feature 5)
-                            OutlinedButton(
-                                onClick = {
-                                    val shareText = buildString {
-                                        append("CityFlux Report\n")
-                                        append("Type: $typeLabel\n")
-                                        append("Description: ${report.description}\n")
-                                        append("Location: ${report.latitude}, ${report.longitude}\n")
-                                        append("Status: ${report.status}")
-                                    }
-                                    val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                                        type = "text/plain"
-                                        putExtra(Intent.EXTRA_TEXT, shareText)
-                                    }
-                                    context.startActivity(Intent.createChooser(shareIntent, "Share Report"))
-                                },
-                                modifier = Modifier.weight(1f).height(36.dp),
-                                shape = RoundedCornerShape(CornerRadius.Round),
-                                border = BorderStroke(1.dp, colors.divider)
-                            ) {
-                                Icon(Icons.Outlined.Share, null, Modifier.size(16.dp), tint = colors.textSecondary)
-                                Spacer(Modifier.width(6.dp))
-                                Text("Share", fontSize = 12.sp, color = colors.textSecondary)
-                            }
-                            // Upvote button expanded
-                            val hasUpvotedExpanded = currentUid.isNotBlank() && report.upvotedBy.contains(currentUid)
-                            OutlinedButton(
-                                onClick = { onUpvoteReport(report.id) },
-                                modifier = Modifier.weight(1f).height(36.dp),
-                                shape = RoundedCornerShape(CornerRadius.Round),
-                                border = BorderStroke(1.dp, if (hasUpvotedExpanded) PrimaryBlue else colors.divider)
-                            ) {
-                                Icon(
-                                    if (hasUpvotedExpanded) Icons.Filled.ThumbUp else Icons.Outlined.ThumbUp,
-                                    null, Modifier.size(16.dp),
-                                    tint = if (hasUpvotedExpanded) PrimaryBlue else colors.textSecondary
-                                )
-                                Spacer(Modifier.width(6.dp))
-                                Text(
-                                    "Upvote${if (report.upvoteCount > 0) " (${report.upvoteCount})" else ""}",
-                                    fontSize = 12.sp,
-                                    color = if (hasUpvotedExpanded) PrimaryBlue else colors.textSecondary
-                                )
-                            }
-                        }
-
-                        Spacer(Modifier.height(Spacing.Small))
-
-                        // Collapse hint
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.Center
-                        ) {
-                            Icon(Icons.Outlined.ExpandLess, null, tint = colors.textTertiary, modifier = Modifier.size(18.dp))
+                            Icon(Icons.Outlined.Delete, "Delete", tint = AccentRed, modifier = Modifier.size(18.dp))
                         }
                     }
                 }
@@ -1871,7 +1921,7 @@ private fun PremiumReportCard(
 }
 
 @Composable
-private fun ReportMetaItem(
+private fun DetailMetaChip(
     icon: ImageVector,
     label: String,
     value: String,
@@ -1894,6 +1944,33 @@ private fun ReportMetaItem(
             Text(label, fontSize = 8.sp, color = colors.textTertiary)
         }
     }
+}
+
+private fun reportTypeIconFor(type: String): ImageVector = when (type) {
+    "illegal_parking" -> Icons.Outlined.LocalParking
+    "accident" -> Icons.Outlined.Warning
+    "hawker" -> Icons.Outlined.Store
+    "road_damage" -> Icons.Outlined.Construction
+    "traffic_violation" -> Icons.Outlined.ReportProblem
+    else -> Icons.Outlined.MoreHoriz
+}
+
+private fun reportTypeColorFor(type: String): Color = when (type) {
+    "illegal_parking" -> AccentRed
+    "accident" -> AccentAlerts
+    "hawker" -> AccentOrange
+    "road_damage" -> AccentIssues
+    "traffic_violation" -> AccentTraffic
+    else -> Color.Gray
+}
+
+private fun reportTypeLabelFor(type: String): String = when (type) {
+    "illegal_parking" -> "Illegal Parking"
+    "accident" -> "Accident"
+    "hawker" -> "Hawkers"
+    "road_damage" -> "Road Damage"
+    "traffic_violation" -> "Traffic Violation"
+    else -> "Other"
 }
 
 // ═══════════════════════════════════════════════════════════════════

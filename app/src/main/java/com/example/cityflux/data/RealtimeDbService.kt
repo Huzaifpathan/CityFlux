@@ -1,6 +1,7 @@
 package com.example.cityflux.data
 
 import android.util.Log
+import com.example.cityflux.model.LiveUserLocation
 import com.example.cityflux.model.ParkingLive
 import com.example.cityflux.model.TrafficStatus
 import com.google.firebase.database.*
@@ -146,6 +147,51 @@ object RealtimeDbService {
 
             override fun onCancelled(error: DatabaseError) {
                 Log.e(TAG, "Parking $parkingId listener cancelled: ${error.message}")
+            }
+        }
+
+        ref.addValueEventListener(listener)
+        awaitClose { ref.removeEventListener(listener) }
+    }
+
+    // ─────────────────────────────────────────────────────────
+    // 📍  LIVE LOCATIONS — observe all sharing citizens
+    // ─────────────────────────────────────────────────────────
+
+    /**
+     * Returns a [Flow] that emits `Map<userId, LiveUserLocation>` every time
+     * any child under `live_locations/` changes.
+     *
+     * Only includes users whose timestamp is within the last 2 minutes
+     * to filter out stale entries from crashed sessions.
+     */
+    fun observeLiveLocations(): Flow<Map<String, LiveUserLocation>> = callbackFlow {
+        val ref = database.getReference("live_locations")
+
+        val listener = object : ValueEventListener {
+            override fun onDataChange(snapshot: DataSnapshot) {
+                val map = mutableMapOf<String, LiveUserLocation>()
+                for (child in snapshot.children) {
+                    val uid = child.key ?: continue
+                    val loc = LiveUserLocation(
+                        lat = child.child("lat").getValue(Double::class.java) ?: 0.0,
+                        lng = child.child("lng").getValue(Double::class.java) ?: 0.0,
+                        speed = child.child("speed").getValue(Int::class.java) ?: 0,
+                        heading = child.child("heading").getValue(Double::class.java) ?: 0.0,
+                        name = child.child("name").getValue(String::class.java) ?: "Citizen",
+                        timestamp = child.child("timestamp").getValue(Long::class.java) ?: 0L
+                    )
+                    // Only include users updated within last 2 minutes
+                    if (System.currentTimeMillis() - loc.timestamp < 120_000) {
+                        map[uid] = loc
+                    }
+                }
+                trySend(map)
+                Log.d(TAG, "Live locations updated: ${map.size} users online")
+            }
+
+            override fun onCancelled(error: DatabaseError) {
+                Log.e(TAG, "Live locations listener cancelled: ${error.message}")
             }
         }
 

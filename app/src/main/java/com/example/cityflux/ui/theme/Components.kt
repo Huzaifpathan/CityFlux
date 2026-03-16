@@ -555,6 +555,7 @@ fun AppTextField(
     readOnly: Boolean = false,
     isError: Boolean = false,
     errorMessage: String? = null,
+    leadingIcon: @Composable (() -> Unit)? = null,
     trailingIcon: @Composable (() -> Unit)? = null
 ) {
     val colors = MaterialTheme.cityFluxColors
@@ -576,6 +577,7 @@ fun AppTextField(
             minLines = minLines,
             readOnly = readOnly,
             isError = isError,
+            leadingIcon = leadingIcon,
             trailingIcon = trailingIcon,
             shape = RoundedCornerShape(CornerRadius.Medium),
             colors = OutlinedTextFieldDefaults.colors(

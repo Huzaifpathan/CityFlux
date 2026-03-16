@@ -1,23 +1,28 @@
 package com.example.cityflux.ui.login
 
 import android.app.Activity
-import androidx.compose.foundation.Image
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Email
+import androidx.compose.material.icons.outlined.Lock
+import androidx.compose.material.icons.outlined.Sms
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import com.example.cityflux.R
 import com.example.cityflux.ui.theme.*
 import com.google.firebase.FirebaseException
 import com.google.firebase.auth.*
@@ -111,27 +116,12 @@ fun LoginScreen(
             
             Spacer(modifier = Modifier.height(Spacing.Section))
 
-            Image(
-                painter = painterResource(id = R.drawable.cityfluxlogo),
-                contentDescription = "Logo",
-                modifier = Modifier.size(80.dp)
+            CityFluxBrandMark(
+                logoSize = 90.dp,
+                showTagline = true
             )
 
-            Spacer(modifier = Modifier.height(Spacing.Medium))
-
-            Text(
-                "CityFlux",
-                color = colors.textPrimary,
-                style = MaterialTheme.typography.headlineLarge,
-                fontWeight = FontWeight.Bold
-            )
-
-            Text(
-                "Smart Traffic & Parking Mobility System",
-                color = colors.textSecondary,
-                style = MaterialTheme.typography.bodyMedium,
-                modifier = Modifier.padding(bottom = Spacing.Section)
-            )
+            Spacer(modifier = Modifier.height(Spacing.Section))
 
             Card(
                 modifier = Modifier
@@ -159,6 +149,14 @@ fun LoginScreen(
                         fontWeight = FontWeight.SemiBold,
                         modifier = Modifier
                             .align(Alignment.Start)
+                    )
+
+                    Text(
+                        "Sign in to continue managing your city",
+                        color = colors.textSecondary,
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier
+                            .align(Alignment.Start)
                             .padding(bottom = Spacing.XLarge)
                     )
 
@@ -170,17 +168,34 @@ fun LoginScreen(
                         },
                         label = "Email or Phone",
                         isError = inputTouched && inputError != null,
-                        errorMessage = if (inputTouched) inputError else null
+                        errorMessage = if (inputTouched) inputError else null,
+                        leadingIcon = {
+                            Icon(
+                                Icons.Outlined.Email,
+                                contentDescription = null,
+                                tint = colors.textSecondary
+                            )
+                        }
                     )
 
                     Spacer(modifier = Modifier.height(Spacing.Medium))
 
                     if (isPhoneNumber(input)) {
-                        if (isOtpSent) {
+                        AnimatedVisibility(
+                            visible = isOtpSent,
+                            enter = fadeIn() + slideInVertically()
+                        ) {
                             AppTextField(
                                 value = otp,
                                 onValueChange = { otp = it },
-                                label = "Enter OTP"
+                                label = "Enter OTP",
+                                leadingIcon = {
+                                    Icon(
+                                        Icons.Outlined.Sms,
+                                        contentDescription = null,
+                                        tint = colors.textSecondary
+                                    )
+                                }
                             )
                         }
                     } else {
@@ -197,6 +212,13 @@ fun LoginScreen(
                                 VisualTransformation.None 
                             else 
                                 PasswordVisualTransformation(),
+                            leadingIcon = {
+                                Icon(
+                                    Icons.Outlined.Lock,
+                                    contentDescription = null,
+                                    tint = colors.textSecondary
+                                )
+                            },
                             trailingIcon = {
                                 TextButton(onClick = { passwordVisible = !passwordVisible }) {
                                     Text(
@@ -327,18 +349,42 @@ fun LoginScreen(
                         )
                     }
 
+                    Spacer(modifier = Modifier.height(Spacing.XLarge))
+
+                    // ── OR Divider ──
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        HorizontalDivider(
+                            modifier = Modifier.weight(1f),
+                            color = colors.inputBorder
+                        )
+                        Text(
+                            "  OR  ",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = colors.textTertiary
+                        )
+                        HorizontalDivider(
+                            modifier = Modifier.weight(1f),
+                            color = colors.inputBorder
+                        )
+                    }
+
                     Spacer(modifier = Modifier.height(Spacing.Large))
 
                     Text(
                         "Don't have an account?", 
                         style = MaterialTheme.typography.bodyMedium,
-                        color = colors.textSecondary
+                        color = colors.textSecondary,
+                        textAlign = TextAlign.Center
                     )
                     TextButton(onClick = onRegisterClick) {
                         Text(
                             "Create Account", 
                             color = PrimaryBlue,
-                            fontWeight = FontWeight.SemiBold
+                            fontWeight = FontWeight.Bold,
+                            style = MaterialTheme.typography.bodyLarge
                         )
                     }
                 }

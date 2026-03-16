@@ -45,6 +45,8 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.example.cityflux.data.RealtimeDbService
+import com.example.cityflux.model.LiveUserLocation
+import com.example.cityflux.model.LocationUtils
 import com.example.cityflux.model.ParkingLive
 import com.example.cityflux.model.ParkingSpot
 import com.example.cityflux.model.Report
@@ -53,6 +55,7 @@ import com.example.cityflux.ui.theme.*
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.maps.CameraUpdateFactory
 import com.google.android.gms.maps.model.*
+import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
 import com.google.maps.android.compose.*
@@ -80,6 +83,7 @@ class CongestionMapViewModel : ViewModel() {
         val parkingSpots: List<ParkingSpot> = emptyList(),
         val parkingLive: Map<String, ParkingLive> = emptyMap(),
         val incidents: List<Report> = emptyList(),
+        val liveLocations: Map<String, LiveUserLocation> = emptyMap(),
         val isOffline: Boolean = false,
         val error: String? = null
     ) {
@@ -89,18 +93,22 @@ class CongestionMapViewModel : ViewModel() {
         val totalZones get() = trafficMap.size
         val pendingIncidents get() = incidents.count { it.status.equals("Pending", true) }
         val activeIncidents get() = incidents.count { it.status.equals("In Progress", true) }
+        val liveUsersCount get() = liveLocations.size
     }
 
     private val _uiState = MutableStateFlow(CongestionUiState())
     val uiState: StateFlow<CongestionUiState> = _uiState.asStateFlow()
 
     private val firestore = FirebaseFirestore.getInstance()
+    private var policeLat = 0.0
+    private var policeLon = 0.0
 
     init {
         observeTraffic()
         observeParkingLive()
+        observeLiveLocations()
         fetchParkingSpots()
-        fetchIncidents()
+        fetchPoliceLocationThenIncidents()
     }
 
     private fun observeTraffic() {
@@ -128,6 +136,16 @@ class CongestionMapViewModel : ViewModel() {
         }
     }
 
+    private fun observeLiveLocations() {
+        viewModelScope.launch {
+            RealtimeDbService.observeLiveLocations()
+                .catch { e -> Log.e(TAG, "Live locations error", e) }
+                .collect { map ->
+                    _uiState.update { it.copy(liveLocations = map, isLoading = false) }
+                }
+        }
+    }
+
     private fun fetchParkingSpots() {
         firestore.collection("parking")
             .addSnapshotListener { snap, err ->
@@ -139,16 +157,41 @@ class CongestionMapViewModel : ViewModel() {
             }
     }
 
+    private fun fetchPoliceLocationThenIncidents() {
+        val uid = FirebaseAuth.getInstance().currentUser?.uid ?: run {
+            fetchIncidents(); return
+        }
+        firestore.collection("users").document(uid).get()
+            .addOnSuccessListener { doc ->
+                policeLat = doc.getDouble("workingLatitude") ?: 0.0
+                policeLon = doc.getDouble("workingLongitude") ?: 0.0
+                fetchIncidents()
+            }
+            .addOnFailureListener {
+                Log.e(TAG, "Failed to fetch police location", it)
+                fetchIncidents()
+            }
+    }
+
     private fun fetchIncidents() {
         firestore.collection("reports")
             .orderBy("timestamp", Query.Direction.DESCENDING)
             .limit(100)
             .addSnapshotListener { snap, err ->
                 if (err != null) { Log.e(TAG, "Incidents error", err); return@addSnapshotListener }
-                val reports = snap?.documents?.mapNotNull { doc ->
+                val allReports = snap?.documents?.mapNotNull { doc ->
                     doc.toObject(Report::class.java)?.copy(id = doc.id)
                 }?.filter { it.latitude != 0.0 && it.longitude != 0.0 } ?: emptyList()
-                _uiState.update { it.copy(incidents = reports, isLoading = false) }
+
+                // Filter by police working area (same as ReportsScreen)
+                val filtered = if (policeLat != 0.0 || policeLon != 0.0) {
+                    allReports.filter {
+                        LocationUtils.isWithinRadius(policeLat, policeLon, it.latitude, it.longitude)
+                    }
+                } else allReports
+
+                _uiState.update { it.copy(incidents = filtered, isLoading = false) }
+                Log.d(TAG, "Loaded ${filtered.size}/${allReports.size} nearby incidents")
             }
     }
 
@@ -156,8 +199,9 @@ class CongestionMapViewModel : ViewModel() {
         _uiState.update { it.copy(isLoading = true, error = null, isOffline = false) }
         observeTraffic()
         observeParkingLive()
+        observeLiveLocations()
         fetchParkingSpots()
-        fetchIncidents()
+        fetchPoliceLocationThenIncidents()
     }
 }
 
@@ -253,7 +297,9 @@ fun CongestionMapScreen(
     var showCongestionZones by remember { mutableStateOf(true) }
     var showIncidents by remember { mutableStateOf(true) }
     var showParking by remember { mutableStateOf(true) }
+    var showLiveUsers by remember { mutableStateOf(true) }
     var showStatsPanel by remember { mutableStateOf(false) }
+    var selectedLiveUser by remember { mutableStateOf<Pair<String, LiveUserLocation>?>(null) }
 
     // ── Connectivity ──
     val isOffline = remember { !isNetworkAvailablePolice(context) }
@@ -298,6 +344,7 @@ fun CongestionMapScreen(
             onMapClick = {
                 selectedIncident = null
                 selectedParking = null
+                selectedLiveUser = null
             }
         ) {
 
@@ -408,6 +455,54 @@ fun CongestionMapScreen(
                             true
                         }
                     )
+                }
+            }
+
+            // ──── Live User Location Markers (Crowd-sourced traffic) ────
+            if (showLiveUsers) {
+                state.liveLocations.forEach { (uid, loc) ->
+                    val position = LatLng(loc.lat, loc.lng)
+                    androidx.compose.runtime.key(uid) {
+                        val markerBitmap = remember(loc.speed, loc.heading.toInt()) {
+                            createLiveUserMarkerBitmapPolice(loc.speed, loc.heading.toFloat())
+                        }
+                        Marker(
+                            state = MarkerState(position = position),
+                            title = loc.name,
+                            snippet = buildString {
+                                append("${loc.speed} km/h")
+                                if (loc.speed < 5) append(" · Stopped")
+                                else if (loc.speed < 20) append(" · Slow")
+                                else if (loc.speed < 50) append(" · Moving")
+                                else append(" · Fast")
+                            },
+                            icon = BitmapDescriptorFactory.fromBitmap(markerBitmap),
+                            flat = true,
+                            anchor = androidx.compose.ui.geometry.Offset(0.5f, 0.5f),
+                            onClick = {
+                                selectedIncident = null
+                                selectedParking = null
+                                selectedLiveUser = uid to loc
+                                true
+                            }
+                        )
+                    }
+                }
+
+                // Crowd-sourced traffic density overlay from live users
+                if (state.liveLocations.size >= 2) {
+                    val trafficCells = remember(state.liveLocations) {
+                        buildPoliceTrafficCells(state.liveLocations.values.toList())
+                    }
+                    trafficCells.forEach { cell ->
+                        Circle(
+                            center = cell.center,
+                            radius = cell.radius,
+                            fillColor = cell.color,
+                            strokeColor = cell.color.copy(alpha = minOf(cell.color.alpha * 2f, 1f)),
+                            strokeWidth = 1.5f
+                        )
+                    }
                 }
             }
         }
@@ -528,6 +623,16 @@ fun CongestionMapScreen(
                         onClick = { showParking = !showParking }
                     )
                 }
+                item {
+                    CongestionLayerChip(
+                        label = "Live Users",
+                        icon = Icons.Outlined.People,
+                        isActive = showLiveUsers,
+                        activeColor = AccentGreen,
+                        count = state.liveUsersCount,
+                        onClick = { showLiveUsers = !showLiveUsers }
+                    )
+                }
             }
         }
 
@@ -619,6 +724,13 @@ fun CongestionMapScreen(
                 LegendRow(color = Color(0xFFB91C1C), label = "High", count = state.highCount)
                 LegendRow(color = Color(0xFFF59E0B), label = "Medium", count = state.mediumCount)
                 LegendRow(color = Color(0xFF10B981), label = "Low", count = state.lowCount)
+                if (showLiveUsers && state.liveUsersCount > 0) {
+                    HorizontalDivider(
+                        color = colors.divider,
+                        thickness = 0.5.dp
+                    )
+                    LegendRow(color = AccentGreen, label = "Live", count = state.liveUsersCount)
+                }
             }
         }
 
@@ -718,6 +830,22 @@ fun CongestionMapScreen(
                     spot = spot,
                     availableSlots = state.parkingLive[spot.id]?.availableSlots ?: spot.availableSlots,
                     onDismiss = { selectedParking = null }
+                )
+            }
+        }
+
+        // ══════════════════════ Live User Info Popup ══════════════════════
+        AnimatedVisibility(
+            visible = selectedLiveUser != null,
+            enter = slideInVertically { it } + fadeIn(),
+            exit = slideOutVertically { it } + fadeOut(),
+            modifier = Modifier.align(Alignment.BottomCenter)
+        ) {
+            selectedLiveUser?.let { (uid, loc) ->
+                PoliceLiveUserCard(
+                    uid = uid,
+                    loc = loc,
+                    onDismiss = { selectedLiveUser = null }
                 )
             }
         }
@@ -907,6 +1035,41 @@ private fun CongestionStatsPanel(state: CongestionMapViewModel.CongestionUiState
                     title = "Total",
                     value = state.incidents.size.toString(),
                     color = colors.textSecondary,
+                    modifier = Modifier.weight(1f)
+                )
+            }
+
+            Spacer(Modifier.height(8.dp))
+
+            // Live users row
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                StatMiniCard(
+                    title = "Live Users",
+                    value = state.liveUsersCount.toString(),
+                    color = AccentGreen,
+                    modifier = Modifier.weight(1f)
+                )
+                val avgSpeed = if (state.liveLocations.isNotEmpty())
+                    state.liveLocations.values.map { it.speed }.average().toInt()
+                else 0
+                StatMiniCard(
+                    title = "Avg Speed",
+                    value = "${avgSpeed} km/h",
+                    color = when {
+                        avgSpeed < 10 -> Color(0xFFB91C1C)
+                        avgSpeed < 25 -> Color(0xFFF59E0B)
+                        else -> Color(0xFF10B981)
+                    },
+                    modifier = Modifier.weight(1f)
+                )
+                val stoppedCount = state.liveLocations.values.count { it.speed < 5 }
+                StatMiniCard(
+                    title = "Stopped",
+                    value = stoppedCount.toString(),
+                    color = AccentRed,
                     modifier = Modifier.weight(1f)
                 )
             }
@@ -1285,4 +1448,251 @@ private fun isNetworkAvailablePolice(context: Context): Boolean {
     val network = cm.activeNetwork ?: return false
     val cap = cm.getNetworkCapabilities(network) ?: return false
     return cap.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+}
+
+
+// ═══════════════════════════════════════════════════════════════════
+// Live User Marker for Police View
+// ═══════════════════════════════════════════════════════════════════
+
+private fun createLiveUserMarkerBitmapPolice(speed: Int, heading: Float): Bitmap {
+    val sizePx = 72
+    val bitmap = Bitmap.createBitmap(sizePx, sizePx, Bitmap.Config.ARGB_8888)
+    val canvas = Canvas(bitmap)
+    val cx = sizePx / 2f
+    val cy = sizePx / 2f
+    val radius = 22f
+
+    val fillColor = when {
+        speed >= 40 -> android.graphics.Color.rgb(34, 197, 94)   // Green = fast
+        speed >= 15 -> android.graphics.Color.rgb(249, 115, 22)  // Orange = moderate
+        else        -> android.graphics.Color.rgb(239, 68, 68)   // Red = slow/stopped
+    }
+
+    // Glow ring
+    val glowPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = fillColor; alpha = 50; style = Paint.Style.FILL
+    }
+    canvas.drawCircle(cx, cy, radius + 10f, glowPaint)
+
+    // White border
+    val borderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = android.graphics.Color.WHITE; style = Paint.Style.FILL
+    }
+    canvas.drawCircle(cx, cy, radius + 3f, borderPaint)
+
+    // Fill
+    val fillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = fillColor; style = Paint.Style.FILL
+    }
+    canvas.drawCircle(cx, cy, radius, fillPaint)
+
+    // Direction arrow
+    if (speed > 3) {
+        canvas.save()
+        canvas.rotate(heading, cx, cy)
+        val arrowPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = android.graphics.Color.WHITE; style = Paint.Style.FILL
+        }
+        val path = android.graphics.Path().apply {
+            moveTo(cx, cy - radius - 9f)
+            lineTo(cx - 6f, cy - radius + 1f)
+            lineTo(cx + 6f, cy - radius + 1f)
+            close()
+        }
+        canvas.drawPath(path, arrowPaint)
+        canvas.restore()
+    }
+
+    // Speed label
+    val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = android.graphics.Color.WHITE
+        textSize = 13f
+        typeface = android.graphics.Typeface.DEFAULT_BOLD
+        textAlign = Paint.Align.CENTER
+    }
+    val textY = cy - (textPaint.descent() + textPaint.ascent()) / 2f
+    canvas.drawText("${speed}", cx, textY, textPaint)
+
+    return bitmap
+}
+
+
+// ═══════════════════════════════════════════════════════════════════
+// Crowd-Sourced Traffic Density Cells (Police View)
+// ═══════════════════════════════════════════════════════════════════
+
+private data class PoliceHeatCell(
+    val center: LatLng,
+    val radius: Double,
+    val color: Color
+)
+
+private fun buildPoliceTrafficCells(locations: List<LiveUserLocation>): List<PoliceHeatCell> {
+    if (locations.size < 2) return emptyList()
+    val gridSize = 0.007 // ~700m cells
+    val groups = locations.groupBy { loc ->
+        val latBucket = (loc.lat / gridSize).toInt()
+        val lngBucket = (loc.lng / gridSize).toInt()
+        latBucket to lngBucket
+    }.filter { it.value.size >= 2 }
+
+    return groups.map { (_, group) ->
+        val avgLat = group.sumOf { it.lat } / group.size
+        val avgLng = group.sumOf { it.lng } / group.size
+        val avgSpeed = group.map { it.speed }.average()
+        val density = group.size
+        val (radius, color) = when {
+            avgSpeed < 10.0 -> (550.0 + density * 60) to Color(0xFFEF4444).copy(alpha = 0.25f)
+            avgSpeed < 25.0 -> (450.0 + density * 50) to Color(0xFFF97316).copy(alpha = 0.20f)
+            else            -> (380.0 + density * 40) to Color(0xFF22C55E).copy(alpha = 0.15f)
+        }
+        PoliceHeatCell(LatLng(avgLat, avgLng), radius, color)
+    }
+}
+
+
+// ═══════════════════════════════════════════════════════════════════
+// Police Live User Info Card
+// ═══════════════════════════════════════════════════════════════════
+
+@Composable
+private fun PoliceLiveUserCard(
+    uid: String,
+    loc: LiveUserLocation,
+    onDismiss: () -> Unit
+) {
+    val colors = MaterialTheme.cityFluxColors
+    val speedColor = when {
+        loc.speed >= 40 -> Color(0xFF10B981)
+        loc.speed >= 15 -> Color(0xFFF59E0B)
+        else            -> Color(0xFFB91C1C)
+    }
+    val statusText = when {
+        loc.speed < 5  -> "Stopped"
+        loc.speed < 20 -> "Slow Traffic"
+        loc.speed < 50 -> "Moving"
+        else           -> "Fast"
+    }
+    val timeAgo = DateUtils.getRelativeTimeSpanString(
+        loc.timestamp, System.currentTimeMillis(), DateUtils.SECOND_IN_MILLIS
+    ).toString()
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = Spacing.Medium, vertical = Spacing.Medium)
+            .navigationBarsPadding()
+            .shadow(8.dp, RoundedCornerShape(CornerRadius.XLarge), ambientColor = colors.cardShadow),
+        shape = RoundedCornerShape(CornerRadius.XLarge),
+        colors = CardDefaults.cardColors(containerColor = colors.cardBackground)
+    ) {
+        Column(modifier = Modifier.padding(Spacing.Large)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Surface(
+                        modifier = Modifier.size(40.dp),
+                        shape = RoundedCornerShape(CornerRadius.Medium),
+                        color = speedColor.copy(alpha = 0.12f)
+                    ) {
+                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            Icon(
+                                Icons.Outlined.Person,
+                                null, tint = speedColor, modifier = Modifier.size(22.dp)
+                            )
+                        }
+                    }
+                    Spacer(Modifier.width(Spacing.Medium))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            loc.name,
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = colors.textPrimary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Text(
+                            "$statusText · $timeAgo",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = colors.textTertiary
+                        )
+                    }
+                }
+                IconButton(onClick = onDismiss, modifier = Modifier.size(28.dp)) {
+                    Icon(Icons.Filled.Close, "Close", tint = colors.textTertiary, modifier = Modifier.size(18.dp))
+                }
+            }
+
+            Spacer(Modifier.height(Spacing.Medium))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Surface(
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(CornerRadius.Medium),
+                    color = speedColor.copy(alpha = 0.08f)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(vertical = 8.dp, horizontal = 10.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(
+                            "${loc.speed} km/h",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = speedColor
+                        )
+                        Text("Speed", style = MaterialTheme.typography.labelSmall, color = colors.textTertiary, fontSize = 10.sp)
+                    }
+                }
+                Surface(
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(CornerRadius.Medium),
+                    color = PrimaryBlue.copy(alpha = 0.08f)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(vertical = 8.dp, horizontal = 10.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(
+                            "%.0f°".format(loc.heading),
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = PrimaryBlue
+                        )
+                        Text("Heading", style = MaterialTheme.typography.labelSmall, color = colors.textTertiary, fontSize = 10.sp)
+                    }
+                }
+                Surface(
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(CornerRadius.Medium),
+                    color = colors.textTertiary.copy(alpha = 0.08f)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(vertical = 8.dp, horizontal = 10.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(
+                            "%.4f".format(loc.lat),
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = colors.textPrimary,
+                            fontSize = 12.sp
+                        )
+                        Text("Lat", style = MaterialTheme.typography.labelSmall, color = colors.textTertiary, fontSize = 10.sp)
+                    }
+                }
+            }
+        }
+    }
 }

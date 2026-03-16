@@ -80,8 +80,8 @@ fun MyReportsScreen() {
     var sortMode by remember { mutableStateOf(CitizenSortMode.NEWEST) }
     var showSortMenu by remember { mutableStateOf(false) }
 
-    // ── Expandable / Photo Dialog ──
-    var expandedReportId by remember { mutableStateOf<String?>(null) }
+    // ── Detail Sheet / Photo Dialog ──
+    var selectedReport by remember { mutableStateOf<Report?>(null) }
     var photoDialogUrl by remember { mutableStateOf<String?>(null) }
 
     // ── Firestore Listener ──
@@ -178,6 +178,30 @@ fun MyReportsScreen() {
                 }
             }
         }
+    }
+
+    // ── Report Detail Full-Screen Dialog ──
+    selectedReport?.let { report ->
+        ReportDetailDialog(
+            report = report,
+            onDismiss = { selectedReport = null },
+            onViewPhoto = { photoDialogUrl = it },
+            onShare = {
+                val shareText = buildString {
+                    append("📋 Report: ${report.title}\n")
+                    append("📝 ${report.description}\n")
+                    append("📊 Status: ${report.status}\n")
+                    append("🏷️ Type: ${report.type}\n")
+                    append("— Shared via CityFlux")
+                }
+                val intent = Intent(Intent.ACTION_SEND).apply {
+                    type = "text/plain"
+                    putExtra(Intent.EXTRA_TEXT, shareText)
+                }
+                context.startActivity(Intent.createChooser(intent, "Share Report"))
+            },
+            colors = colors
+        )
     }
 
     // ── Main UI ──
@@ -425,27 +449,9 @@ fun MyReportsScreen() {
                                 visible = true,
                                 delay = staggeredDelay(index)
                             ) {
-                                PremiumCitizenReportCard(
+                                CompactReportCard(
                                     report = report,
-                                    isExpanded = expandedReportId == report.id,
-                                    onToggleExpand = {
-                                        expandedReportId = if (expandedReportId == report.id) null else report.id
-                                    },
-                                    onViewPhoto = { photoDialogUrl = it },
-                                    onShare = {
-                                        val shareText = buildString {
-                                            append("📋 Report: ${report.title}\n")
-                                            append("📝 ${report.description}\n")
-                                            append("📊 Status: ${report.status}\n")
-                                            append("🏷️ Type: ${report.type}\n")
-                                            append("— Shared via CityFlux")
-                                        }
-                                        val intent = Intent(Intent.ACTION_SEND).apply {
-                                            type = "text/plain"
-                                            putExtra(Intent.EXTRA_TEXT, shareText)
-                                        }
-                                        context.startActivity(Intent.createChooser(intent, "Share Report"))
-                                    },
+                                    onClick = { selectedReport = report },
                                     colors = colors
                                 )
                             }
@@ -579,16 +585,13 @@ private fun MyStatsChip(
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// Premium Expandable Report Card
+// Compact Report Card — Summary only, tap to open detail
 // ═══════════════════════════════════════════════════════════════════
 
 @Composable
-private fun PremiumCitizenReportCard(
+private fun CompactReportCard(
     report: Report,
-    isExpanded: Boolean,
-    onToggleExpand: () -> Unit,
-    onViewPhoto: (String) -> Unit,
-    onShare: () -> Unit,
+    onClick: () -> Unit,
     colors: CityFluxColors
 ) {
     val accentColor = when (report.status.lowercase()) {
@@ -598,28 +601,20 @@ private fun PremiumCitizenReportCard(
         else -> AccentIssues
     }
 
-    val typeIcon = when (report.type.lowercase()) {
-        "illegal_parking" -> Icons.Outlined.LocalParking
-        "accident" -> Icons.Outlined.CarCrash
-        "pothole", "road_damage" -> Icons.Outlined.Warning
-        "traffic_signal", "traffic_violation" -> Icons.Outlined.Traffic
-        "streetlight" -> Icons.Outlined.LightMode
-        "garbage", "waste" -> Icons.Outlined.Delete
-        else -> Icons.Outlined.Report
-    }
+    val typeIcon = reportTypeIcon(report.type)
 
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .shadow(
-                elevation = if (isExpanded) 10.dp else 6.dp,
+                elevation = 6.dp,
                 shape = RoundedCornerShape(CornerRadius.Large),
                 ambientColor = colors.cardShadow,
                 spotColor = colors.cardShadowMedium
-            )
-            .clickable { onToggleExpand() },
+            ),
         shape = RoundedCornerShape(CornerRadius.Large),
-        colors = CardDefaults.cardColors(containerColor = colors.cardBackground)
+        colors = CardDefaults.cardColors(containerColor = colors.cardBackground),
+        onClick = onClick
     ) {
         Row(modifier = Modifier.height(IntrinsicSize.Min)) {
             // Accent bar
@@ -631,198 +626,89 @@ private fun PremiumCitizenReportCard(
                     .background(accentColor)
             )
 
-            Column(modifier = Modifier.padding(Spacing.Large)) {
-                // Header row
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.Top
-                ) {
-                    Row(
-                        modifier = Modifier.weight(1f),
-                        verticalAlignment = Alignment.CenterVertically
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(Spacing.Large),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Thumbnail or type icon
+                if (report.imageUrl.isNotEmpty()) {
+                    AsyncImage(
+                        model = ImageRequest.Builder(LocalContext.current)
+                            .data(report.imageUrl).crossfade(true).build(),
+                        contentDescription = "Report image",
+                        modifier = Modifier
+                            .size(56.dp)
+                            .clip(RoundedCornerShape(CornerRadius.Medium)),
+                        contentScale = ContentScale.Crop
+                    )
+                } else {
+                    Box(
+                        modifier = Modifier
+                            .size(56.dp)
+                            .background(accentColor.copy(alpha = 0.1f), RoundedCornerShape(CornerRadius.Medium)),
+                        contentAlignment = Alignment.Center
                     ) {
-                        // Type icon
-                        Box(
-                            modifier = Modifier
-                                .size(32.dp)
-                                .background(accentColor.copy(alpha = 0.1f), RoundedCornerShape(8.dp)),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(typeIcon, null, tint = accentColor, modifier = Modifier.size(18.dp))
-                        }
-                        Spacer(Modifier.width(10.dp))
-                        Column(modifier = Modifier.weight(1f)) {
+                        Icon(typeIcon, null, tint = accentColor, modifier = Modifier.size(28.dp))
+                    }
+                }
+
+                Spacer(Modifier.width(Spacing.Medium))
+
+                // Text info
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = report.title,
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = colors.textPrimary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Spacer(Modifier.height(2.dp))
+                    Text(
+                        text = report.description,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = colors.textSecondary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = report.type.replace("_", " ").replaceFirstChar { it.uppercase() },
+                            style = MaterialTheme.typography.labelSmall,
+                            color = colors.textTertiary,
+                            fontSize = 10.sp
+                        )
+                        report.timestamp?.let { ts ->
                             Text(
-                                text = report.title,
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.SemiBold,
-                                color = colors.textPrimary,
-                                maxLines = if (isExpanded) Int.MAX_VALUE else 1,
-                                overflow = TextOverflow.Ellipsis
+                                " · ",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = colors.textTertiary
                             )
-                            // Type badge
                             Text(
-                                text = report.type.replace("_", " ").replaceFirstChar { it.uppercase() },
+                                DateUtils.getRelativeTimeSpanString(
+                                    ts.toDate().time, System.currentTimeMillis(), DateUtils.MINUTE_IN_MILLIS
+                                ).toString(),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = colors.textTertiary,
                                 fontSize = 10.sp
                             )
                         }
                     }
-                    Spacer(Modifier.width(8.dp))
+                }
+
+                Spacer(Modifier.width(Spacing.Small))
+
+                // Status + chevron
+                Column(horizontalAlignment = Alignment.End) {
                     StatusChip(status = report.status)
-                }
-
-                Spacer(Modifier.height(Spacing.Small))
-
-                // Description
-                Text(
-                    text = report.description,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = colors.textSecondary,
-                    maxLines = if (isExpanded) Int.MAX_VALUE else 2,
-                    overflow = TextOverflow.Ellipsis
-                )
-
-                // Timestamp
-                report.timestamp?.let { ts ->
-                    Spacer(Modifier.height(6.dp))
-                    val timeAgo = DateUtils.getRelativeTimeSpanString(
-                        ts.toDate().time, System.currentTimeMillis(), DateUtils.MINUTE_IN_MILLIS
-                    ).toString()
-                    Text(
-                        text = timeAgo,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = colors.textTertiary,
-                        fontSize = 10.sp
-                    )
-                }
-
-                // Thumbnail image (collapsed)
-                if (!isExpanded && report.imageUrl.isNotEmpty()) {
-                    Spacer(Modifier.height(Spacing.Medium))
-                    AsyncImage(
-                        model = report.imageUrl,
-                        contentDescription = "Report image",
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(120.dp)
-                            .clip(RoundedCornerShape(CornerRadius.Medium))
-                            .clickable { onViewPhoto(report.imageUrl) },
-                        contentScale = ContentScale.Crop
-                    )
-                }
-
-                // ── Expanded Details ──
-                AnimatedVisibility(
-                    visible = isExpanded,
-                    enter = expandVertically() + fadeIn(),
-                    exit = shrinkVertically() + fadeOut()
-                ) {
-                    Column {
-                        Spacer(Modifier.height(Spacing.Medium))
-                        HorizontalDivider(color = colors.surfaceVariant, thickness = 0.5.dp)
-                        Spacer(Modifier.height(Spacing.Medium))
-
-                        // All images
-                        val allImages = buildList {
-                            if (report.imageUrl.isNotEmpty()) add(report.imageUrl)
-                            addAll(report.imageUrls.filter { it.isNotEmpty() && it != report.imageUrl })
-                        }
-                        if (allImages.isNotEmpty()) {
-                            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                items(allImages) { url ->
-                                    AsyncImage(
-                                        model = ImageRequest.Builder(LocalContext.current).data(url).crossfade(true).build(),
-                                        contentDescription = "Photo",
-                                        modifier = Modifier
-                                            .size(100.dp)
-                                            .clip(RoundedCornerShape(CornerRadius.Medium))
-                                            .clickable { onViewPhoto(url) },
-                                        contentScale = ContentScale.Crop
-                                    )
-                                }
-                            }
-                            Spacer(Modifier.height(Spacing.Medium))
-                        }
-
-                        // Meta info
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(Spacing.Large)
-                        ) {
-                            ReportMetaItem("Priority", report.priority.replaceFirstChar { it.uppercase() },
-                                when (report.priority.lowercase()) {
-                                    "high" -> AccentRed; "medium" -> AccentOrange; else -> AccentGreen
-                                })
-                            if (report.upvoteCount > 0) {
-                                ReportMetaItem("Upvotes", "${report.upvoteCount}", PrimaryBlue)
-                            }
-                            if (report.isAnonymous) {
-                                ReportMetaItem("Visibility", "Anonymous", colors.textTertiary)
-                            }
-                        }
-
-                        // Location info
-                        if (report.latitude != 0.0 && report.longitude != 0.0) {
-                            Spacer(Modifier.height(Spacing.Small))
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Outlined.LocationOn, null,
-                                    tint = colors.textTertiary, modifier = Modifier.size(14.dp))
-                                Spacer(Modifier.width(4.dp))
-                                Text(
-                                    "%.4f, %.4f".format(report.latitude, report.longitude),
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = colors.textTertiary
-                                )
-                            }
-                        }
-
-                        // Full timestamp
-                        report.timestamp?.let { ts ->
-                            Spacer(Modifier.height(Spacing.Small))
-                            val fmt = SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.getDefault())
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Outlined.CalendarToday, null,
-                                    tint = colors.textTertiary, modifier = Modifier.size(14.dp))
-                                Spacer(Modifier.width(4.dp))
-                                Text(
-                                    fmt.format(ts.toDate()),
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = colors.textTertiary
-                                )
-                            }
-                        }
-
-                        Spacer(Modifier.height(Spacing.Medium))
-
-                        // Action buttons
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.End,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            // Share button
-                            TextButton(onClick = onShare) {
-                                Icon(Icons.Outlined.Share, null, modifier = Modifier.size(16.dp))
-                                Spacer(Modifier.width(4.dp))
-                                Text("Share", fontSize = 12.sp)
-                            }
-                        }
-                    }
-                }
-
-                // Expand indicator
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 4.dp),
-                    horizontalArrangement = Arrangement.Center
-                ) {
+                    Spacer(Modifier.height(4.dp))
                     Icon(
-                        if (isExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                        contentDescription = if (isExpanded) "Collapse" else "Expand",
+                        Icons.Outlined.ChevronRight,
+                        contentDescription = "View details",
                         tint = colors.textTertiary.copy(alpha = 0.5f),
                         modifier = Modifier.size(18.dp)
                     )
@@ -832,11 +718,303 @@ private fun PremiumCitizenReportCard(
     }
 }
 
+private fun reportTypeIcon(type: String): ImageVector {
+    return when (type.lowercase()) {
+        "illegal_parking" -> Icons.Outlined.LocalParking
+        "accident" -> Icons.Outlined.CarCrash
+        "pothole", "road_damage" -> Icons.Outlined.Warning
+        "traffic_signal", "traffic_violation" -> Icons.Outlined.Traffic
+        "streetlight" -> Icons.Outlined.LightMode
+        "garbage", "waste" -> Icons.Outlined.Delete
+        else -> Icons.Outlined.Report
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Report Detail Full-Screen Dialog
+// ═══════════════════════════════════════════════════════════════════
+
 @Composable
-private fun ReportMetaItem(label: String, value: String, color: Color) {
-    Column {
-        Text(label, fontSize = 10.sp, color = MaterialTheme.cityFluxColors.textTertiary, fontWeight = FontWeight.Medium)
-        Text(value, fontSize = 12.sp, color = color, fontWeight = FontWeight.SemiBold)
+private fun ReportDetailDialog(
+    report: Report,
+    onDismiss: () -> Unit,
+    onViewPhoto: (String) -> Unit,
+    onShare: () -> Unit,
+    colors: CityFluxColors
+) {
+    val accentColor = when (report.status.lowercase()) {
+        "resolved" -> AccentGreen
+        "in progress" -> AccentOrange
+        "rejected" -> AccentRed
+        else -> AccentIssues
+    }
+    val typeIcon = reportTypeIcon(report.type)
+
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .fillMaxHeight(0.9f)
+                .shadow(
+                    elevation = 16.dp,
+                    shape = RoundedCornerShape(CornerRadius.XLarge),
+                    ambientColor = colors.cardShadow
+                ),
+            shape = RoundedCornerShape(CornerRadius.XLarge),
+            colors = CardDefaults.cardColors(containerColor = colors.cardBackground)
+        ) {
+            Column(modifier = Modifier.fillMaxSize()) {
+
+                // ── Header with close button ──
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(
+                            Brush.verticalGradient(
+                                listOf(accentColor.copy(alpha = 0.12f), Color.Transparent)
+                            )
+                        )
+                        .padding(Spacing.Large)
+                ) {
+                    // Close button
+                    IconButton(
+                        onClick = onDismiss,
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .size(32.dp)
+                            .background(colors.surfaceVariant, CircleShape)
+                    ) {
+                        Icon(Icons.Default.Close, "Close", tint = colors.textPrimary, modifier = Modifier.size(18.dp))
+                    }
+
+                    Column {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(
+                                modifier = Modifier
+                                    .size(44.dp)
+                                    .background(accentColor.copy(alpha = 0.15f), RoundedCornerShape(CornerRadius.Medium)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(typeIcon, null, tint = accentColor, modifier = Modifier.size(24.dp))
+                            }
+                            Spacer(Modifier.width(Spacing.Medium))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = report.type.replace("_", " ").replaceFirstChar { it.uppercase() },
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = accentColor,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Spacer(Modifier.height(2.dp))
+                                StatusChip(status = report.status)
+                            }
+                        }
+
+                        Spacer(Modifier.height(Spacing.Medium))
+
+                        Text(
+                            text = report.title,
+                            style = MaterialTheme.typography.headlineSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = colors.textPrimary
+                        )
+                    }
+                }
+
+                // ── Scrollable content ──
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .verticalScroll(rememberScrollState())
+                        .padding(horizontal = Spacing.Large)
+                ) {
+                    // Images gallery
+                    val allImages = buildList {
+                        if (report.imageUrl.isNotEmpty()) add(report.imageUrl)
+                        addAll(report.imageUrls.filter { it.isNotEmpty() && it != report.imageUrl })
+                    }
+                    if (allImages.isNotEmpty()) {
+                        Spacer(Modifier.height(Spacing.Medium))
+                        if (allImages.size == 1) {
+                            AsyncImage(
+                                model = ImageRequest.Builder(LocalContext.current)
+                                    .data(allImages[0]).crossfade(true).build(),
+                                contentDescription = "Report photo",
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(200.dp)
+                                    .clip(RoundedCornerShape(CornerRadius.Large))
+                                    .clickable { onViewPhoto(allImages[0]) },
+                                contentScale = ContentScale.Crop
+                            )
+                        } else {
+                            LazyRow(horizontalArrangement = Arrangement.spacedBy(Spacing.Small)) {
+                                items(allImages) { url ->
+                                    AsyncImage(
+                                        model = ImageRequest.Builder(LocalContext.current)
+                                            .data(url).crossfade(true).build(),
+                                        contentDescription = "Photo",
+                                        modifier = Modifier
+                                            .size(160.dp)
+                                            .clip(RoundedCornerShape(CornerRadius.Medium))
+                                            .clickable { onViewPhoto(url) },
+                                        contentScale = ContentScale.Crop
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(Modifier.height(Spacing.XLarge))
+
+                    // Description section
+                    Text(
+                        "Description",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = colors.textPrimary
+                    )
+                    Spacer(Modifier.height(Spacing.Small))
+                    Text(
+                        text = report.description,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = colors.textSecondary,
+                        lineHeight = 22.sp
+                    )
+
+                    Spacer(Modifier.height(Spacing.XLarge))
+                    HorizontalDivider(color = colors.surfaceVariant, thickness = 0.5.dp)
+                    Spacer(Modifier.height(Spacing.XLarge))
+
+                    // Details grid
+                    Text(
+                        "Details",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = colors.textPrimary
+                    )
+                    Spacer(Modifier.height(Spacing.Medium))
+
+                    // Priority
+                    DetailRow(
+                        icon = Icons.Outlined.Flag,
+                        label = "Priority",
+                        value = report.priority.replaceFirstChar { it.uppercase() },
+                        valueColor = when (report.priority.lowercase()) {
+                            "high" -> AccentRed; "medium" -> AccentOrange; else -> AccentGreen
+                        },
+                        colors = colors
+                    )
+
+                    // Date
+                    report.timestamp?.let { ts ->
+                        val fmt = SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.getDefault())
+                        DetailRow(
+                            icon = Icons.Outlined.CalendarToday,
+                            label = "Reported on",
+                            value = fmt.format(ts.toDate()),
+                            colors = colors
+                        )
+                    }
+
+                    // Location
+                    if (report.latitude != 0.0 && report.longitude != 0.0) {
+                        DetailRow(
+                            icon = Icons.Outlined.LocationOn,
+                            label = "Location",
+                            value = "%.5f, %.5f".format(report.latitude, report.longitude),
+                            colors = colors
+                        )
+                    }
+
+                    // Upvotes
+                    if (report.upvoteCount > 0) {
+                        DetailRow(
+                            icon = Icons.Outlined.ThumbUp,
+                            label = "Upvotes",
+                            value = "${report.upvoteCount}",
+                            valueColor = PrimaryBlue,
+                            colors = colors
+                        )
+                    }
+
+                    // Anonymous
+                    if (report.isAnonymous) {
+                        DetailRow(
+                            icon = Icons.Outlined.VisibilityOff,
+                            label = "Visibility",
+                            value = "Anonymous",
+                            colors = colors
+                        )
+                    }
+
+                    Spacer(Modifier.height(Spacing.XLarge))
+                }
+
+                // ── Bottom action bar ──
+                HorizontalDivider(color = colors.surfaceVariant, thickness = 0.5.dp)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = Spacing.Large, vertical = Spacing.Medium),
+                    horizontalArrangement = Arrangement.spacedBy(Spacing.Medium)
+                ) {
+                    OutlinedButton(
+                        onClick = onShare,
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(CornerRadius.Medium),
+                        border = BorderStroke(1.dp, colors.inputBorder)
+                    ) {
+                        Icon(Icons.Outlined.Share, null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Share")
+                    }
+                    Button(
+                        onClick = onDismiss,
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(CornerRadius.Medium),
+                        colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue)
+                    ) {
+                        Text("Close", color = Color.White)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DetailRow(
+    icon: ImageVector,
+    label: String,
+    value: String,
+    colors: CityFluxColors,
+    valueColor: Color = colors.textPrimary
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            icon, null,
+            tint = colors.textTertiary,
+            modifier = Modifier.size(18.dp)
+        )
+        Spacer(Modifier.width(Spacing.Medium))
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodyMedium,
+            color = colors.textSecondary,
+            modifier = Modifier.width(100.dp)
+        )
+        Text(
+            text = value,
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.SemiBold,
+            color = valueColor
+        )
     }
 }
 
