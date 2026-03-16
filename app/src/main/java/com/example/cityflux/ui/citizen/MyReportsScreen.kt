@@ -11,6 +11,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
@@ -40,10 +41,14 @@ import androidx.compose.ui.window.Dialog
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.example.cityflux.model.Report
+import com.example.cityflux.ui.police.ChatMessage
+import com.example.cityflux.ui.police.ActionProof
 import com.example.cityflux.ui.theme.*
+import com.google.firebase.Timestamp
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
+import com.google.firebase.firestore.Query
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -749,12 +754,31 @@ private fun ReportDetailDialog(
         else -> AccentIssues
     }
     val typeIcon = reportTypeIcon(report.type)
+    var selectedTab by remember { mutableIntStateOf(0) }
+    val tabs = listOf("Details", "Chat", "Proofs")
+
+    // Chat & Proof counts for badges
+    var chatCount by remember { mutableIntStateOf(0) }
+    var proofCount by remember { mutableIntStateOf(0) }
+
+    DisposableEffect(report.id) {
+        val firestore = FirebaseFirestore.getInstance()
+        val chatReg = firestore.collection("reports").document(report.id)
+            .collection("chat").addSnapshotListener { snap, _ ->
+                chatCount = snap?.size() ?: 0
+            }
+        val proofReg = firestore.collection("reports").document(report.id)
+            .collection("proofs").addSnapshotListener { snap, _ ->
+                proofCount = snap?.size() ?: 0
+            }
+        onDispose { chatReg.remove(); proofReg.remove() }
+    }
 
     Dialog(onDismissRequest = onDismiss) {
         Card(
             modifier = Modifier
                 .fillMaxWidth()
-                .fillMaxHeight(0.9f)
+                .fillMaxHeight(0.92f)
                 .shadow(
                     elevation = 16.dp,
                     shape = RoundedCornerShape(CornerRadius.XLarge),
@@ -765,7 +789,7 @@ private fun ReportDetailDialog(
         ) {
             Column(modifier = Modifier.fillMaxSize()) {
 
-                // ── Header with close button ──
+                // ── Header ──
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -776,7 +800,6 @@ private fun ReportDetailDialog(
                         )
                         .padding(Spacing.Large)
                 ) {
-                    // Close button
                     IconButton(
                         onClick = onDismiss,
                         modifier = Modifier
@@ -809,175 +832,523 @@ private fun ReportDetailDialog(
                                 StatusChip(status = report.status)
                             }
                         }
-
-                        Spacer(Modifier.height(Spacing.Medium))
-
+                        Spacer(Modifier.height(Spacing.Small))
                         Text(
                             text = report.title,
-                            style = MaterialTheme.typography.headlineSmall,
+                            style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
-                            color = colors.textPrimary
+                            color = colors.textPrimary,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
                 }
 
-                // ── Scrollable content ──
-                Column(
-                    modifier = Modifier
-                        .weight(1f)
-                        .verticalScroll(rememberScrollState())
-                        .padding(horizontal = Spacing.Large)
-                ) {
-                    // Images gallery
-                    val allImages = buildList {
-                        if (report.imageUrl.isNotEmpty()) add(report.imageUrl)
-                        addAll(report.imageUrls.filter { it.isNotEmpty() && it != report.imageUrl })
-                    }
-                    if (allImages.isNotEmpty()) {
-                        Spacer(Modifier.height(Spacing.Medium))
-                        if (allImages.size == 1) {
-                            AsyncImage(
-                                model = ImageRequest.Builder(LocalContext.current)
-                                    .data(allImages[0]).crossfade(true).build(),
-                                contentDescription = "Report photo",
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(200.dp)
-                                    .clip(RoundedCornerShape(CornerRadius.Large))
-                                    .clickable { onViewPhoto(allImages[0]) },
-                                contentScale = ContentScale.Crop
+                // ── Tab Row ──
+                TabRow(
+                    selectedTabIndex = selectedTab,
+                    containerColor = Color.Transparent,
+                    contentColor = PrimaryBlue,
+                    indicator = { tabPositions ->
+                        if (selectedTab < tabPositions.size) {
+                            TabRowDefaults.SecondaryIndicator(
+                                Modifier.tabIndicatorOffset(tabPositions[selectedTab]),
+                                height = 3.dp,
+                                color = PrimaryBlue
                             )
-                        } else {
-                            LazyRow(horizontalArrangement = Arrangement.spacedBy(Spacing.Small)) {
-                                items(allImages) { url ->
-                                    AsyncImage(
-                                        model = ImageRequest.Builder(LocalContext.current)
-                                            .data(url).crossfade(true).build(),
-                                        contentDescription = "Photo",
-                                        modifier = Modifier
-                                            .size(160.dp)
-                                            .clip(RoundedCornerShape(CornerRadius.Medium))
-                                            .clickable { onViewPhoto(url) },
-                                        contentScale = ContentScale.Crop
-                                    )
-                                }
-                            }
                         }
-                    }
-
-                    Spacer(Modifier.height(Spacing.XLarge))
-
-                    // Description section
-                    Text(
-                        "Description",
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = colors.textPrimary
-                    )
-                    Spacer(Modifier.height(Spacing.Small))
-                    Text(
-                        text = report.description,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = colors.textSecondary,
-                        lineHeight = 22.sp
-                    )
-
-                    Spacer(Modifier.height(Spacing.XLarge))
-                    HorizontalDivider(color = colors.surfaceVariant, thickness = 0.5.dp)
-                    Spacer(Modifier.height(Spacing.XLarge))
-
-                    // Details grid
-                    Text(
-                        "Details",
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = colors.textPrimary
-                    )
-                    Spacer(Modifier.height(Spacing.Medium))
-
-                    // Priority
-                    DetailRow(
-                        icon = Icons.Outlined.Flag,
-                        label = "Priority",
-                        value = report.priority.replaceFirstChar { it.uppercase() },
-                        valueColor = when (report.priority.lowercase()) {
-                            "high" -> AccentRed; "medium" -> AccentOrange; else -> AccentGreen
-                        },
-                        colors = colors
-                    )
-
-                    // Date
-                    report.timestamp?.let { ts ->
-                        val fmt = SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.getDefault())
-                        DetailRow(
-                            icon = Icons.Outlined.CalendarToday,
-                            label = "Reported on",
-                            value = fmt.format(ts.toDate()),
-                            colors = colors
+                    },
+                    divider = { HorizontalDivider(color = colors.surfaceVariant, thickness = 0.5.dp) }
+                ) {
+                    tabs.forEachIndexed { index, title ->
+                        val badge = when (index) {
+                            1 -> chatCount; 2 -> proofCount; else -> 0
+                        }
+                        Tab(
+                            selected = selectedTab == index,
+                            onClick = { selectedTab = index },
+                            text = {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        when (index) {
+                                            0 -> Icons.Outlined.Info
+                                            1 -> Icons.Outlined.Chat
+                                            else -> Icons.Outlined.VerifiedUser
+                                        },
+                                        null,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(Modifier.width(4.dp))
+                                    Text(title, fontSize = 12.sp, fontWeight = if (selectedTab == index) FontWeight.Bold else FontWeight.Normal)
+                                    if (badge > 0) {
+                                        Spacer(Modifier.width(4.dp))
+                                        Badge(
+                                            containerColor = if (index == 1) PrimaryBlue else AccentGreen,
+                                            contentColor = Color.White
+                                        ) {
+                                            Text("$badge", fontSize = 9.sp)
+                                        }
+                                    }
+                                }
+                            },
+                            selectedContentColor = PrimaryBlue,
+                            unselectedContentColor = colors.textTertiary
                         )
                     }
-
-                    // Location
-                    if (report.latitude != 0.0 && report.longitude != 0.0) {
-                        DetailRow(
-                            icon = Icons.Outlined.LocationOn,
-                            label = "Location",
-                            value = "%.5f, %.5f".format(report.latitude, report.longitude),
-                            colors = colors
-                        )
-                    }
-
-                    // Upvotes
-                    if (report.upvoteCount > 0) {
-                        DetailRow(
-                            icon = Icons.Outlined.ThumbUp,
-                            label = "Upvotes",
-                            value = "${report.upvoteCount}",
-                            valueColor = PrimaryBlue,
-                            colors = colors
-                        )
-                    }
-
-                    // Anonymous
-                    if (report.isAnonymous) {
-                        DetailRow(
-                            icon = Icons.Outlined.VisibilityOff,
-                            label = "Visibility",
-                            value = "Anonymous",
-                            colors = colors
-                        )
-                    }
-
-                    Spacer(Modifier.height(Spacing.XLarge))
                 }
 
-                // ── Bottom action bar ──
-                HorizontalDivider(color = colors.surfaceVariant, thickness = 0.5.dp)
-                Row(
+                // ── Tab Content ──
+                when (selectedTab) {
+                    0 -> DetailsTabContent(report, onViewPhoto, onShare, colors)
+                    1 -> ChatTabContent(report, colors)
+                    2 -> ProofsTabContent(report, onViewPhoto, colors)
+                }
+            }
+        }
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Details Tab (original content)
+// ═══════════════════════════════════════════════════════════════════
+
+@Composable
+private fun ColumnScope.DetailsTabContent(
+    report: Report,
+    onViewPhoto: (String) -> Unit,
+    onShare: () -> Unit,
+    colors: CityFluxColors
+) {
+    Column(
+        modifier = Modifier
+            .weight(1f)
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = Spacing.Large)
+    ) {
+        // Images gallery
+        val allImages = buildList {
+            if (report.imageUrl.isNotEmpty()) add(report.imageUrl)
+            addAll(report.imageUrls.filter { it.isNotEmpty() && it != report.imageUrl })
+        }
+        if (allImages.isNotEmpty()) {
+            Spacer(Modifier.height(Spacing.Medium))
+            if (allImages.size == 1) {
+                AsyncImage(
+                    model = ImageRequest.Builder(LocalContext.current)
+                        .data(allImages[0]).crossfade(true).build(),
+                    contentDescription = "Report photo",
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = Spacing.Large, vertical = Spacing.Medium),
-                    horizontalArrangement = Arrangement.spacedBy(Spacing.Medium)
-                ) {
-                    OutlinedButton(
-                        onClick = onShare,
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(CornerRadius.Medium),
-                        border = BorderStroke(1.dp, colors.inputBorder)
-                    ) {
-                        Icon(Icons.Outlined.Share, null, modifier = Modifier.size(16.dp))
-                        Spacer(Modifier.width(6.dp))
-                        Text("Share")
-                    }
-                    Button(
-                        onClick = onDismiss,
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(CornerRadius.Medium),
-                        colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue)
-                    ) {
-                        Text("Close", color = Color.White)
+                        .height(200.dp)
+                        .clip(RoundedCornerShape(CornerRadius.Large))
+                        .clickable { onViewPhoto(allImages[0]) },
+                    contentScale = ContentScale.Crop
+                )
+            } else {
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(Spacing.Small)) {
+                    items(allImages) { url ->
+                        AsyncImage(
+                            model = ImageRequest.Builder(LocalContext.current)
+                                .data(url).crossfade(true).build(),
+                            contentDescription = "Photo",
+                            modifier = Modifier
+                                .size(160.dp)
+                                .clip(RoundedCornerShape(CornerRadius.Medium))
+                                .clickable { onViewPhoto(url) },
+                            contentScale = ContentScale.Crop
+                        )
                     }
                 }
+            }
+        }
+
+        Spacer(Modifier.height(Spacing.XLarge))
+
+        // Description
+        Text("Description", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = colors.textPrimary)
+        Spacer(Modifier.height(Spacing.Small))
+        Text(report.description, style = MaterialTheme.typography.bodyMedium, color = colors.textSecondary, lineHeight = 22.sp)
+
+        Spacer(Modifier.height(Spacing.XLarge))
+        HorizontalDivider(color = colors.surfaceVariant, thickness = 0.5.dp)
+        Spacer(Modifier.height(Spacing.XLarge))
+
+        // Details grid
+        Text("Details", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = colors.textPrimary)
+        Spacer(Modifier.height(Spacing.Medium))
+
+        DetailRow(icon = Icons.Outlined.Flag, label = "Priority",
+            value = report.priority.replaceFirstChar { it.uppercase() },
+            valueColor = when (report.priority.lowercase()) { "high" -> AccentRed; "medium" -> AccentOrange; else -> AccentGreen },
+            colors = colors)
+
+        report.timestamp?.let { ts ->
+            val fmt = SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.getDefault())
+            DetailRow(icon = Icons.Outlined.CalendarToday, label = "Reported on", value = fmt.format(ts.toDate()), colors = colors)
+        }
+
+        if (report.latitude != 0.0 && report.longitude != 0.0) {
+            DetailRow(icon = Icons.Outlined.LocationOn, label = "Location",
+                value = "%.5f, %.5f".format(report.latitude, report.longitude), colors = colors)
+        }
+
+        if (report.upvoteCount > 0) {
+            DetailRow(icon = Icons.Outlined.ThumbUp, label = "Upvotes", value = "${report.upvoteCount}", valueColor = PrimaryBlue, colors = colors)
+        }
+
+        if (report.isAnonymous) {
+            DetailRow(icon = Icons.Outlined.VisibilityOff, label = "Visibility", value = "Anonymous", colors = colors)
+        }
+
+        Spacer(Modifier.height(Spacing.XLarge))
+    }
+
+    // Bottom action bar
+    HorizontalDivider(color = colors.surfaceVariant, thickness = 0.5.dp)
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = Spacing.Large, vertical = Spacing.Medium),
+        horizontalArrangement = Arrangement.spacedBy(Spacing.Medium)
+    ) {
+        OutlinedButton(
+            onClick = onShare, modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(CornerRadius.Medium),
+            border = BorderStroke(1.dp, colors.inputBorder)
+        ) {
+            Icon(Icons.Outlined.Share, null, modifier = Modifier.size(16.dp))
+            Spacer(Modifier.width(6.dp))
+            Text("Share Report")
+        }
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Chat Tab
+// ═══════════════════════════════════════════════════════════════════
+
+@Composable
+private fun ColumnScope.ChatTabContent(report: Report, colors: CityFluxColors) {
+    val firestore = FirebaseFirestore.getInstance()
+    val auth = FirebaseAuth.getInstance()
+    val currentUid = auth.currentUser?.uid ?: ""
+    val displayName = auth.currentUser?.displayName ?: "Citizen"
+    var messages by remember { mutableStateOf<List<ChatMessage>>(emptyList()) }
+    var inputText by remember { mutableStateOf("") }
+    var isSending by remember { mutableStateOf(false) }
+    val listState = rememberLazyListState()
+    val context = LocalContext.current
+
+    // Real-time chat listener
+    DisposableEffect(report.id) {
+        val reg = firestore.collection("reports").document(report.id)
+            .collection("chat")
+            .orderBy("timestamp", Query.Direction.ASCENDING)
+            .addSnapshotListener { snap, err ->
+                if (err != null) return@addSnapshotListener
+                messages = snap?.documents?.mapNotNull { doc ->
+                    val data = doc.data ?: return@mapNotNull null
+                    ChatMessage(
+                        id = doc.id,
+                        senderId = data["senderId"] as? String ?: "",
+                        senderName = data["senderName"] as? String ?: data["sender"] as? String ?: "",
+                        senderRole = data["senderRole"] as? String ?: if ((data["senderId"] as? String) == report.userId) "citizen" else "police",
+                        message = data["message"] as? String ?: "",
+                        imageUrl = data["imageUrl"] as? String ?: "",
+                        timestamp = data["timestamp"] as? Timestamp
+                    )
+                } ?: emptyList()
+            }
+        onDispose { reg.remove() }
+    }
+
+    // Auto-scroll on new messages
+    LaunchedEffect(messages.size) {
+        if (messages.isNotEmpty()) listState.animateScrollToItem(messages.lastIndex)
+    }
+
+    // Messages list
+    LazyColumn(
+        modifier = Modifier.weight(1f).fillMaxWidth(),
+        state = listState,
+        contentPadding = PaddingValues(Spacing.Medium),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        if (messages.isEmpty()) {
+            item {
+                Box(Modifier.fillMaxWidth().padding(vertical = 48.dp), contentAlignment = Alignment.Center) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Icon(Icons.Outlined.Forum, null, tint = colors.textTertiary.copy(alpha = 0.3f), modifier = Modifier.size(48.dp))
+                        Spacer(Modifier.height(12.dp))
+                        Text("No messages yet", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold, color = colors.textTertiary)
+                        Text("Send a message to the officer", style = MaterialTheme.typography.labelSmall, color = colors.textTertiary.copy(alpha = 0.6f))
+                    }
+                }
+            }
+        }
+        items(messages, key = { it.id }) { msg ->
+            val isMe = msg.senderId == currentUid
+            CitizenChatBubble(msg = msg, isMe = isMe, colors = colors)
+        }
+    }
+
+    HorizontalDivider(color = colors.cardBorder.copy(alpha = 0.15f))
+
+    // Input bar
+    Row(
+        Modifier.fillMaxWidth().padding(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        OutlinedTextField(
+            value = inputText, onValueChange = { inputText = it },
+            modifier = Modifier.weight(1f),
+            placeholder = { Text("Type message...", style = MaterialTheme.typography.bodySmall, color = colors.textTertiary) },
+            singleLine = false, maxLines = 3,
+            shape = RoundedCornerShape(CornerRadius.Round),
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedContainerColor = colors.cardBackground,
+                unfocusedContainerColor = colors.textTertiary.copy(alpha = 0.04f),
+                focusedBorderColor = PrimaryBlue,
+                unfocusedBorderColor = Color.Transparent,
+                cursorColor = PrimaryBlue
+            ),
+            textStyle = MaterialTheme.typography.bodySmall.copy(color = colors.textPrimary),
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+            keyboardActions = KeyboardActions(onSend = {
+                if (inputText.isNotBlank() && !isSending) {
+                    isSending = true
+                    sendCitizenChat(firestore, report.id, currentUid, displayName, inputText.trim(),
+                        onSuccess = { inputText = ""; isSending = false },
+                        onError = { isSending = false; Toast.makeText(context, it, Toast.LENGTH_SHORT).show() })
+                }
+            })
+        )
+
+        IconButton(
+            onClick = {
+                if (inputText.isBlank() || isSending) return@IconButton
+                isSending = true
+                sendCitizenChat(firestore, report.id, currentUid, displayName, inputText.trim(),
+                    onSuccess = { inputText = ""; isSending = false },
+                    onError = { isSending = false; Toast.makeText(context, it, Toast.LENGTH_SHORT).show() })
+            },
+            modifier = Modifier
+                .size(40.dp)
+                .background(PrimaryBlue, CircleShape),
+            enabled = !isSending && inputText.isNotBlank()
+        ) {
+            if (isSending) {
+                CircularProgressIndicator(Modifier.size(16.dp), color = Color.White, strokeWidth = 2.dp)
+            } else {
+                Icon(Icons.Filled.Send, "Send", tint = Color.White, modifier = Modifier.size(18.dp))
+            }
+        }
+    }
+}
+
+private fun sendCitizenChat(
+    firestore: FirebaseFirestore,
+    reportId: String,
+    uid: String,
+    displayName: String,
+    message: String,
+    onSuccess: () -> Unit,
+    onError: (String) -> Unit
+) {
+    val data = hashMapOf(
+        "senderId" to uid,
+        "senderName" to displayName,
+        "senderRole" to "citizen",
+        "message" to message,
+        "imageUrl" to "",
+        "timestamp" to Timestamp.now()
+    )
+    firestore.collection("reports").document(reportId)
+        .collection("chat").add(data)
+        .addOnSuccessListener { onSuccess() }
+        .addOnFailureListener { onError("Failed to send: ${it.localizedMessage}") }
+}
+
+@Composable
+private fun CitizenChatBubble(msg: ChatMessage, isMe: Boolean, colors: CityFluxColors) {
+    val bubbleColor = if (isMe) PrimaryBlue else colors.textTertiary.copy(alpha = 0.08f)
+    val textColor = if (isMe) Color.White else colors.textPrimary
+    val alignment = if (isMe) Alignment.End else Alignment.Start
+    val shape = RoundedCornerShape(
+        topStart = 16.dp, topEnd = 16.dp,
+        bottomStart = if (isMe) 16.dp else 4.dp,
+        bottomEnd = if (isMe) 4.dp else 16.dp
+    )
+    val timeStr = msg.timestamp?.let {
+        SimpleDateFormat("hh:mm a", Locale.getDefault()).format(it.toDate())
+    } ?: ""
+    val roleColor = when (msg.senderRole) {
+        "police" -> PrimaryBlue; "citizen" -> AccentGreen; else -> colors.textTertiary
+    }
+
+    Column(modifier = Modifier.fillMaxWidth(), horizontalAlignment = alignment) {
+        // Sender label for others
+        if (!isMe) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                modifier = Modifier.padding(start = 4.dp, bottom = 2.dp)
+            ) {
+                Box(Modifier.size(6.dp).clip(CircleShape).background(roleColor))
+                Text(
+                    msg.senderName.ifBlank { msg.senderRole.replaceFirstChar { it.uppercase() } },
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = roleColor
+                )
+            }
+        }
+
+        Surface(shape = shape, color = bubbleColor, modifier = Modifier.widthIn(max = 260.dp)) {
+            Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+                if (msg.imageUrl.isNotBlank()) {
+                    AsyncImage(
+                        model = ImageRequest.Builder(LocalContext.current).data(msg.imageUrl).crossfade(true).build(),
+                        contentDescription = null,
+                        modifier = Modifier.fillMaxWidth().height(130.dp).clip(RoundedCornerShape(8.dp)),
+                        contentScale = ContentScale.Crop
+                    )
+                    if (msg.message.isNotBlank()) Spacer(Modifier.height(4.dp))
+                }
+                if (msg.message.isNotBlank()) {
+                    Text(msg.message, style = MaterialTheme.typography.bodySmall, color = textColor)
+                }
+                Text(
+                    timeStr,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (isMe) Color.White.copy(alpha = 0.6f) else colors.textTertiary,
+                    modifier = Modifier.align(Alignment.End),
+                    fontSize = 9.sp
+                )
+            }
+        }
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Proofs Tab
+// ═══════════════════════════════════════════════════════════════════
+
+@Composable
+private fun ColumnScope.ProofsTabContent(report: Report, onViewPhoto: (String) -> Unit, colors: CityFluxColors) {
+    val firestore = FirebaseFirestore.getInstance()
+    var proofs by remember { mutableStateOf<List<ActionProof>>(emptyList()) }
+    var isLoading by remember { mutableStateOf(true) }
+
+    DisposableEffect(report.id) {
+        val reg = firestore.collection("reports").document(report.id)
+            .collection("proofs")
+            .orderBy("timestamp", Query.Direction.DESCENDING)
+            .addSnapshotListener { snap, _ ->
+                proofs = snap?.documents?.mapNotNull { doc ->
+                    doc.toObject(ActionProof::class.java)?.copy(id = doc.id)
+                } ?: emptyList()
+                isLoading = false
+            }
+        onDispose { reg.remove() }
+    }
+
+    Column(
+        modifier = Modifier
+            .weight(1f)
+            .verticalScroll(rememberScrollState())
+            .padding(Spacing.Large)
+    ) {
+        if (isLoading) {
+            Box(Modifier.fillMaxWidth().padding(vertical = 40.dp), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator(color = PrimaryBlue, modifier = Modifier.size(32.dp), strokeWidth = 3.dp)
+            }
+        } else if (proofs.isEmpty()) {
+            Box(Modifier.fillMaxWidth().padding(vertical = 48.dp), contentAlignment = Alignment.Center) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Icon(Icons.Outlined.VerifiedUser, null, tint = colors.textTertiary.copy(alpha = 0.3f), modifier = Modifier.size(48.dp))
+                    Spacer(Modifier.height(12.dp))
+                    Text("No proofs yet", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold, color = colors.textTertiary)
+                    Text("Officer will upload proofs when action is taken", style = MaterialTheme.typography.labelSmall, color = colors.textTertiary.copy(alpha = 0.6f), textAlign = TextAlign.Center)
+                }
+            }
+        } else {
+            // Stats header
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .background(AccentGreen.copy(alpha = 0.08f), RoundedCornerShape(CornerRadius.Medium))
+                    .padding(Spacing.Medium),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(Spacing.Medium)
+            ) {
+                Icon(Icons.Filled.VerifiedUser, null, tint = AccentGreen, modifier = Modifier.size(20.dp))
+                Column {
+                    Text("${proofs.size} Proof${if (proofs.size > 1) "s" else ""} uploaded", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = AccentGreen)
+                    Text("By the assigned officer", style = MaterialTheme.typography.labelSmall, color = colors.textTertiary)
+                }
+            }
+            Spacer(Modifier.height(Spacing.Large))
+
+            proofs.forEachIndexed { index, proof ->
+                CitizenProofCard(proof = proof, onViewPhoto = onViewPhoto, colors = colors)
+                if (index < proofs.lastIndex) Spacer(Modifier.height(Spacing.Medium))
+            }
+        }
+        Spacer(Modifier.height(Spacing.XLarge))
+    }
+}
+
+@Composable
+private fun CitizenProofCard(proof: ActionProof, onViewPhoto: (String) -> Unit, colors: CityFluxColors) {
+    val timeStr = proof.timestamp?.let {
+        SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.getDefault()).format(it.toDate())
+    } ?: ""
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(CornerRadius.Large),
+        colors = CardDefaults.cardColors(containerColor = colors.surfaceVariant.copy(alpha = 0.5f)),
+        elevation = CardDefaults.cardElevation(2.dp)
+    ) {
+        Column(Modifier.padding(Spacing.Medium)) {
+            // Action badge
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Surface(
+                    shape = RoundedCornerShape(CornerRadius.Round),
+                    color = AccentGreen.copy(alpha = 0.12f)
+                ) {
+                    Text(
+                        proof.actionTaken.ifBlank { "Action Taken" },
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = AccentGreen
+                    )
+                }
+                Spacer(Modifier.weight(1f))
+                Text(timeStr, style = MaterialTheme.typography.labelSmall, color = colors.textTertiary, fontSize = 10.sp)
+            }
+
+            // Photo
+            if (proof.imageUrl.isNotBlank()) {
+                Spacer(Modifier.height(Spacing.Small))
+                AsyncImage(
+                    model = ImageRequest.Builder(LocalContext.current)
+                        .data(proof.imageUrl).crossfade(true).build(),
+                    contentDescription = "Proof photo",
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(160.dp)
+                        .clip(RoundedCornerShape(CornerRadius.Medium))
+                        .clickable { onViewPhoto(proof.imageUrl) },
+                    contentScale = ContentScale.Crop
+                )
+            }
+
+            // Description
+            if (proof.description.isNotBlank()) {
+                Spacer(Modifier.height(Spacing.Small))
+                Text(proof.description, style = MaterialTheme.typography.bodySmall, color = colors.textSecondary, lineHeight = 20.sp)
             }
         }
     }

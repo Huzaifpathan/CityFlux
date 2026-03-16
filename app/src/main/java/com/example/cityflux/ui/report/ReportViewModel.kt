@@ -174,10 +174,12 @@ class ReportViewModel : ViewModel() {
         val displayName = auth.currentUser?.displayName ?: "Citizen"
 
         val chatMsg = hashMapOf(
-            "sender" to displayName,
+            "senderId" to uid,
+            "senderName" to displayName,
+            "senderRole" to "citizen",
             "message" to message,
-            "timestamp" to Timestamp.now(),
-            "senderId" to uid
+            "imageUrl" to "",
+            "timestamp" to Timestamp.now()
         )
 
         firestore.collection("reports").document(reportId)
