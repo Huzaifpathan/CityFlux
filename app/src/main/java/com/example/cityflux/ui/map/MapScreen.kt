@@ -196,6 +196,7 @@ fun MapScreen(
     // ── Selected Marker State ──
     var selectedParking by remember { mutableStateOf<ParkingSpot?>(null) }
     var selectedIncident by remember { mutableStateOf<Report?>(null) }
+    var selectedLiveUser by remember { mutableStateOf<Pair<String, LiveUserLocation>?>(null) }
 
     // ── Connectivity Check ──
     val isOffline = remember { !isNetworkAvailable(context) }
@@ -347,6 +348,7 @@ fun MapScreen(
             onMapClick = { latLng ->
                 selectedParking = null
                 selectedIncident = null
+                selectedLiveUser = null
                 // Route planner tap handling
                 if (routeMode) {
                     if (routeStart == null) {
@@ -499,6 +501,22 @@ fun MapScreen(
                 }
             }
 
+            // ──────── Crowd-sourced Traffic Density (from live user movement) ────────
+            if (showLiveUsers && liveLocations.size >= 2) {
+                val liveTrafficCells = remember(liveLocations) {
+                    buildLiveTrafficCells(liveLocations.values.toList())
+                }
+                liveTrafficCells.forEach { cell ->
+                    Circle(
+                        center = cell.center,
+                        radius = cell.radius,
+                        fillColor = cell.color,
+                        strokeColor = cell.color.copy(alpha = minOf(cell.color.alpha * 2f, 1f)),
+                        strokeWidth = 1.5f
+                    )
+                }
+            }
+
             // ──────── Search Pin Marker ────────
             searchPin?.let { pin ->
                 Marker(
@@ -624,26 +642,31 @@ fun MapScreen(
                 liveLocations.forEach { (uid, loc) ->
                     val isMe = uid == currentUserId
                     val position = LatLng(loc.lat, loc.lng)
-                    val markerColor = if (isMe) BitmapDescriptorFactory.HUE_AZURE 
-                                      else BitmapDescriptorFactory.HUE_GREEN
-                    
-                    Marker(
-                        state = MarkerState(position = position),
-                        title = if (isMe) "You" else loc.name,
-                        snippet = "${loc.speed} km/h",
-                        icon = BitmapDescriptorFactory.defaultMarker(markerColor),
-                        rotation = loc.heading.toFloat(),
-                        flat = true,
-                        anchor = Offset(0.5f, 0.5f),
-                        onClick = {
-                            scope.launch {
-                                snackbarHostState.showSnackbar(
-                                    "${if (isMe) "You" else loc.name} • ${loc.speed} km/h"
-                                )
-                            }
-                            true
+                    androidx.compose.runtime.key(uid) {
+                        val markerBitmap = remember(loc.speed, loc.heading.toInt(), isMe) {
+                            createLiveUserMarkerBitmap(loc.speed, loc.heading.toFloat(), isMe)
                         }
-                    )
+                        Marker(
+                            state = MarkerState(position = position),
+                            title = if (isMe) "You (${loc.name})" else loc.name,
+                            snippet = buildString {
+                                append("${loc.speed} km/h")
+                                if (loc.speed < 5) append(" · Stopped")
+                                else if (loc.speed < 20) append(" · Slow")
+                                else if (loc.speed < 50) append(" · Moving")
+                                else append(" · Fast")
+                            },
+                            icon = BitmapDescriptorFactory.fromBitmap(markerBitmap),
+                            flat = true,
+                            anchor = Offset(0.5f, 0.5f),
+                            onClick = {
+                                selectedParking = null
+                                selectedIncident = null
+                                selectedLiveUser = uid to loc
+                                true
+                            }
+                        )
+                    }
                 }
             }
         }
@@ -1280,7 +1303,8 @@ fun MapScreen(
                 pendingIncidents = state.incidents.count {
                     it.status.equals("Pending", true) || it.status.equals("submitted", true)
                 },
-                totalIncidents = state.incidents.size
+                totalIncidents = state.incidents.size,
+                liveUsers = liveLocations.size
             )
         }
 
@@ -1555,43 +1579,88 @@ fun MapScreen(
                 ),
                 label = "live_button_pulse"
             )
-            
-            FloatingActionButton(
-                onClick = {
-                    val serviceIntent = Intent(context, LocationTrackingService::class.java)
-                    if (isLiveSharing) {
-                        serviceIntent.action = LocationTrackingService.ACTION_STOP
-                        context.startService(serviceIntent)
-                        isLiveSharing = false
-                        livePrefs.edit().putBoolean("live_location", false).apply()
-                        scope.launch {
-                            snackbarHostState.showSnackbar("📍 Location sharing stopped")
-                        }
-                    } else {
-                        serviceIntent.action = LocationTrackingService.ACTION_START
-                        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-                            context.startForegroundService(serviceIntent)
-                        } else {
-                            context.startService(serviceIntent)
-                        }
-                        isLiveSharing = true
-                        showLiveUsers = true
-                        livePrefs.edit().putBoolean("live_location", true).apply()
-                        scope.launch {
-                            snackbarHostState.showSnackbar("📍 Sharing your live location")
+
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                // "LIVE" badge when actively sharing
+                AnimatedVisibility(visible = isLiveSharing) {
+                    Surface(
+                        shape = RoundedCornerShape(6.dp),
+                        color = AccentGreen.copy(alpha = liveButtonAlpha)
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(5.dp)
+                                    .clip(CircleShape)
+                                    .background(Color.White)
+                            )
+                            Text(
+                                "LIVE",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White,
+                                fontSize = 9.sp,
+                                letterSpacing = 1.sp
+                            )
                         }
                     }
-                },
-                containerColor = if (isLiveSharing) AccentGreen.copy(alpha = liveButtonAlpha) else MaterialTheme.cityFluxColors.cardBackground,
-                contentColor = if (isLiveSharing) Color.White else MaterialTheme.cityFluxColors.textPrimary,
-                modifier = Modifier.size(48.dp),
-                shape = CircleShape,
-                elevation = FloatingActionButtonDefaults.elevation(4.dp)
-            ) {
-                Icon(
-                    if (isLiveSharing) Icons.Filled.LocationOn else Icons.Outlined.LocationOn,
-                    contentDescription = if (isLiveSharing) "Stop sharing" else "Go live",
-                    modifier = Modifier.size(22.dp)
+                }
+
+                FloatingActionButton(
+                    onClick = {
+                        val serviceIntent = Intent(context, LocationTrackingService::class.java)
+                        if (isLiveSharing) {
+                            serviceIntent.action = LocationTrackingService.ACTION_STOP
+                            context.startService(serviceIntent)
+                            isLiveSharing = false
+                            livePrefs.edit().putBoolean("live_location", false).apply()
+                            scope.launch {
+                                snackbarHostState.showSnackbar("📍 Location sharing stopped")
+                            }
+                        } else {
+                            serviceIntent.action = LocationTrackingService.ACTION_START
+                            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                                context.startForegroundService(serviceIntent)
+                            } else {
+                                context.startService(serviceIntent)
+                            }
+                            isLiveSharing = true
+                            showLiveUsers = true
+                            livePrefs.edit().putBoolean("live_location", true).apply()
+                            scope.launch {
+                                snackbarHostState.showSnackbar("📍 Sharing your live location with all citizens")
+                            }
+                        }
+                    },
+                    containerColor = if (isLiveSharing) AccentGreen.copy(alpha = liveButtonAlpha)
+                        else MaterialTheme.cityFluxColors.cardBackground,
+                    contentColor = if (isLiveSharing) Color.White
+                        else MaterialTheme.cityFluxColors.textPrimary,
+                    modifier = Modifier.size(52.dp),
+                    shape = CircleShape,
+                    elevation = FloatingActionButtonDefaults.elevation(6.dp)
+                ) {
+                    Icon(
+                        if (isLiveSharing) Icons.Filled.LocationOn else Icons.Outlined.LocationOn,
+                        contentDescription = if (isLiveSharing) "Stop sharing" else "Go live",
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
+
+                Text(
+                    if (isLiveSharing) "Sharing" else "Go Live",
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = if (isLiveSharing) AccentGreen
+                        else MaterialTheme.cityFluxColors.textSecondary,
+                    fontSize = 9.sp
                 )
             }
         }
@@ -1702,6 +1771,23 @@ fun MapScreen(
                 IncidentInfoCard(
                     report = report,
                     onDismiss = { selectedIncident = null }
+                )
+            }
+        }
+
+        // ══════════════════════ Live User Info Popup ══════════════════════
+        AnimatedVisibility(
+            visible = selectedLiveUser != null,
+            enter = slideInVertically { it } + fadeIn(),
+            exit = slideOutVertically { it } + fadeOut(),
+            modifier = Modifier.align(Alignment.BottomCenter)
+        ) {
+            selectedLiveUser?.let { (uid, loc) ->
+                LiveUserInfoCard(
+                    uid = uid,
+                    loc = loc,
+                    isMe = uid == currentUserId,
+                    onDismiss = { selectedLiveUser = null }
                 )
             }
         }
@@ -2243,7 +2329,8 @@ private fun CongestionStatsPanel(
     lowCount: Int,
     totalZones: Int,
     pendingIncidents: Int,
-    totalIncidents: Int
+    totalIncidents: Int,
+    liveUsers: Int = 0
 ) {
     val colors = MaterialTheme.cityFluxColors
 
@@ -2338,9 +2425,9 @@ private fun CongestionStatsPanel(
                     modifier = Modifier.weight(1f)
                 )
                 StatMiniCard(
-                    label = "Zones",
-                    value = "$totalZones",
-                    color = PrimaryBlue,
+                    label = "Live Users",
+                    value = "$liveUsers",
+                    color = AccentGreen,
                     modifier = Modifier.weight(1f)
                 )
             }
@@ -2738,5 +2825,340 @@ private fun buildHeatmapCells(incidents: List<Report>): List<HeatCell> {
             else -> 200.0 to Color(0xFF22C55E).copy(alpha = 0.20f)
         }
         HeatCell(LatLng(avgLat, avgLng), radius, color)
+    }
+}
+
+
+// ═══════════════════════════════════════════════════════════════════
+// Crowd-Sourced Traffic Cells (from live user positions + speed)
+// ═══════════════════════════════════════════════════════════════════
+
+/**
+ * Builds congestion overlay circles derived from live user movement.
+ * Groups users into ~700m grid cells; slow average speed → red, fast → green.
+ * Requires ≥2 users in a cell to show (avoids individual privacy exposure).
+ */
+private fun buildLiveTrafficCells(locations: List<LiveUserLocation>): List<HeatCell> {
+    if (locations.size < 2) return emptyList()
+    val gridSize = 0.007 // ~700m cells
+    val groups = locations.groupBy { loc ->
+        val latBucket = (loc.lat / gridSize).toInt()
+        val lngBucket = (loc.lng / gridSize).toInt()
+        latBucket to lngBucket
+    }.filter { it.value.size >= 2 }
+
+    return groups.map { (_, group) ->
+        val avgLat = group.sumOf { it.lat } / group.size
+        val avgLng = group.sumOf { it.lng } / group.size
+        val avgSpeed = group.map { it.speed }.average()
+        val density = group.size
+        val (radius, color) = when {
+            avgSpeed < 10.0 -> (550.0 + density * 60) to Color(0xFFEF4444).copy(alpha = 0.22f) // Heavy traffic
+            avgSpeed < 25.0 -> (450.0 + density * 50) to Color(0xFFF97316).copy(alpha = 0.18f) // Moderate
+            else             -> (380.0 + density * 40) to Color(0xFF22C55E).copy(alpha = 0.14f) // Clear
+        }
+        HeatCell(LatLng(avgLat, avgLng), radius, color)
+    }
+}
+
+
+// ═══════════════════════════════════════════════════════════════════
+// Custom Live User Marker Bitmap
+// ═══════════════════════════════════════════════════════════════════
+
+/**
+ * Creates a directional circle marker for a live user:
+ *  - Color encodes speed: blue (me) / green (fast) / orange (moderate) / red (slow)
+ *  - White triangle arrow points in heading direction when moving
+ *  - "ME" label for own marker, speed value for others
+ */
+private fun createLiveUserMarkerBitmap(speed: Int, heading: Float, isMe: Boolean): Bitmap {
+    val sizePx = 80
+    val bitmap = Bitmap.createBitmap(sizePx, sizePx, Bitmap.Config.ARGB_8888)
+    val canvas = Canvas(bitmap)
+    val cx = sizePx / 2f
+    val cy = sizePx / 2f
+    val radius = 24f
+
+    val fillColor = when {
+        isMe            -> android.graphics.Color.rgb(59, 130, 246)  // Blue = me
+        speed >= 40     -> android.graphics.Color.rgb(34, 197, 94)   // Green = fast
+        speed >= 15     -> android.graphics.Color.rgb(249, 115, 22)  // Orange = moderate
+        else            -> android.graphics.Color.rgb(239, 68, 68)   // Red = slow/stopped
+    }
+
+    // Outer glow ring
+    val glowPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = fillColor
+        alpha = 55
+        style = Paint.Style.FILL
+    }
+    canvas.drawCircle(cx, cy, radius + 11f, glowPaint)
+
+    // White border ring
+    val borderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = android.graphics.Color.WHITE
+        style = Paint.Style.FILL
+    }
+    canvas.drawCircle(cx, cy, radius + 4f, borderPaint)
+
+    // Colored fill circle
+    val fillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = fillColor
+        style = Paint.Style.FILL
+    }
+    canvas.drawCircle(cx, cy, radius, fillPaint)
+
+    // Direction arrow triangle (only when moving)
+    if (speed > 3) {
+        canvas.save()
+        canvas.rotate(heading, cx, cy)
+        val arrowPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = android.graphics.Color.WHITE
+            style = Paint.Style.FILL
+        }
+        val path = android.graphics.Path().apply {
+            val tipY  = cy - radius - 10f
+            val baseY = cy - radius + 1f
+            moveTo(cx, tipY)
+            lineTo(cx - 7f, baseY)
+            lineTo(cx + 7f, baseY)
+            close()
+        }
+        canvas.drawPath(path, arrowPaint)
+        canvas.restore()
+    }
+
+    // Label text inside circle
+    val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = android.graphics.Color.WHITE
+        textSize = if (isMe) 15f else 14f
+        typeface = android.graphics.Typeface.DEFAULT_BOLD
+        textAlign = Paint.Align.CENTER
+    }
+    val label = if (isMe) "ME" else "${speed}km"
+    val textY = cy - (textPaint.descent() + textPaint.ascent()) / 2f
+    canvas.drawText(label, cx, textY, textPaint)
+
+    return bitmap
+}
+
+
+// ═══════════════════════════════════════════════════════════════════
+// Live User Info Card (Bottom popup)
+// ═══════════════════════════════════════════════════════════════════
+
+@Composable
+private fun LiveUserInfoCard(
+    uid: String,
+    loc: LiveUserLocation,
+    isMe: Boolean,
+    onDismiss: () -> Unit
+) {
+    val colors = MaterialTheme.cityFluxColors
+    val speedColor = when {
+        loc.speed >= 40 -> AccentGreen
+        loc.speed >= 15 -> AccentOrange
+        else            -> AccentRed
+    }
+    val statusText = when {
+        loc.speed < 5  -> "Stopped"
+        loc.speed < 20 -> "Slow"
+        loc.speed < 50 -> "Moving"
+        else           -> "Fast"
+    }
+    val headingText = when {
+        loc.heading < 22.5 || loc.heading >= 337.5 -> "↑ North"
+        loc.heading < 67.5  -> "↗ NE"
+        loc.heading < 112.5 -> "→ East"
+        loc.heading < 157.5 -> "↘ SE"
+        loc.heading < 202.5 -> "↓ South"
+        loc.heading < 247.5 -> "↙ SW"
+        loc.heading < 292.5 -> "← West"
+        else                -> "↖ NW"
+    }
+    val timeAgo = android.text.format.DateUtils.getRelativeTimeSpanString(
+        loc.timestamp,
+        System.currentTimeMillis(),
+        android.text.format.DateUtils.MINUTE_IN_MILLIS
+    ).toString()
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = Spacing.Medium, vertical = Spacing.Medium)
+            .navigationBarsPadding()
+            .shadow(8.dp, RoundedCornerShape(CornerRadius.XLarge), ambientColor = colors.cardShadow),
+        shape = RoundedCornerShape(CornerRadius.XLarge),
+        colors = CardDefaults.cardColors(containerColor = colors.cardBackground)
+    ) {
+        Column(modifier = Modifier.padding(Spacing.Large)) {
+
+            // Header row
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    // Avatar
+                    Box(
+                        modifier = Modifier
+                            .size(42.dp)
+                            .clip(CircleShape)
+                            .background(
+                                if (isMe) PrimaryBlue.copy(alpha = 0.14f)
+                                else AccentGreen.copy(alpha = 0.12f)
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            if (isMe) Icons.Filled.Person else Icons.Outlined.PersonPin,
+                            null,
+                            tint = if (isMe) PrimaryBlue else AccentGreen,
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
+                    Spacer(Modifier.width(Spacing.Medium))
+                    Column {
+                        Text(
+                            if (isMe) "You (${loc.name})" else loc.name,
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = colors.textPrimary
+                        )
+                        Text(
+                            "Active $timeAgo",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = colors.textTertiary
+                        )
+                    }
+                }
+                // Live dot badge
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = AccentGreen.copy(alpha = 0.12f)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(6.dp)
+                                .clip(CircleShape)
+                                .background(AccentGreen)
+                        )
+                        Text(
+                            "LIVE",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = AccentGreen,
+                            fontSize = 9.sp,
+                            letterSpacing = 1.sp
+                        )
+                    }
+                }
+                Spacer(Modifier.width(Spacing.Small))
+                IconButton(onClick = onDismiss, modifier = Modifier.size(28.dp)) {
+                    Icon(
+                        Icons.Filled.Close, "Close",
+                        tint = colors.textTertiary, modifier = Modifier.size(18.dp)
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(Spacing.Medium))
+
+            // Speed / Status / Direction chips
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(Spacing.Small)
+            ) {
+                // Speed
+                Surface(
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(CornerRadius.Medium),
+                    color = speedColor.copy(alpha = 0.10f)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(vertical = 10.dp, horizontal = Spacing.Medium),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(
+                            "${loc.speed}",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = speedColor
+                        )
+                        Text("km/h", style = MaterialTheme.typography.labelSmall, color = colors.textTertiary)
+                    }
+                }
+                // Status
+                Surface(
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(CornerRadius.Medium),
+                    color = speedColor.copy(alpha = 0.10f)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(vertical = 10.dp, horizontal = Spacing.Medium),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(
+                            statusText,
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = speedColor
+                        )
+                        Text("Status", style = MaterialTheme.typography.labelSmall, color = colors.textTertiary)
+                    }
+                }
+                // Direction
+                Surface(
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(CornerRadius.Medium),
+                    color = PrimaryBlue.copy(alpha = 0.08f)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(vertical = 10.dp, horizontal = Spacing.Medium),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(
+                            headingText,
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = PrimaryBlue,
+                            textAlign = TextAlign.Center
+                        )
+                        Text("Direction", style = MaterialTheme.typography.labelSmall, color = colors.textTertiary)
+                    }
+                }
+            }
+
+            // Contributing to traffic note
+            if (!isMe) {
+                Spacer(Modifier.height(Spacing.Small))
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Icon(
+                        Icons.Outlined.DirectionsCar,
+                        null,
+                        tint = colors.textTertiary,
+                        modifier = Modifier.size(13.dp)
+                    )
+                    Text(
+                        "Contributing to real-time traffic data",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = colors.textTertiary
+                    )
+                }
+            }
+        }
     }
 }
