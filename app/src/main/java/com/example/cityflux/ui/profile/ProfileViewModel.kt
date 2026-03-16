@@ -41,11 +41,25 @@ class ProfileViewModel : ViewModel() {
         val totalReports: Int = 0,
         val resolvedReports: Int = 0,
         val pendingReports: Int = 0,
+        val inProgressReports: Int = 0,
+        val weeklyStats: List<Int> = List(7) { 0 },
+        val todayReports: Int = 0,
+        val todayResolved: Int = 0,
+        val recentActivities: List<RecentActivity> = emptyList(),
+        val citizenScore: Int = 0,
         val isUploadingImage: Boolean = false,
         val uploadProgress: Float = 0f,
         val error: String? = null,
         val isOffline: Boolean = false,
         val snackbarMessage: String? = null
+    )
+
+    data class RecentActivity(
+        val id: String = "",
+        val title: String = "",
+        val type: String = "",
+        val status: String = "",
+        val timestamp: Timestamp? = null
     )
 
     private val _uiState = MutableStateFlow(ProfileUiState())
@@ -63,6 +77,7 @@ class ProfileViewModel : ViewModel() {
         observeProfile()
         observeSavedPlaces()
         observeReportStats()
+        loadRecentActivity()
     }
 
     // ═══════════════════════════════════════════════════════
@@ -174,18 +189,93 @@ class ProfileViewModel : ViewModel() {
                 }
 
                 val reports = snapshot?.documents ?: emptyList()
+                val total = reports.size
+                val resolved = reports.count { doc ->
+                    doc.getString("status")?.lowercase() == "resolved"
+                }
+                val inProgress = reports.count { doc ->
+                    doc.getString("status")?.lowercase() == "in progress"
+                }
+                val pending = reports.count { doc ->
+                    val s = doc.getString("status")?.lowercase() ?: ""
+                    s == "pending"
+                }
+
+                // Weekly stats: count reports per day for last 7 days
+                val cal = java.util.Calendar.getInstance()
+                val weekly = MutableList(7) { 0 }
+                reports.forEach { doc ->
+                    val ts = doc.getTimestamp("timestamp")?.toDate()?.time ?: return@forEach
+                    val now = System.currentTimeMillis()
+                    val daysDiff = ((now - ts) / (24 * 60 * 60 * 1000)).toInt()
+                    if (daysDiff in 0..6) {
+                        weekly[6 - daysDiff] = weekly[6 - daysDiff] + 1
+                    }
+                }
+
+                // Today's stats
+                cal.set(java.util.Calendar.HOUR_OF_DAY, 0)
+                cal.set(java.util.Calendar.MINUTE, 0)
+                cal.set(java.util.Calendar.SECOND, 0)
+                cal.set(java.util.Calendar.MILLISECOND, 0)
+                val todayStart = cal.timeInMillis
+                val todayReports = reports.count { doc ->
+                    val ts = doc.getTimestamp("timestamp")?.toDate()?.time ?: 0
+                    ts >= todayStart
+                }
+                val todayResolved = reports.count { doc ->
+                    val ts = doc.getTimestamp("timestamp")?.toDate()?.time ?: 0
+                    ts >= todayStart && doc.getString("status")?.lowercase() == "resolved"
+                }
+
+                // Citizen score: 10 per report + 25 per resolved
+                val score = total * 10 + resolved * 25
+
                 _uiState.update {
                     it.copy(
-                        totalReports = reports.size,
-                        resolvedReports = reports.count { doc ->
-                            doc.getString("status")?.lowercase() == "resolved"
-                        },
-                        pendingReports = reports.count { doc ->
-                            val s = doc.getString("status")?.lowercase() ?: ""
-                            s == "pending" || s == "in progress"
-                        }
+                        totalReports = total,
+                        resolvedReports = resolved,
+                        pendingReports = pending,
+                        inProgressReports = inProgress,
+                        weeklyStats = weekly,
+                        todayReports = todayReports,
+                        todayResolved = todayResolved,
+                        citizenScore = score
                     )
                 }
+            }
+    }
+
+    // ═══════════════════════════════════════════════════════
+    // Recent Activity — last 5 reports
+    // ═══════════════════════════════════════════════════════
+
+    private fun loadRecentActivity() {
+        val uid = auth.currentUser?.uid ?: return
+
+        firestore.collection("reports")
+            .whereEqualTo("userId", uid)
+            .orderBy("timestamp", Query.Direction.DESCENDING)
+            .limit(5)
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    Log.e(TAG, "Recent activity error", error)
+                    return@addSnapshotListener
+                }
+
+                val activities = snapshot?.documents?.mapNotNull { doc ->
+                    try {
+                        RecentActivity(
+                            id = doc.id,
+                            title = doc.getString("title") ?: doc.getString("type") ?: "Report",
+                            type = doc.getString("type") ?: "other",
+                            status = doc.getString("status") ?: "Pending",
+                            timestamp = doc.getTimestamp("timestamp")
+                        )
+                    } catch (_: Exception) { null }
+                } ?: emptyList()
+
+                _uiState.update { it.copy(recentActivities = activities) }
             }
     }
 

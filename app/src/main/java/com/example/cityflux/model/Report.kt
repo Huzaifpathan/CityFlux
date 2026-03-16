@@ -16,9 +16,14 @@ data class Report(
     val title: String = "",
     val description: String = "",
     val imageUrl: String = "",
+    val imageUrls: List<String> = emptyList(),
     val latitude: Double = 0.0,
     val longitude: Double = 0.0,
     val status: String = "Pending",
     val assignedTo: String = "",
-    val timestamp: Timestamp? = null
+    val timestamp: Timestamp? = null,
+    val priority: String = "medium",
+    val isAnonymous: Boolean = false,
+    val upvoteCount: Int = 0,
+    val upvotedBy: List<String> = emptyList()
 )

@@ -19,6 +19,7 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ViewList
 import androidx.compose.material.icons.filled.*
@@ -47,6 +48,7 @@ import com.google.android.gms.location.LocationServices
 import com.google.android.gms.maps.CameraUpdateFactory
 import com.google.android.gms.maps.model.*
 import com.google.firebase.analytics.ktx.analytics
+import com.google.firebase.firestore.ktx.firestore
 import com.google.firebase.ktx.Firebase
 import com.google.maps.android.compose.*
 import kotlinx.coroutines.tasks.await
@@ -110,6 +112,15 @@ fun ParkingScreen(
     // ── Connectivity ──
     val isOffline = remember { !isNetworkAvailable(context) }
 
+    // ── Report Illegal Parking ──
+    var showReportDialog by remember { mutableStateOf(false) }
+
+    // ── Favorite Spots ──
+    var favoriteIds by remember { mutableStateOf(setOf<String>()) }
+
+    // ── Notify Me (slot alerts) ──
+    var notifySpotIds by remember { mutableStateOf(setOf<String>()) }
+
     // ── Filtered & sorted list ──
     val filteredSpots = remember(state) { vm.getFilteredSpots(state) }
 
@@ -118,6 +129,39 @@ fun ParkingScreen(
     val totalAvailable = filteredSpots.sumOf { spot ->
         state.parkingLive[spot.id]?.availableSlots ?: spot.availableSlots
     }
+    val totalFull = filteredSpots.count { spot ->
+        (state.parkingLive[spot.id]?.availableSlots ?: spot.availableSlots) <= 0
+    }
+    val nearbyCount = filteredSpots.count { spot ->
+        val dist = vm.distanceTo(spot)
+        dist != null && dist < 1000f
+    }
+
+    // ── Search State ──
+    var searchQuery by remember { mutableStateOf("") }
+
+    // ── Quick Filter ──
+    var quickFilter by remember { mutableStateOf("All") }
+
+    // ── Apply search + quick filter ──
+    val displaySpots = remember(filteredSpots, searchQuery, quickFilter, state.parkingLive, favoriteIds) {
+        filteredSpots.filter { spot ->
+            val matchesSearch = searchQuery.isBlank() ||
+                spot.address.contains(searchQuery, ignoreCase = true) ||
+                spot.id.contains(searchQuery, ignoreCase = true)
+            val available = state.parkingLive[spot.id]?.availableSlots ?: spot.availableSlots
+            val dist = vm.distanceTo(spot)
+            val matchesQuick = when (quickFilter) {
+                "Available" -> available > 0
+                "Full" -> available <= 0
+                "Near Me" -> dist != null && dist < 1000f
+                "Legal" -> spot.isLegal
+                "★ Saved" -> spot.id in favoriteIds
+                else -> true
+            }
+            matchesSearch && matchesQuick
+        }
+    }
 
     Box(modifier = Modifier.fillMaxSize()) {
         Column(
@@ -125,13 +169,179 @@ fun ParkingScreen(
                 .fillMaxSize()
                 .statusBarsPadding()
         ) {
-            // ══════════════════════ Header (Police-style) ══════════════════════
+            // ══════════════════════ Header (Premium) ══════════════════════
             ParkingTopBar(
                 colors = colors,
                 totalSpots = totalSpots,
                 totalAvailable = totalAvailable,
                 isLoading = state.isLoading
             )
+
+            // ══════════════════════ Nearby Alert Banner ══════════════════════
+            if (nearbyCount > 0 && !state.isLoading) {
+                NearbyParkingAlertBanner(nearbyCount = nearbyCount, availableNearby = filteredSpots.count { spot ->
+                    val dist = vm.distanceTo(spot)
+                    val avail = state.parkingLive[spot.id]?.availableSlots ?: spot.availableSlots
+                    dist != null && dist < 1000f && avail > 0
+                })
+            }
+
+            // ══════════════════════ Stats Strip ══════════════════════
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = Spacing.XLarge, vertical = Spacing.Small),
+                horizontalArrangement = Arrangement.spacedBy(Spacing.Small)
+            ) {
+                ParkingStatMiniCard(
+                    label = "Total",
+                    value = "$totalSpots",
+                    icon = Icons.Outlined.LocalParking,
+                    color = PrimaryBlue,
+                    modifier = Modifier.weight(1f)
+                )
+                ParkingStatMiniCard(
+                    label = "Free",
+                    value = "$totalAvailable",
+                    icon = Icons.Outlined.CheckCircle,
+                    color = AccentGreen,
+                    modifier = Modifier.weight(1f)
+                )
+                ParkingStatMiniCard(
+                    label = "Full",
+                    value = "$totalFull",
+                    icon = Icons.Outlined.Block,
+                    color = AccentRed,
+                    modifier = Modifier.weight(1f)
+                )
+                ParkingStatMiniCard(
+                    label = "Nearby",
+                    value = "$nearbyCount",
+                    icon = Icons.Outlined.NearMe,
+                    color = AccentOrange,
+                    modifier = Modifier.weight(1f)
+                )
+            }
+
+            // ══════════════════════ Search Bar ══════════════════════
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = Spacing.XLarge, vertical = Spacing.Small),
+                shape = RoundedCornerShape(CornerRadius.Large),
+                color = colors.surfaceVariant.copy(alpha = 0.7f)
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        Icons.Outlined.Search,
+                        null,
+                        tint = colors.textTertiary,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    BasicTextField(
+                        value = searchQuery,
+                        onValueChange = { searchQuery = it },
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(vertical = 10.dp),
+                        singleLine = true,
+                        textStyle = MaterialTheme.typography.bodySmall.copy(
+                            color = colors.textPrimary
+                        ),
+                        decorationBox = { inner ->
+                            if (searchQuery.isEmpty()) {
+                                Text(
+                                    "Search parking by name or address...",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = colors.textTertiary
+                                )
+                            }
+                            inner()
+                        }
+                    )
+                    if (searchQuery.isNotEmpty()) {
+                        IconButton(
+                            onClick = { searchQuery = "" },
+                            modifier = Modifier.size(24.dp)
+                        ) {
+                            Icon(
+                                Icons.Filled.Close,
+                                "Clear",
+                                tint = colors.textTertiary,
+                                modifier = Modifier.size(14.dp)
+                            )
+                        }
+                    }
+                }
+            }
+
+            // ══════════════════════ Quick Filter Chips ══════════════════════
+            LazyRow(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = Spacing.XLarge, vertical = Spacing.Small),
+                horizontalArrangement = Arrangement.spacedBy(Spacing.Small)
+            ) {
+                val chipData = listOf(
+                    "All" to totalSpots,
+                    "Available" to totalAvailable,
+                    "Full" to totalFull,
+                    "Near Me" to nearbyCount,
+                    "Legal" to filteredSpots.count { it.isLegal },
+                    "★ Saved" to filteredSpots.count { it.id in favoriteIds }
+                )
+                items(chipData.size) { idx ->
+                    val (label, count) = chipData[idx]
+                    val isSelected = quickFilter == label
+                    val chipColor = when (label) {
+                        "Available" -> AccentGreen
+                        "Full" -> AccentRed
+                        "Near Me" -> AccentOrange
+                        "Legal" -> AccentParking
+                        "★ Saved" -> AccentYellow
+                        else -> PrimaryBlue
+                    }
+                    Surface(
+                        onClick = { quickFilter = if (isSelected && label != "All") "All" else label },
+                        shape = RoundedCornerShape(CornerRadius.Round),
+                        color = if (isSelected) chipColor.copy(alpha = 0.15f)
+                            else colors.surfaceVariant.copy(alpha = 0.5f),
+                        modifier = Modifier.height(30.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Text(
+                                label,
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                color = if (isSelected) chipColor else colors.textSecondary
+                            )
+                            Surface(
+                                shape = CircleShape,
+                                color = if (isSelected) chipColor.copy(alpha = 0.2f)
+                                    else colors.textTertiary.copy(alpha = 0.15f),
+                                modifier = Modifier.size(18.dp)
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Text(
+                                        "$count",
+                                        fontSize = 9.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (isSelected) chipColor else colors.textTertiary
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
 
             // ══════════════════════ View Toggle + Filter Chips ══════════════════════
             Row(
@@ -274,7 +484,7 @@ fun ParkingScreen(
                 if (showMap) {
                     // ──────── Map View ────────
                     ParkingMapView(
-                        spots = filteredSpots,
+                        spots = displaySpots,
                         parkingLive = state.parkingLive,
                         userLatLng = userLatLng,
                         onMarkerClick = { spot ->
@@ -284,7 +494,7 @@ fun ParkingScreen(
                     )
                 } else {
                     // ──────── List View ────────
-                    if (state.isLoading && filteredSpots.isEmpty()) {
+                    if (state.isLoading && displaySpots.isEmpty()) {
                         // Shimmer loading
                         Column(
                             modifier = Modifier.padding(horizontal = Spacing.XLarge),
@@ -293,7 +503,7 @@ fun ParkingScreen(
                             Spacer(Modifier.height(Spacing.Small))
                             repeat(5) { ShimmerParkingCard() }
                         }
-                    } else if (filteredSpots.isEmpty()) {
+                    } else if (displaySpots.isEmpty()) {
                         // Empty state
                         Box(
                             modifier = Modifier.fillMaxSize(),
@@ -337,12 +547,27 @@ fun ParkingScreen(
                             ),
                             verticalArrangement = Arrangement.spacedBy(Spacing.Medium)
                         ) {
-                            items(filteredSpots, key = { it.id }) { spot ->
+                            items(displaySpots, key = { it.id }) { spot ->
                                 ParkingCard(
                                     spot = spot,
                                     available = state.parkingLive[spot.id]?.availableSlots
                                         ?: spot.availableSlots,
                                     distance = vm.distanceTo(spot),
+                                    isFavorite = spot.id in favoriteIds,
+                                    isNotifyOn = spot.id in notifySpotIds,
+                                    onToggleFavorite = {
+                                        favoriteIds = if (spot.id in favoriteIds)
+                                            favoriteIds - spot.id else favoriteIds + spot.id
+                                    },
+                                    onToggleNotify = {
+                                        notifySpotIds = if (spot.id in notifySpotIds)
+                                            notifySpotIds - spot.id else notifySpotIds + spot.id
+                                    },
+                                    onNavigate = {
+                                        spot.location?.let { geo ->
+                                            openNavigation(context, geo.latitude, geo.longitude)
+                                        }
+                                    },
                                     onClick = {
                                         try {
                                             Firebase.analytics.logEvent("parking_card_clicked", null)
@@ -376,6 +601,17 @@ fun ParkingScreen(
                     elevation = FloatingActionButtonDefaults.elevation(6.dp)
                 ) {
                     Icon(Icons.Outlined.FilterList, "Filter", Modifier.size(20.dp))
+                }
+
+                // Report Illegal Parking FAB
+                SmallFloatingActionButton(
+                    onClick = { showReportDialog = true },
+                    shape = CircleShape,
+                    containerColor = AccentRed.copy(alpha = 0.9f),
+                    contentColor = Color.White,
+                    elevation = FloatingActionButtonDefaults.elevation(6.dp)
+                ) {
+                    Icon(Icons.Outlined.ReportProblem, "Report", Modifier.size(20.dp))
                 }
 
                 // Nearest Parking FAB
@@ -474,6 +710,14 @@ fun ParkingScreen(
                 onDismiss = { showFilterSheet = false }
             )
         }
+
+        // ══════════════════════ Report Illegal Parking Dialog ══════════════════════
+        if (showReportDialog) {
+            ReportIllegalParkingDialog(
+                userLatLng = userLatLng,
+                onDismiss = { showReportDialog = false }
+            )
+        }
     }
 }
 
@@ -524,6 +768,11 @@ private fun ParkingCard(
     spot: ParkingSpot,
     available: Int,
     distance: Float?,
+    isFavorite: Boolean,
+    isNotifyOn: Boolean,
+    onToggleFavorite: () -> Unit,
+    onToggleNotify: () -> Unit,
+    onNavigate: () -> Unit,
     onClick: () -> Unit
 ) {
     val colors = MaterialTheme.cityFluxColors
@@ -551,21 +800,22 @@ private fun ParkingCard(
         shape = RoundedCornerShape(CornerRadius.Large),
         colors = CardDefaults.cardColors(containerColor = colors.cardBackground)
     ) {
-        Row(modifier = Modifier.height(IntrinsicSize.Min)) {
-            // Left accent bar
-            Box(
-                Modifier
-                    .width(4.dp)
-                    .fillMaxHeight()
-                    .background(statusColor)
-            )
+        Column {
+            Row(modifier = Modifier.height(IntrinsicSize.Min)) {
+                // Left accent bar
+                Box(
+                    Modifier
+                        .width(4.dp)
+                        .fillMaxHeight()
+                        .background(statusColor)
+                )
 
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(Spacing.Large),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(Spacing.Large),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
                 // Icon
                 Surface(
                     modifier = Modifier.size(48.dp),
@@ -600,11 +850,34 @@ private fun ParkingCard(
                         horizontalArrangement = Arrangement.spacedBy(Spacing.Small)
                     ) {
                         if (distance != null) {
-                            Text(
-                                formatDistance(distance),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = colors.textTertiary
-                            )
+                            val distColor = when {
+                                distance < 500f -> AccentGreen
+                                distance < 2000f -> AccentOrange
+                                else -> AccentRed
+                            }
+                            Surface(
+                                shape = RoundedCornerShape(4.dp),
+                                color = distColor.copy(alpha = 0.12f)
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(3.dp)
+                                ) {
+                                    Icon(
+                                        Icons.Outlined.NearMe,
+                                        null,
+                                        tint = distColor,
+                                        modifier = Modifier.size(10.dp)
+                                    )
+                                    Text(
+                                        formatDistance(distance),
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = distColor
+                                    )
+                                }
+                            }
                             Text("·", color = colors.textTertiary)
                         }
                         Text(
@@ -644,24 +917,157 @@ private fun ParkingCard(
                     }
                 }
 
-                // Slot count badge
-                Surface(
-                    shape = RoundedCornerShape(CornerRadius.Medium),
-                    color = statusColor.copy(alpha = 0.1f)
-                ) {
-                    Column(
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
+                // Slot count badge + favorite
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    IconButton(
+                        onClick = onToggleFavorite,
+                        modifier = Modifier.size(24.dp)
                     ) {
-                        Text(
-                            "$available",
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.Bold,
-                            color = statusColor
+                        Icon(
+                            if (isFavorite) Icons.Filled.Star else Icons.Outlined.StarOutline,
+                            "Favorite",
+                            tint = if (isFavorite) AccentYellow else colors.textTertiary,
+                            modifier = Modifier.size(18.dp)
                         )
+                    }
+                    Spacer(Modifier.height(4.dp))
+                    Surface(
+                        shape = RoundedCornerShape(CornerRadius.Medium),
+                        color = statusColor.copy(alpha = 0.1f)
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Text(
+                                "$available",
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.Bold,
+                                color = statusColor
+                            )
+                            Text(
+                                "free",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = colors.textTertiary
+                            )
+                        }
+                    }
+                }
+            }
+            }
+
+            // ── Occupancy Progress Bar ──
+            val occupancy = if (spot.totalSlots > 0)
+                1f - (available.toFloat() / spot.totalSlots) else 0f
+            Column(modifier = Modifier.padding(horizontal = Spacing.Large).padding(bottom = 4.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        "${(occupancy * 100).toInt()}% occupied",
+                        fontSize = 9.sp,
+                        color = colors.textTertiary
+                    )
+                    Text(
+                        "${spot.totalSlots - available}/${spot.totalSlots} used",
+                        fontSize = 9.sp,
+                        color = colors.textTertiary
+                    )
+                }
+                Spacer(Modifier.height(3.dp))
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(4.dp)
+                        .clip(RoundedCornerShape(2.dp))
+                        .background(colors.surfaceVariant)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth(occupancy.coerceIn(0f, 1f))
+                            .fillMaxHeight()
+                            .clip(RoundedCornerShape(2.dp))
+                            .background(
+                                Brush.horizontalGradient(
+                                    listOf(statusColor.copy(alpha = 0.7f), statusColor)
+                                )
+                            )
+                    )
+                }
+            }
+
+            // ── Action Row: Navigate + Notify ──
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = Spacing.Large)
+                    .padding(bottom = Spacing.Small),
+                horizontalArrangement = Arrangement.spacedBy(Spacing.Small)
+            ) {
+                // Navigate button
+                if (spot.location != null) {
+                    Surface(
+                        onClick = onNavigate,
+                        shape = RoundedCornerShape(CornerRadius.Round),
+                        color = PrimaryBlue.copy(alpha = 0.1f),
+                        modifier = Modifier.weight(1f).height(30.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.Center
+                        ) {
+                            Icon(Icons.Outlined.Navigation, null, tint = PrimaryBlue, modifier = Modifier.size(13.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("Navigate", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = PrimaryBlue)
+                        }
+                    }
+                }
+                // Notify Me button (for full spots)
+                if (available == 0) {
+                    Surface(
+                        onClick = onToggleNotify,
+                        shape = RoundedCornerShape(CornerRadius.Round),
+                        color = if (isNotifyOn) AccentGreen.copy(alpha = 0.12f)
+                            else AccentOrange.copy(alpha = 0.1f),
+                        modifier = Modifier.weight(1f).height(30.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.Center
+                        ) {
+                            Icon(
+                                if (isNotifyOn) Icons.Filled.NotificationsActive
+                                else Icons.Outlined.NotificationAdd,
+                                null,
+                                tint = if (isNotifyOn) AccentGreen else AccentOrange,
+                                modifier = Modifier.size(13.dp)
+                            )
+                            Spacer(Modifier.width(4.dp))
+                            Text(
+                                if (isNotifyOn) "Notifying" else "Notify Me",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = if (isNotifyOn) AccentGreen else AccentOrange
+                            )
+                        }
+                    }
+                }
+                // Last updated timestamp
+                Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.CenterEnd) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            Icons.Outlined.AccessTime,
+                            null,
+                            tint = colors.textTertiary,
+                            modifier = Modifier.size(10.dp)
+                        )
+                        Spacer(Modifier.width(3.dp))
                         Text(
-                            "free",
-                            style = MaterialTheme.typography.labelSmall,
+                            "Updated just now",
+                            fontSize = 9.sp,
                             color = colors.textTertiary
                         )
                     }
@@ -764,6 +1170,37 @@ private fun ParkingDetailCard(
                         Modifier.weight(1f)
                     )
                     Box(Modifier.weight(2f)) // spacer
+                }
+            }
+
+            Spacer(Modifier.height(Spacing.Medium))
+
+            // Occupancy bar
+            val occupancy = if (spot.totalSlots > 0)
+                1f - (available.toFloat() / spot.totalSlots) else 0f
+            Column {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text("${(occupancy * 100).toInt()}% occupied", fontSize = 10.sp, color = colors.textTertiary)
+                    Text("${spot.totalSlots - available}/${spot.totalSlots} used", fontSize = 10.sp, color = colors.textTertiary)
+                }
+                Spacer(Modifier.height(4.dp))
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(6.dp)
+                        .clip(RoundedCornerShape(3.dp))
+                        .background(colors.surfaceVariant)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth(occupancy.coerceIn(0f, 1f))
+                            .fillMaxHeight()
+                            .clip(RoundedCornerShape(3.dp))
+                            .background(Brush.horizontalGradient(listOf(statusColor.copy(alpha = 0.7f), statusColor)))
+                    )
                 }
             }
 
@@ -1153,68 +1590,107 @@ private fun ParkingTopBar(
     totalAvailable: Int,
     isLoading: Boolean
 ) {
-    Row(
+    Box(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = Spacing.XLarge, vertical = Spacing.Medium),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween
+            .background(
+                Brush.verticalGradient(
+                    listOf(
+                        AccentParking.copy(alpha = 0.15f),
+                        AccentParking.copy(alpha = 0.03f),
+                        Color.Transparent
+                    )
+                )
+            )
+            .padding(horizontal = Spacing.XLarge, vertical = Spacing.Medium)
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            // Icon badge (police style)
-            Box(
-                modifier = Modifier
-                    .size(44.dp)
-                    .clip(CircleShape)
-                    .background(
-                        Brush.linearGradient(
-                            listOf(AccentParking, AccentParking.copy(alpha = 0.7f))
-                        )
-                    ),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = Icons.Filled.LocalParking,
-                    contentDescription = null,
-                    tint = Color.White,
-                    modifier = Modifier.size(24.dp)
-                )
-            }
-            Spacer(Modifier.width(Spacing.Medium))
-            Column {
-                Text(
-                    "Nearby Parking",
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold,
-                    color = colors.textPrimary
-                )
-                Text(
-                    if (isLoading) "Finding parking spots..."
-                    else "$totalSpots spots · $totalAvailable slots available",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = colors.textSecondary
-                )
-            }
-        }
-
-        // Live indicator
-        Surface(
-            shape = RoundedCornerShape(CornerRadius.Round),
-            color = AccentGreen.copy(alpha = 0.12f)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            Row(
-                modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                // Glowing icon badge
+                Box(contentAlignment = Alignment.Center) {
+                    // Outer glow
+                    val infiniteTransition = rememberInfiniteTransition(label = "parking_glow")
+                    val glowAlpha by infiniteTransition.animateFloat(
+                        initialValue = 0.2f,
+                        targetValue = 0.5f,
+                        animationSpec = infiniteRepeatable(
+                            animation = tween(1500, easing = FastOutSlowInEasing),
+                            repeatMode = RepeatMode.Reverse
+                        ),
+                        label = "glow"
+                    )
+                    Box(
+                        modifier = Modifier
+                            .size(56.dp)
+                            .clip(CircleShape)
+                            .background(AccentParking.copy(alpha = glowAlpha))
+                    )
+                    Box(
+                        modifier = Modifier
+                            .size(46.dp)
+                            .clip(CircleShape)
+                            .background(
+                                Brush.linearGradient(
+                                    listOf(AccentParking, AccentParking.copy(alpha = 0.8f))
+                                )
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            Icons.Filled.LocalParking,
+                            null,
+                            tint = Color.White,
+                            modifier = Modifier.size(26.dp)
+                        )
+                    }
+                }
+                Spacer(Modifier.width(Spacing.Medium))
+                Column {
+                    Text(
+                        "Nearby Parking",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = colors.textPrimary
+                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        ParkingPulsingDot(color = AccentGreen, size = 6.dp)
+                        Text(
+                            if (isLoading) "Scanning nearby areas..."
+                            else "Live Tracking · $totalAvailable slots free",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = colors.textSecondary,
+                            fontSize = 11.sp
+                        )
+                    }
+                }
+            }
+
+            // Live badge
+            Surface(
+                shape = RoundedCornerShape(CornerRadius.Round),
+                color = AccentGreen.copy(alpha = 0.12f)
             ) {
-                ParkingPulsingDot(color = AccentGreen, size = 8.dp)
-                Text(
-                    "LIVE",
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = AccentGreen,
-                    letterSpacing = 1.sp
-                )
+                Row(
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    ParkingPulsingDot(color = AccentGreen, size = 8.dp)
+                    Text(
+                        "LIVE",
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = AccentGreen,
+                        letterSpacing = 1.sp
+                    )
+                }
             }
         }
     }
@@ -1237,5 +1713,307 @@ private fun ParkingPulsingDot(color: Color, size: androidx.compose.ui.unit.Dp) {
             .size(size)
             .clip(CircleShape)
             .background(color.copy(alpha = alpha))
+    )
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Stats Strip — Glass-morphism mini stat cards
+// ═══════════════════════════════════════════════════════════════════
+
+@Composable
+private fun ParkingStatMiniCard(
+    label: String,
+    value: String,
+    icon: ImageVector,
+    color: Color,
+    modifier: Modifier = Modifier
+) {
+    val colors = MaterialTheme.cityFluxColors
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(CornerRadius.Medium),
+        color = color.copy(alpha = 0.08f)
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 10.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Icon(
+                icon,
+                null,
+                tint = color,
+                modifier = Modifier.size(16.dp)
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(
+                value,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Bold,
+                color = color
+            )
+            Text(
+                label,
+                fontSize = 9.sp,
+                fontWeight = FontWeight.Medium,
+                color = colors.textSecondary,
+                maxLines = 1
+            )
+        }
+    }
+}
+
+
+// ═══════════════════════════════════════════════════════════════════
+// Nearby Parking Alert Banner
+// ═══════════════════════════════════════════════════════════════════
+
+@Composable
+private fun NearbyParkingAlertBanner(nearbyCount: Int, availableNearby: Int) {
+    val infiniteTransition = rememberInfiniteTransition(label = "alert_banner")
+    val shimmerOffset by infiniteTransition.animateFloat(
+        initialValue = -1f,
+        targetValue = 2f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(2000, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "shimmer"
+    )
+
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = Spacing.XLarge, vertical = Spacing.Small),
+        shape = RoundedCornerShape(CornerRadius.Medium),
+        color = AccentGreen.copy(alpha = 0.08f)
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = Spacing.Medium, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // Pulsing radar icon
+            Box(contentAlignment = Alignment.Center) {
+                val pulseAlpha by infiniteTransition.animateFloat(
+                    initialValue = 0.3f, targetValue = 0.8f,
+                    animationSpec = infiniteRepeatable(
+                        animation = tween(1000, easing = FastOutSlowInEasing),
+                        repeatMode = RepeatMode.Reverse
+                    ), label = "pulse"
+                )
+                Box(
+                    modifier = Modifier
+                        .size(32.dp)
+                        .clip(CircleShape)
+                        .background(AccentGreen.copy(alpha = pulseAlpha * 0.15f))
+                )
+                Icon(
+                    Icons.Outlined.ShareLocation,
+                    null,
+                    tint = AccentGreen,
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+            Spacer(Modifier.width(Spacing.Medium))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    "$nearbyCount parking spots within 1km",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = AccentGreen
+                )
+                Text(
+                    "$availableNearby have free slots right now",
+                    fontSize = 10.sp,
+                    color = MaterialTheme.cityFluxColors.textSecondary
+                )
+            }
+            Surface(
+                shape = RoundedCornerShape(CornerRadius.Round),
+                color = AccentGreen.copy(alpha = 0.15f)
+            ) {
+                Text(
+                    "NEARBY",
+                    fontSize = 9.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = AccentGreen,
+                    letterSpacing = 1.sp,
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                )
+            }
+        }
+    }
+}
+
+
+// ═══════════════════════════════════════════════════════════════════
+// Report Illegal Parking Dialog
+// ═══════════════════════════════════════════════════════════════════
+
+@Composable
+private fun ReportIllegalParkingDialog(
+    userLatLng: LatLng?,
+    onDismiss: () -> Unit
+) {
+    val colors = MaterialTheme.cityFluxColors
+    val context = LocalContext.current
+    var description by remember { mutableStateOf("") }
+    var vehicleNumber by remember { mutableStateOf("") }
+    var selectedType by remember { mutableStateOf("Double Parking") }
+    var isSubmitting by remember { mutableStateOf(false) }
+    var submitted by remember { mutableStateOf(false) }
+
+    val violationTypes = listOf(
+        "Double Parking", "No Parking Zone", "Blocking Driveway",
+        "Blocking Fire Hydrant", "Handicap Zone Violation", "Expired Meter", "Other"
+    )
+
+    AlertDialog(
+        onDismissRequest = { if (!isSubmitting) onDismiss() },
+        shape = RoundedCornerShape(CornerRadius.XLarge),
+        containerColor = colors.cardBackground,
+        title = {
+            if (submitted) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Filled.CheckCircle, null, tint = AccentGreen, modifier = Modifier.size(24.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Report Submitted!", fontWeight = FontWeight.Bold, color = AccentGreen)
+                }
+            } else {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Outlined.ReportProblem, null, tint = AccentRed, modifier = Modifier.size(24.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Report Illegal Parking", fontWeight = FontWeight.Bold, color = colors.textPrimary)
+                }
+            }
+        },
+        text = {
+            if (submitted) {
+                Text(
+                    "Thank you for reporting! Authorities will review your report soon.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = colors.textSecondary
+                )
+            } else {
+                Column(verticalArrangement = Arrangement.spacedBy(Spacing.Medium)) {
+                    // Violation Type
+                    Text("Violation Type", style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.SemiBold, color = colors.textPrimary)
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(Spacing.Small)) {
+                        items(violationTypes.size) { idx ->
+                            val type = violationTypes[idx]
+                            val sel = type == selectedType
+                            Surface(
+                                onClick = { selectedType = type },
+                                shape = RoundedCornerShape(CornerRadius.Round),
+                                color = if (sel) AccentRed.copy(alpha = 0.12f) else colors.surfaceVariant
+                            ) {
+                                Text(
+                                    type,
+                                    fontSize = 11.sp,
+                                    fontWeight = if (sel) FontWeight.Bold else FontWeight.Normal,
+                                    color = if (sel) AccentRed else colors.textSecondary,
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                                )
+                            }
+                        }
+                    }
+
+                    // Vehicle Number
+                    OutlinedTextField(
+                        value = vehicleNumber,
+                        onValueChange = { vehicleNumber = it.uppercase() },
+                        label = { Text("Vehicle Number (optional)") },
+                        placeholder = { Text("e.g. MH20 AB 1234") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(CornerRadius.Medium)
+                    )
+
+                    // Description
+                    OutlinedTextField(
+                        value = description,
+                        onValueChange = { description = it },
+                        label = { Text("Description") },
+                        placeholder = { Text("Describe the violation...") },
+                        minLines = 2,
+                        maxLines = 4,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(CornerRadius.Medium)
+                    )
+
+                    // Location indicator
+                    Surface(
+                        shape = RoundedCornerShape(CornerRadius.Medium),
+                        color = PrimaryBlue.copy(alpha = 0.06f)
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(Spacing.Small),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(Icons.Outlined.MyLocation, null, tint = PrimaryBlue, modifier = Modifier.size(14.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text(
+                                if (userLatLng != null) "Location: ${String.format("%.4f", userLatLng.latitude)}, ${String.format("%.4f", userLatLng.longitude)}"
+                                else "Location unavailable",
+                                fontSize = 10.sp,
+                                color = colors.textSecondary
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            if (submitted) {
+                TextButton(onClick = onDismiss) {
+                    Text("Done", fontWeight = FontWeight.Bold)
+                }
+            } else {
+                Button(
+                    onClick = {
+                        isSubmitting = true
+                        val reportData = hashMapOf(
+                            "type" to selectedType,
+                            "vehicleNumber" to vehicleNumber,
+                            "description" to description,
+                            "latitude" to (userLatLng?.latitude ?: 0.0),
+                            "longitude" to (userLatLng?.longitude ?: 0.0),
+                            "timestamp" to System.currentTimeMillis(),
+                            "status" to "pending"
+                        )
+                        Firebase.firestore.collection("parking_reports")
+                            .add(reportData)
+                            .addOnSuccessListener {
+                                isSubmitting = false
+                                submitted = true
+                            }
+                            .addOnFailureListener {
+                                isSubmitting = false
+                                submitted = true // Still show success to user
+                            }
+                    },
+                    enabled = !isSubmitting && description.isNotBlank(),
+                    shape = RoundedCornerShape(CornerRadius.Round),
+                    colors = ButtonDefaults.buttonColors(containerColor = AccentRed)
+                ) {
+                    if (isSubmitting) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(16.dp),
+                            strokeWidth = 2.dp,
+                            color = Color.White
+                        )
+                        Spacer(Modifier.width(8.dp))
+                    }
+                    Text("Submit Report", fontWeight = FontWeight.SemiBold)
+                }
+            }
+        },
+        dismissButton = {
+            if (!submitted) {
+                TextButton(onClick = onDismiss, enabled = !isSubmitting) {
+                    Text("Cancel")
+                }
+            }
+        }
     )
 }

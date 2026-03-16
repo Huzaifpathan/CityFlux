@@ -37,6 +37,14 @@ class ReportViewModel : ViewModel() {
     // ── View Mode ──
     enum class ReportTab { NEW_REPORT, MY_REPORTS }
 
+    // ── Priority ──
+    enum class Priority(val label: String, val value: String) {
+        LOW("Low", "low"),
+        MEDIUM("Medium", "medium"),
+        HIGH("High", "high"),
+        CRITICAL("Critical", "critical")
+    }
+
     // ── UI State ──
     data class ReportUiState(
         // Tab
@@ -44,10 +52,12 @@ class ReportViewModel : ViewModel() {
         // Form state
         val selectedType: IssueType? = null,
         val description: String = "",
-        val photoUri: Uri? = null,
+        val photoUris: List<Uri> = emptyList(),
         val latitude: Double = 0.0,
         val longitude: Double = 0.0,
         val hasLocation: Boolean = false,
+        val isAnonymous: Boolean = false,
+        val selectedPriority: Priority = Priority.MEDIUM,
         // Upload state
         val isSubmitting: Boolean = false,
         val uploadProgress: Float = 0f,
@@ -122,8 +132,28 @@ class ReportViewModel : ViewModel() {
         _uiState.update { it.copy(description = desc) }
     }
 
-    fun setPhoto(uri: Uri?) {
-        _uiState.update { it.copy(photoUri = uri) }
+    fun addPhoto(uri: Uri) {
+        _uiState.update { state ->
+            if (state.photoUris.size < 5) {
+                state.copy(photoUris = state.photoUris + uri)
+            } else {
+                state.copy(snackbarMessage = "Maximum 5 photos allowed")
+            }
+        }
+    }
+
+    fun removePhoto(index: Int) {
+        _uiState.update { state ->
+            state.copy(photoUris = state.photoUris.filterIndexed { i, _ -> i != index })
+        }
+    }
+
+    fun setAnonymous(value: Boolean) {
+        _uiState.update { it.copy(isAnonymous = value) }
+    }
+
+    fun setPriority(priority: Priority) {
+        _uiState.update { it.copy(selectedPriority = priority) }
     }
 
     fun setLocation(lat: Double, lng: Double) {
@@ -135,6 +165,70 @@ class ReportViewModel : ViewModel() {
     }
 
     // ══════════════════════════════════════════════
+    // Chat Reply
+    // ══════════════════════════════════════════════
+
+    fun sendChatMessage(reportId: String, message: String) {
+        if (message.isBlank()) return
+        val uid = auth.currentUser?.uid ?: return
+        val displayName = auth.currentUser?.displayName ?: "Citizen"
+
+        val chatMsg = hashMapOf(
+            "sender" to displayName,
+            "message" to message,
+            "timestamp" to Timestamp.now(),
+            "senderId" to uid
+        )
+
+        firestore.collection("reports").document(reportId)
+            .collection("chat").add(chatMsg)
+            .addOnFailureListener {
+                _uiState.update { it.copy(snackbarMessage = "Failed to send message") }
+            }
+    }
+
+    // ══════════════════════════════════════════════
+    // Delete Report
+    // ══════════════════════════════════════════════
+
+    fun deleteReport(reportId: String) {
+        firestore.collection("reports").document(reportId).delete()
+            .addOnSuccessListener {
+                _uiState.update { it.copy(snackbarMessage = "Report deleted") }
+            }
+            .addOnFailureListener {
+                _uiState.update { it.copy(snackbarMessage = "Failed to delete report") }
+            }
+    }
+
+    // ══════════════════════════════════════════════
+    // Upvote Report
+    // ══════════════════════════════════════════════
+
+    fun upvoteReport(reportId: String) {
+        val uid = auth.currentUser?.uid ?: return
+        val reportRef = firestore.collection("reports").document(reportId)
+
+        firestore.runTransaction { transaction ->
+            val snapshot = transaction.get(reportRef)
+            @Suppress("UNCHECKED_CAST")
+            val upvotedBy = (snapshot.get("upvotedBy") as? List<String>) ?: emptyList()
+
+            if (uid in upvotedBy) {
+                transaction.update(reportRef, mapOf(
+                    "upvotedBy" to upvotedBy - uid,
+                    "upvoteCount" to (upvotedBy.size - 1).coerceAtLeast(0)
+                ))
+            } else {
+                transaction.update(reportRef, mapOf(
+                    "upvotedBy" to upvotedBy + uid,
+                    "upvoteCount" to upvotedBy.size + 1
+                ))
+            }
+        }
+    }
+
+    // ══════════════════════════════════════════════
     // Validation
     // ══════════════════════════════════════════════
 
@@ -142,7 +236,7 @@ class ReportViewModel : ViewModel() {
         val state = _uiState.value
         return when {
             state.selectedType == null -> "Please select an issue type"
-            state.photoUri == null -> "Please capture or select a photo"
+            state.photoUris.isEmpty() -> "Please capture or select a photo"
             !state.hasLocation -> "Location is required"
             state.description.isBlank() -> "Please describe the issue"
             else -> null
@@ -179,39 +273,33 @@ class ReportViewModel : ViewModel() {
 
         viewModelScope.launch {
             try {
-                // Step 1: Upload image to Firebase Storage
                 val reportId = UUID.randomUUID().toString()
-                var imageUrl = ""
+                val imageUrls = mutableListOf<String>()
 
-                state.photoUri?.let { uri ->
-                    _uiState.update { it.copy(uploadProgress = 0.1f) }
-                    val imageRef = storage.reference.child("reports/$reportId.jpg")
-                    val uploadTask = imageRef.putFile(uri)
-
-                    // Track upload progress
-                    uploadTask.addOnProgressListener { taskSnapshot ->
-                        val progress = taskSnapshot.bytesTransferred.toFloat() /
-                                taskSnapshot.totalByteCount.toFloat()
-                        _uiState.update { it.copy(uploadProgress = 0.1f + progress * 0.6f) }
-                    }
-
-                    uploadTask.await()
-                    _uiState.update { it.copy(uploadProgress = 0.75f) }
-                    imageUrl = imageRef.downloadUrl.await().toString()
+                // Upload all photos
+                state.photoUris.forEachIndexed { index, uri ->
+                    _uiState.update { it.copy(uploadProgress = 0.1f + (index.toFloat() / state.photoUris.size) * 0.6f) }
+                    val imageRef = storage.reference.child("reports/${reportId}_$index.jpg")
+                    imageRef.putFile(uri).await()
+                    val url = imageRef.downloadUrl.await().toString()
+                    imageUrls.add(url)
                 }
 
                 _uiState.update { it.copy(uploadProgress = 0.85f) }
 
                 // Step 2: Write report to Firestore
                 val report = hashMapOf(
-                    "userId" to uid,
+                    "userId" to if (state.isAnonymous) "anonymous" else uid,
                     "type" to (state.selectedType?.value ?: "other"),
                     "title" to (state.selectedType?.label ?: "Report"),
                     "description" to state.description,
-                    "imageUrl" to imageUrl,
+                    "imageUrl" to (imageUrls.firstOrNull() ?: ""),
+                    "imageUrls" to imageUrls,
                     "latitude" to state.latitude,
                     "longitude" to state.longitude,
                     "status" to "Pending",
+                    "priority" to state.selectedPriority.value,
+                    "isAnonymous" to state.isAnonymous,
                     "timestamp" to Timestamp.now()
                 )
 
@@ -226,7 +314,9 @@ class ReportViewModel : ViewModel() {
                         submitSuccess = true,
                         selectedType = null,
                         description = "",
-                        photoUri = null,
+                        photoUris = emptyList(),
+                        isAnonymous = false,
+                        selectedPriority = Priority.MEDIUM,
                         snackbarMessage = "Report submitted successfully!"
                     )
                 }
@@ -252,7 +342,9 @@ class ReportViewModel : ViewModel() {
             it.copy(
                 selectedType = null,
                 description = "",
-                photoUri = null,
+                photoUris = emptyList(),
+                isAnonymous = false,
+                selectedPriority = Priority.MEDIUM,
                 submitSuccess = false,
                 submitError = null,
                 snackbarMessage = null

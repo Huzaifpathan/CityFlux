@@ -10,7 +10,8 @@ data class Notification(
     val id: String = "",
     val title: String = "",
     val message: String = "",
-    val type: String = "general",       // traffic, parking, accident, general
+    val type: String = "general",       // traffic, parking, accident, emergency, weather, general
+    val priority: String = "medium",    // low, medium, high, critical
     val latitude: Double = 0.0,
     val longitude: Double = 0.0,
     val read: Boolean = false,
