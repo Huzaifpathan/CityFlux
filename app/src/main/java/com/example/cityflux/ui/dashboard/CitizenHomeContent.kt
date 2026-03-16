@@ -256,6 +256,80 @@ fun CitizenHomeContent(
         weatherLoading = false
     }
 
+    // ── My Vehicle Violations from Firestore ──
+    var userVehicles by remember { mutableStateOf<List<String>>(emptyList()) }
+    var myViolations by remember { mutableStateOf<List<Map<String, Any>>>(emptyList()) }
+    var violationsLoading by remember { mutableStateOf(true) }
+    var selectedViolation by remember { mutableStateOf<Map<String, Any>?>(null) }
+
+    // Load user's vehicle numbers
+    LaunchedEffect(auth.currentUser?.uid) {
+        val uid = auth.currentUser?.uid ?: return@LaunchedEffect
+        firestore.collection("users").document(uid)
+            .addSnapshotListener { doc, _ ->
+                @Suppress("UNCHECKED_CAST")
+                userVehicles = (doc?.get("vehicleNumbers") as? List<String>) ?: emptyList()
+            }
+    }
+
+    // Listen for violations matching user's vehicles
+    DisposableEffect(userVehicles) {
+        if (userVehicles.isEmpty()) {
+            myViolations = emptyList()
+            violationsLoading = false
+            return@DisposableEffect onDispose { }
+        }
+        val listener = firestore.collection("parking_violations")
+            .addSnapshotListener { snapshot, _ ->
+                myViolations = snapshot?.documents?.mapNotNull { doc ->
+                    val data = doc.data ?: return@mapNotNull null
+                    val vehicleInfo = (data["vehicleInfo"] as? String) ?: return@mapNotNull null
+                    if (userVehicles.any { it.equals(vehicleInfo, ignoreCase = true) }) {
+                        data + ("id" to doc.id)
+                    } else null
+                }?.sortedByDescending {
+                    (it["timestamp"] as? com.google.firebase.Timestamp)?.toDate()?.time ?: 0L
+                } ?: emptyList()
+                violationsLoading = false
+
+                // Auto-create notification for new violations
+                val uid = auth.currentUser?.uid ?: return@addSnapshotListener
+                myViolations.forEach { violation ->
+                    val violationId = violation["id"] as? String ?: return@forEach
+                    val actionType = (violation["actionType"] as? String ?: "fine").replaceFirstChar { it.uppercase() }
+                    val vehicleNo = violation["vehicleInfo"] as? String ?: ""
+                    val fineAmt = violation["fineAmount"] as? String ?: ""
+                    val notifRef = firestore.collection("users").document(uid)
+                        .collection("notifications").document("violation_$violationId")
+                    notifRef.get().addOnSuccessListener { existing ->
+                        if (!existing.exists()) {
+                            notifRef.set(
+                                hashMapOf(
+                                    "title" to "⚠️ $actionType — $vehicleNo",
+                                    "message" to if (fineAmt.isNotBlank()) "Fine: ₹$fineAmt" else "$actionType issued on your vehicle $vehicleNo",
+                                    "type" to "parking",
+                                    "priority" to if (actionType.lowercase() == "tow") "critical" else "high",
+                                    "latitude" to (violation["latitude"] ?: 0.0),
+                                    "longitude" to (violation["longitude"] ?: 0.0),
+                                    "read" to false,
+                                    "pinned" to false,
+                                    "timestamp" to (violation["timestamp"] ?: com.google.firebase.Timestamp.now())
+                                )
+                            )
+                        }
+                    }
+                }
+            }
+        onDispose { listener.remove() }
+    }
+
+    val activeViolations = remember(myViolations) {
+        myViolations.filter { (it["status"] as? String ?: "Active").equals("Active", true) }
+    }
+    val totalFines = remember(myViolations) {
+        myViolations.sumOf { (it["fineAmount"] as? String)?.toDoubleOrNull()?.toInt() ?: 0 }
+    }
+
     // ── SOS state ──
     var showSosDialog by remember { mutableStateOf(false) }
     var sosSending by remember { mutableStateOf(false) }
@@ -364,6 +438,48 @@ fun CitizenHomeContent(
                 total = myReports.size,
                 centerLabel = "Reports"
             )
+
+            // ──────── 🚗 MY VIOLATIONS CARD ────────
+            if (myViolations.isNotEmpty()) {
+                SectionHeader(
+                    title = "My Violations",
+                    icon = Icons.Outlined.Receipt
+                )
+
+                MyViolationsCard(
+                    violations = myViolations,
+                    activeCount = activeViolations.size,
+                    totalFines = totalFines,
+                    onViewDetail = { selectedViolation = it }
+                )
+            } else if (userVehicles.isEmpty()) {
+                // Prompt to add vehicle
+                SectionHeader(
+                    title = "Vehicle Alerts",
+                    icon = Icons.Outlined.DirectionsCar
+                )
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = Spacing.Large),
+                    shape = RoundedCornerShape(CornerRadius.Large),
+                    colors = CardDefaults.cardColors(containerColor = colors.cardBackground)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(Spacing.Large),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Outlined.DirectionsCar, null, tint = PrimaryBlue, modifier = Modifier.size(28.dp))
+                        Spacer(Modifier.width(Spacing.Medium))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Add your vehicle", style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.SemiBold, color = colors.textPrimary)
+                            Text("Register your vehicle number in Profile to get fine & violation alerts",
+                                style = MaterialTheme.typography.bodySmall, color = colors.textTertiary)
+                        }
+                    }
+                }
+            }
 
             // ──────── PARKING AVAILABILITY CARDS ────────
             if (parkingMap.isNotEmpty()) {
@@ -475,6 +591,14 @@ fun CitizenHomeContent(
 
             Spacer(modifier = Modifier.height(Spacing.Large))
         }
+    }
+
+    // ──────── 🚗 VIOLATION DETAIL DIALOG ────────
+    selectedViolation?.let { violation ->
+        ViolationDetailDialog(
+            violation = violation,
+            onDismiss = { selectedViolation = null }
+        )
     }
 
     // ──────── 🆘 SOS EMERGENCY FLOATING BUTTON ────────
@@ -1815,6 +1939,366 @@ private fun RecentActivityTimeline(reports: List<Report>) {
         }
     }
 }
+
+// ═══════════════════════════════════════════════════════════════════
+// 🆘 SOS Emergency Floating Action Button
+// ═══════════════════════════════════════════════════════════════════
+// MY VIOLATIONS CARD — Shows fines/warnings matched to citizen's vehicles
+// ═══════════════════════════════════════════════════════════════════
+
+@Composable
+private fun MyViolationsCard(
+    violations: List<Map<String, Any>>,
+    activeCount: Int,
+    totalFines: Int,
+    onViewDetail: (Map<String, Any>) -> Unit
+) {
+    val colors = MaterialTheme.cityFluxColors
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = Spacing.Large)
+            .shadow(
+                elevation = 8.dp,
+                shape = RoundedCornerShape(CornerRadius.XLarge),
+                ambientColor = colors.cardShadow,
+                spotColor = AccentRed.copy(alpha = 0.15f)
+            ),
+        shape = RoundedCornerShape(CornerRadius.XLarge),
+        colors = CardDefaults.cardColors(containerColor = colors.cardBackground)
+    ) {
+        Column(modifier = Modifier.padding(Spacing.Large)) {
+            // Stats row
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Active violations
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier
+                            .size(40.dp)
+                            .background(AccentRed.copy(alpha = 0.1f), RoundedCornerShape(10.dp)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            "$activeCount",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = AccentRed
+                        )
+                    }
+                    Spacer(Modifier.width(10.dp))
+                    Column {
+                        Text("Active", fontWeight = FontWeight.SemiBold, color = colors.textPrimary,
+                            style = MaterialTheme.typography.titleSmall)
+                        Text("Violation${if (activeCount != 1) "s" else ""}", color = colors.textTertiary,
+                            style = MaterialTheme.typography.labelSmall)
+                    }
+                }
+
+                // Total fines
+                if (totalFines > 0) {
+                    Surface(
+                        shape = RoundedCornerShape(CornerRadius.Round),
+                        color = AccentRed.copy(alpha = 0.1f),
+                        border = BorderStroke(0.5.dp, AccentRed.copy(alpha = 0.2f))
+                    ) {
+                        Text(
+                            "₹$totalFines",
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = AccentRed
+                        )
+                    }
+                }
+            }
+
+            if (violations.isNotEmpty()) {
+                Spacer(Modifier.height(Spacing.Medium))
+                HorizontalDivider(color = colors.surfaceVariant, thickness = 0.5.dp)
+                Spacer(Modifier.height(Spacing.Medium))
+            }
+
+            // Recent violations list (max 3)
+            violations.take(3).forEachIndexed { idx, violation ->
+                if (idx > 0) Spacer(Modifier.height(8.dp))
+                val actionType = (violation["actionType"] as? String ?: "fine")
+                val vehicleNo = violation["vehicleInfo"] as? String ?: ""
+                val fineAmt = violation["fineAmount"] as? String ?: ""
+                val status = violation["status"] as? String ?: "Active"
+                val ts = violation["timestamp"] as? com.google.firebase.Timestamp
+                val address = violation["address"] as? String ?: ""
+
+                val actionColor = when (actionType.lowercase()) {
+                    "tow" -> AccentRed
+                    "fine" -> AccentOrange
+                    else -> Color(0xFF6B7280)
+                }
+                val actionIcon = when (actionType.lowercase()) {
+                    "tow" -> Icons.Outlined.Warning
+                    "fine" -> Icons.Outlined.Receipt
+                    else -> Icons.Outlined.Info
+                }
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(CornerRadius.Medium))
+                        .background(actionColor.copy(alpha = 0.05f))
+                        .clickable { onViewDetail(violation) }
+                        .padding(Spacing.Medium),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    // Action type icon
+                    Box(
+                        modifier = Modifier
+                            .size(36.dp)
+                            .background(actionColor.copy(alpha = 0.12f), RoundedCornerShape(8.dp)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(actionIcon, null, tint = actionColor, modifier = Modifier.size(20.dp))
+                    }
+                    Spacer(Modifier.width(10.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                vehicleNo,
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = colors.textPrimary,
+                                letterSpacing = 1.sp
+                            )
+                            Spacer(Modifier.width(6.dp))
+                            Surface(
+                                shape = RoundedCornerShape(4.dp),
+                                color = actionColor.copy(alpha = 0.15f)
+                            ) {
+                                Text(
+                                    actionType.replaceFirstChar { it.uppercase() },
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = actionColor
+                                )
+                            }
+                        }
+                        if (address.isNotBlank()) {
+                            Text(
+                                address,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = colors.textTertiary,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                        ts?.let {
+                            Text(
+                                DateUtils.getRelativeTimeSpanString(
+                                    it.toDate().time, System.currentTimeMillis(),
+                                    DateUtils.MINUTE_IN_MILLIS
+                                ).toString(),
+                                fontSize = 10.sp,
+                                color = colors.textTertiary
+                            )
+                        }
+                    }
+                    // Fine amount or status
+                    Column(horizontalAlignment = Alignment.End) {
+                        if (fineAmt.isNotBlank()) {
+                            Text("₹$fineAmt", fontWeight = FontWeight.Bold, color = actionColor,
+                                style = MaterialTheme.typography.titleSmall)
+                        }
+                        Text(
+                            status,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = if (status.equals("Active", true)) AccentRed else AccentGreen
+                        )
+                    }
+                }
+            }
+
+            // View all if more than 3
+            if (violations.size > 3) {
+                Spacer(Modifier.height(Spacing.Small))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    Text(
+                        "+${violations.size - 3} more violation${if (violations.size - 3 != 1) "s" else ""}",
+                        color = PrimaryBlue, fontSize = 12.sp, fontWeight = FontWeight.SemiBold
+                    )
+                }
+            }
+        }
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// VIOLATION DETAIL DIALOG — Full details with photo, location, fine
+// ═══════════════════════════════════════════════════════════════════
+
+@Composable
+private fun ViolationDetailDialog(
+    violation: Map<String, Any>,
+    onDismiss: () -> Unit
+) {
+    val context = LocalContext.current
+    val colors = MaterialTheme.cityFluxColors
+
+    val actionType = (violation["actionType"] as? String ?: "fine")
+    val vehicleNo = violation["vehicleInfo"] as? String ?: ""
+    val fineAmt = violation["fineAmount"] as? String ?: ""
+    val description = violation["description"] as? String ?: ""
+    val address = violation["address"] as? String ?: ""
+    val note = violation["note"] as? String ?: ""
+    val imageUrl = violation["imageUrl"] as? String ?: ""
+    val status = violation["status"] as? String ?: "Active"
+    val violationType = violation["violationType"] as? String ?: ""
+    val lat = (violation["latitude"] as? Number)?.toDouble() ?: 0.0
+    val lng = (violation["longitude"] as? Number)?.toDouble() ?: 0.0
+    val ts = violation["timestamp"] as? com.google.firebase.Timestamp
+
+    val actionColor = when (actionType.lowercase()) {
+        "tow" -> AccentRed
+        "fine" -> AccentOrange
+        else -> Color(0xFF6B7280)
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = colors.cardBackground,
+        icon = {
+            Box(
+                modifier = Modifier
+                    .size(48.dp)
+                    .background(actionColor.copy(alpha = 0.12f), CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    when (actionType.lowercase()) {
+                        "tow" -> Icons.Outlined.Warning
+                        "fine" -> Icons.Outlined.Receipt
+                        else -> Icons.Outlined.Info
+                    },
+                    null, tint = actionColor, modifier = Modifier.size(28.dp)
+                )
+            }
+        },
+        title = {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(
+                    "${actionType.replaceFirstChar { it.uppercase() }} — $vehicleNo",
+                    fontWeight = FontWeight.Bold,
+                    color = colors.textPrimary,
+                    textAlign = TextAlign.Center
+                )
+                if (fineAmt.isNotBlank()) {
+                    Text(
+                        "₹$fineAmt",
+                        style = MaterialTheme.typography.headlineMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = actionColor
+                    )
+                }
+            }
+        },
+        text = {
+            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                // Status badge
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    Surface(
+                        shape = RoundedCornerShape(CornerRadius.Round),
+                        color = if (status.equals("Active", true)) AccentRed.copy(alpha = 0.1f)
+                        else AccentGreen.copy(alpha = 0.1f)
+                    ) {
+                        Text(
+                            status,
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                            fontWeight = FontWeight.Bold,
+                            color = if (status.equals("Active", true)) AccentRed else AccentGreen
+                        )
+                    }
+                }
+
+                Spacer(Modifier.height(Spacing.Large))
+
+                // Evidence photo
+                if (imageUrl.isNotBlank()) {
+                    coil.compose.AsyncImage(
+                        model = coil.request.ImageRequest.Builder(context).data(imageUrl).crossfade(true).build(),
+                        contentDescription = "Evidence",
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(180.dp)
+                            .clip(RoundedCornerShape(CornerRadius.Large)),
+                        contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                    )
+                    Spacer(Modifier.height(Spacing.Medium))
+                }
+
+                // Details
+                if (violationType.isNotBlank()) {
+                    ViolationInfoRow("Type", violationType.replace("_", " ").replaceFirstChar { it.uppercase() })
+                }
+                if (description.isNotBlank()) {
+                    ViolationInfoRow("Description", description)
+                }
+                if (address.isNotBlank()) {
+                    ViolationInfoRow("Location", address)
+                }
+                if (note.isNotBlank()) {
+                    ViolationInfoRow("Officer Note", note)
+                }
+                ts?.let {
+                    val fmt = java.text.SimpleDateFormat("dd MMM yyyy, hh:mm a", java.util.Locale.getDefault())
+                    ViolationInfoRow("Date & Time", fmt.format(it.toDate()))
+                }
+
+                // Open in Maps
+                if (lat != 0.0 && lng != 0.0) {
+                    Spacer(Modifier.height(Spacing.Medium))
+                    OutlinedButton(
+                        onClick = {
+                            val uri = Uri.parse("geo:$lat,$lng?q=$lat,$lng(Violation)")
+                            context.startActivity(Intent(Intent.ACTION_VIEW, uri))
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(CornerRadius.Medium)
+                    ) {
+                        Icon(Icons.Outlined.LocationOn, null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("View on Map")
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = onDismiss,
+                colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue)
+            ) { Text("Close") }
+        }
+    )
+}
+
+@Composable
+private fun ViolationInfoRow(label: String, value: String) {
+    val colors = MaterialTheme.cityFluxColors
+    Column(modifier = Modifier.padding(vertical = 4.dp)) {
+        Text(label, fontSize = 10.sp, color = colors.textTertiary, fontWeight = FontWeight.Medium)
+        Text(value, style = MaterialTheme.typography.bodyMedium, color = colors.textPrimary)
+    }
+}
+
 
 // ═══════════════════════════════════════════════════════════════════
 // 🆘 SOS Emergency Floating Action Button

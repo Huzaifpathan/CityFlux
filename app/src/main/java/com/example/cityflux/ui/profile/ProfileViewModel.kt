@@ -370,6 +370,50 @@ class ProfileViewModel : ViewModel() {
     }
 
     // ═══════════════════════════════════════════════════════
+    // Vehicle Numbers
+    // ═══════════════════════════════════════════════════════
+
+    fun addVehicleNumber(vehicleNo: String) {
+        val uid = auth.currentUser?.uid ?: return
+        val trimmed = vehicleNo.trim().uppercase()
+        if (trimmed.isBlank()) return
+
+        val current = _uiState.value.user?.vehicleNumbers ?: emptyList()
+        if (current.any { it.equals(trimmed, ignoreCase = true) }) {
+            _uiState.update { it.copy(snackbarMessage = "Vehicle already added") }
+            return
+        }
+
+        viewModelScope.launch {
+            try {
+                firestore.collection("users").document(uid)
+                    .update("vehicleNumbers", current + trimmed).await()
+                _uiState.update { it.copy(snackbarMessage = "Vehicle $trimmed added") }
+            } catch (e: Exception) {
+                Log.e(TAG, "Add vehicle failed", e)
+                _uiState.update { it.copy(snackbarMessage = "Failed to add vehicle") }
+            }
+        }
+    }
+
+    fun removeVehicleNumber(vehicleNo: String) {
+        val uid = auth.currentUser?.uid ?: return
+        val current = _uiState.value.user?.vehicleNumbers ?: emptyList()
+
+        viewModelScope.launch {
+            try {
+                firestore.collection("users").document(uid)
+                    .update("vehicleNumbers", current.filter { !it.equals(vehicleNo, ignoreCase = true) })
+                    .await()
+                _uiState.update { it.copy(snackbarMessage = "Vehicle $vehicleNo removed") }
+            } catch (e: Exception) {
+                Log.e(TAG, "Remove vehicle failed", e)
+                _uiState.update { it.copy(snackbarMessage = "Failed to remove vehicle") }
+            }
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════
     // Saved Places
     // ═══════════════════════════════════════════════════════
 

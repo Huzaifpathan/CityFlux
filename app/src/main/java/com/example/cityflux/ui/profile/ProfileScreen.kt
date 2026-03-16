@@ -326,6 +326,17 @@ fun ProfileScreen(
                     }
 
                     // ═══════════════════════════════════════════════
+                    // 3a-2) MY VEHICLES
+                    // ═══════════════════════════════════════════════
+                    MyVehiclesSection(
+                        vehicles = state.user?.vehicleNumbers ?: emptyList(),
+                        onAdd = { vm.addVehicleNumber(it) },
+                        onRemove = { vm.removeVehicleNumber(it) }
+                    )
+
+                    Spacer(Modifier.height(Spacing.XXLarge))
+
+                    // ═══════════════════════════════════════════════
                     // 3b) RECENT ACTIVITY
                     // ═══════════════════════════════════════════════
                     RecentActivitySection(activities = state.recentActivities)
@@ -1948,6 +1959,180 @@ private fun AchievementsSection(citizenScore: Int) {
                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
                     )
                 }
+            }
+        }
+    }
+}
+
+
+// ═══════════════════════════════════════════════════════════════════
+// MY VEHICLES — Add/Remove registered vehicle numbers
+// ═══════════════════════════════════════════════════════════════════
+
+@Composable
+private fun MyVehiclesSection(
+    vehicles: List<String>,
+    onAdd: (String) -> Unit,
+    onRemove: (String) -> Unit
+) {
+    val colors = MaterialTheme.cityFluxColors
+    var showAddDialog by remember { mutableStateOf(false) }
+    var newVehicleNo by remember { mutableStateOf("") }
+
+    // Add Vehicle Dialog
+    if (showAddDialog) {
+        AlertDialog(
+            onDismissRequest = { showAddDialog = false; newVehicleNo = "" },
+            containerColor = colors.cardBackground,
+            icon = {
+                Icon(Icons.Outlined.DirectionsCar, null, tint = PrimaryBlue, modifier = Modifier.size(28.dp))
+            },
+            title = {
+                Text("Add Vehicle", fontWeight = FontWeight.Bold, color = colors.textPrimary)
+            },
+            text = {
+                Column {
+                    Text(
+                        "Enter your vehicle registration number",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = colors.textSecondary
+                    )
+                    Spacer(Modifier.height(Spacing.Medium))
+                    OutlinedTextField(
+                        value = newVehicleNo,
+                        onValueChange = { newVehicleNo = it.uppercase() },
+                        placeholder = { Text("e.g. MH12AB1234", color = colors.textTertiary) },
+                        singleLine = true,
+                        leadingIcon = {
+                            Icon(Icons.Outlined.Numbers, null, tint = colors.textTertiary, modifier = Modifier.size(18.dp))
+                        },
+                        shape = RoundedCornerShape(CornerRadius.Medium),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = PrimaryBlue,
+                            unfocusedBorderColor = colors.surfaceVariant,
+                            focusedContainerColor = colors.cardBackground,
+                            unfocusedContainerColor = colors.cardBackground
+                        ),
+                        modifier = Modifier.fillMaxWidth(),
+                        textStyle = MaterialTheme.typography.bodyLarge.copy(
+                            color = colors.textPrimary,
+                            fontWeight = FontWeight.SemiBold,
+                            letterSpacing = 1.sp
+                        )
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (newVehicleNo.isNotBlank()) {
+                            onAdd(newVehicleNo)
+                            newVehicleNo = ""
+                            showAddDialog = false
+                        }
+                    },
+                    enabled = newVehicleNo.trim().length >= 4,
+                    colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue)
+                ) { Text("Add") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showAddDialog = false; newVehicleNo = "" }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
+    ProfileSection(title = "My Vehicles", icon = Icons.Outlined.DirectionsCar) {
+        if (vehicles.isEmpty()) {
+            // Empty state
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(CornerRadius.Medium))
+                    .background(colors.surfaceVariant.copy(alpha = 0.3f))
+                    .clickable { showAddDialog = true }
+                    .padding(Spacing.Large),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    Icons.Outlined.AddCircleOutline, null,
+                    tint = PrimaryBlue, modifier = Modifier.size(24.dp)
+                )
+                Spacer(Modifier.width(Spacing.Medium))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        "No vehicles registered",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Medium,
+                        color = colors.textSecondary
+                    )
+                    Text(
+                        "Add your vehicle to get fine alerts",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = colors.textTertiary
+                    )
+                }
+            }
+        } else {
+            vehicles.forEachIndexed { index, vehicle ->
+                if (index > 0) Spacer(Modifier.height(8.dp))
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(CornerRadius.Medium))
+                        .background(PrimaryBlue.copy(alpha = 0.06f))
+                        .padding(horizontal = Spacing.Large, vertical = Spacing.Medium),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    // Vehicle icon with index
+                    Box(
+                        modifier = Modifier
+                            .size(36.dp)
+                            .background(PrimaryBlue.copy(alpha = 0.12f), RoundedCornerShape(8.dp)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            Icons.Outlined.DirectionsCar, null,
+                            tint = PrimaryBlue, modifier = Modifier.size(20.dp)
+                        )
+                    }
+                    Spacer(Modifier.width(Spacing.Medium))
+                    Text(
+                        text = vehicle,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = colors.textPrimary,
+                        letterSpacing = 1.5.sp,
+                        modifier = Modifier.weight(1f)
+                    )
+                    // Remove button
+                    IconButton(
+                        onClick = { onRemove(vehicle) },
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        Icon(
+                            Icons.Outlined.RemoveCircleOutline, "Remove",
+                            tint = AccentRed.copy(alpha = 0.7f), modifier = Modifier.size(20.dp)
+                        )
+                    }
+                }
+            }
+
+            // Add more button
+            Spacer(Modifier.height(Spacing.Medium))
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(CornerRadius.Medium))
+                    .clickable { showAddDialog = true }
+                    .padding(vertical = Spacing.Small),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(Icons.Outlined.Add, null, tint = PrimaryBlue, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(4.dp))
+                Text("Add Vehicle", color = PrimaryBlue, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
             }
         }
     }

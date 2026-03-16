@@ -13,6 +13,7 @@ data class User(
     val phone: String = "",
     val role: String = "",          // "citizen" or "police"
     val profileImageUrl: String = "",
+    val vehicleNumbers: List<String> = emptyList(), // citizen's registered vehicle plates
     val workingAreaName: String = "",
     val workingLatitude: Double = 0.0,
     val workingLongitude: Double = 0.0,
