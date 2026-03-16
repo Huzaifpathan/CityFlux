@@ -614,3 +614,178 @@ exports.onNewViolation = functions.firestore
 
     return null;
   });
+
+// ═══════════════════════════════════════════════════════════════════
+// onNewChatMessage – Fires when a chat message is added to a report.
+// Notifies the OTHER party (police msg → citizen, citizen msg → police).
+// ═══════════════════════════════════════════════════════════════════
+
+exports.onNewChatMessage = functions.firestore
+  .document("reports/{reportId}/chat/{messageId}")
+  .onCreate(async (snap, context) => {
+    const msg = snap.data();
+    const reportId = context.params.reportId;
+    const senderRole = msg.senderRole || "";
+    const senderId = msg.senderId || "";
+    const senderName = msg.senderName || msg.sender || "Someone";
+    const messageText = msg.message || "";
+
+    if (!senderId) return null;
+
+    functions.logger.info(`onNewChatMessage: report=${reportId}, from=${senderRole}`);
+
+    try {
+      const reportSnap = await db.collection("reports").doc(reportId).get();
+      if (!reportSnap.exists) return null;
+      const report = reportSnap.data();
+      const reportTitle = report.title || report.type || "Report";
+
+      let targetUids = [];
+
+      if (senderRole === "citizen") {
+        // Citizen sent → notify assigned officer + officers who chatted
+        if (report.assignedTo) targetUids.push(report.assignedTo);
+        const chatSnap = await db.collection("reports").doc(reportId)
+          .collection("chat")
+          .where("senderRole", "==", "police")
+          .get();
+        chatSnap.docs.forEach((doc) => {
+          const sid = doc.data().senderId;
+          if (sid && !targetUids.includes(sid)) targetUids.push(sid);
+        });
+      } else {
+        // Police sent → notify the citizen who filed the report
+        if (report.userId) targetUids.push(report.userId);
+      }
+
+      targetUids = targetUids.filter((uid) => uid !== senderId);
+      if (targetUids.length === 0) return null;
+
+      const notifTitle = `💬 New message — ${reportTitle}`;
+      const notifBody = messageText.length > 80
+        ? `${senderName}: ${messageText.substring(0, 80)}...`
+        : `${senderName}: ${messageText}`;
+
+      const promises = targetUids.map(async (uid) => {
+        await db.collection("users").doc(uid)
+          .collection("notifications")
+          .doc(`chat_${context.params.messageId}`)
+          .set({
+            title: notifTitle,
+            message: notifBody,
+            type: "report",
+            priority: "medium",
+            read: false,
+            pinned: false,
+            timestamp: admin.firestore.Timestamp.now(),
+          });
+
+        const userSnap = await db.collection("users").doc(uid).get();
+        const fcmToken = userSnap.exists ? userSnap.data().fcmToken : null;
+        if (!fcmToken) return;
+
+        try {
+          await messaging.send({
+            notification: { title: notifTitle, body: notifBody },
+            data: {
+              type: "chat_message",
+              reportId: reportId,
+              senderRole: senderRole,
+              click_action: "OPEN_REPORT_CHAT",
+            },
+            token: fcmToken,
+          });
+        } catch (error) {
+          if (
+            error.code === "messaging/invalid-registration-token" ||
+            error.code === "messaging/registration-token-not-registered"
+          ) {
+            await db.collection("users").doc(uid)
+              .update({ fcmToken: admin.firestore.FieldValue.delete() });
+          }
+        }
+      });
+
+      await Promise.all(promises);
+      functions.logger.info(`onNewChatMessage: notified ${targetUids.length} user(s)`);
+    } catch (err) {
+      functions.logger.error("Error in onNewChatMessage", err);
+    }
+    return null;
+  });
+
+// ═══════════════════════════════════════════════════════════════════
+// onNewProof – Fires when proof is uploaded to a report.
+// Notifies the citizen who filed the report.
+// ═══════════════════════════════════════════════════════════════════
+
+exports.onNewProof = functions.firestore
+  .document("reports/{reportId}/proofs/{proofId}")
+  .onCreate(async (snap, context) => {
+    const proof = snap.data();
+    const reportId = context.params.reportId;
+    const proofId = context.params.proofId;
+    const actionTaken = proof.actionTaken || "Action taken";
+    const description = proof.description || "";
+
+    functions.logger.info(`onNewProof: report=${reportId}, action=${actionTaken}`);
+
+    try {
+      const reportSnap = await db.collection("reports").doc(reportId).get();
+      if (!reportSnap.exists) return null;
+      const report = reportSnap.data();
+      const citizenUid = report.userId;
+      if (!citizenUid) return null;
+
+      const reportTitle = report.title || report.type || "Report";
+      const notifTitle = `✅ Proof uploaded — ${reportTitle}`;
+      const notifBody = description
+        ? `${actionTaken}: ${description.substring(0, 80)}`
+        : `Officer took action: ${actionTaken}`;
+
+      // In-app notification
+      await db.collection("users").doc(citizenUid)
+        .collection("notifications")
+        .doc(`proof_${proofId}`)
+        .set({
+          title: notifTitle,
+          message: notifBody,
+          type: "report",
+          priority: "high",
+          read: false,
+          pinned: false,
+          timestamp: admin.firestore.Timestamp.now(),
+        });
+
+      // FCM push
+      const userSnap = await db.collection("users").doc(citizenUid).get();
+      const fcmToken = userSnap.exists ? userSnap.data().fcmToken : null;
+      if (fcmToken) {
+        try {
+          await messaging.send({
+            notification: { title: notifTitle, body: notifBody },
+            data: {
+              type: "proof_uploaded",
+              reportId: reportId,
+              actionTaken: actionTaken,
+              click_action: "OPEN_REPORT_PROOFS",
+            },
+            token: fcmToken,
+          });
+        } catch (error) {
+          if (
+            error.code === "messaging/invalid-registration-token" ||
+            error.code === "messaging/registration-token-not-registered"
+          ) {
+            await db.collection("users").doc(citizenUid)
+              .update({ fcmToken: admin.firestore.FieldValue.delete() });
+          }
+        }
+      }
+
+      functions.logger.info(`onNewProof: notified citizen ${citizenUid}`);
+    } catch (err) {
+      functions.logger.error("Error in onNewProof", err);
+    }
+    return null;
+  });

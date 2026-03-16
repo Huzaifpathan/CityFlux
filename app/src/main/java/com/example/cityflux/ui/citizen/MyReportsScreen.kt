@@ -849,15 +849,6 @@ private fun ReportDetailDialog(
                     selectedTabIndex = selectedTab,
                     containerColor = Color.Transparent,
                     contentColor = PrimaryBlue,
-                    indicator = { tabPositions ->
-                        if (selectedTab < tabPositions.size) {
-                            TabRowDefaults.SecondaryIndicator(
-                                Modifier.tabIndicatorOffset(tabPositions[selectedTab]),
-                                height = 3.dp,
-                                color = PrimaryBlue
-                            )
-                        }
-                    },
                     divider = { HorizontalDivider(color = colors.surfaceVariant, thickness = 0.5.dp) }
                 ) {
                     tabs.forEachIndexed { index, title ->
