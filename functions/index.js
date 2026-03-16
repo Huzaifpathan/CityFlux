@@ -491,3 +491,126 @@ exports.uploadReportImage = functions
       );
     }
   });
+
+// ═══════════════════════════════════════════════════════════════════
+// onNewViolation – Fires when a parking violation is created.
+// Matches vehicleInfo against citizens' vehicleNumbers array.
+// Sends FCM push + saves in-app notification.
+// ═══════════════════════════════════════════════════════════════════
+
+exports.onNewViolation = functions.firestore
+  .document("parking_violations/{violationId}")
+  .onCreate(async (snap, context) => {
+    const violation = snap.data();
+    const violationId = context.params.violationId;
+    const vehicleInfo = (violation.vehicleInfo || "").trim().toUpperCase();
+
+    if (!vehicleInfo) {
+      functions.logger.warn(`Violation ${violationId} has no vehicleInfo`);
+      return null;
+    }
+
+    functions.logger.info(`onNewViolation: ${violationId}, vehicle=${vehicleInfo}`);
+
+    try {
+      // Find citizens whose vehicleNumbers array contains this vehicle
+      const usersSnap = await db.collection("users")
+        .where("vehicleNumbers", "array-contains", vehicleInfo)
+        .get();
+
+      if (usersSnap.empty) {
+        functions.logger.info(`No user found for vehicle ${vehicleInfo}`);
+        return null;
+      }
+
+      const actionType = (violation.actionType || "fine").charAt(0).toUpperCase() +
+        (violation.actionType || "fine").slice(1);
+      const fineAmount = violation.fineAmount || "";
+      const address = violation.address || "";
+      const lat = violation.latitude || 0;
+      const lng = violation.longitude || 0;
+
+      // Build notification content
+      const actionEmoji = actionType.toLowerCase() === "tow" ? "🚨"
+        : actionType.toLowerCase() === "fine" ? "💰" : "⚠️";
+
+      const notifTitle = `${actionEmoji} ${actionType} — ${vehicleInfo}`;
+      const notifBody = fineAmount
+        ? `₹${fineAmount} fine issued${address ? ` at ${address}` : ""}`
+        : `${actionType} issued on your vehicle${address ? ` at ${address}` : ""}`;
+
+      const priority = actionType.toLowerCase() === "tow" ? "critical"
+        : actionType.toLowerCase() === "fine" ? "high" : "medium";
+
+      // Process each matched user
+      const promises = usersSnap.docs.map(async (userDoc) => {
+        const userData = userDoc.data();
+        const uid = userDoc.id;
+
+        // 1. Save in-app notification
+        await db.collection("users").doc(uid)
+          .collection("notifications")
+          .doc(`violation_${violationId}`)
+          .set({
+            title: notifTitle,
+            message: notifBody,
+            type: "parking",
+            priority: priority,
+            latitude: lat,
+            longitude: lng,
+            read: false,
+            pinned: false,
+            timestamp: admin.firestore.Timestamp.now(),
+          });
+
+        functions.logger.info(`In-app notification saved for user ${uid}`);
+
+        // 2. Send FCM push notification
+        const fcmToken = userData.fcmToken;
+        if (!fcmToken) {
+          functions.logger.info(`User ${uid} has no FCM token, skipping push`);
+          return;
+        }
+
+        const message = {
+          notification: {
+            title: notifTitle,
+            body: notifBody,
+          },
+          data: {
+            type: "parking_violation",
+            violationId: violationId,
+            vehicleInfo: vehicleInfo,
+            actionType: actionType.toLowerCase(),
+            fineAmount: fineAmount,
+            latitude: String(lat),
+            longitude: String(lng),
+            click_action: "OPEN_VIOLATIONS",
+          },
+          token: fcmToken,
+        };
+
+        try {
+          await messaging.send(message);
+          functions.logger.info(`Push notification sent to user ${uid}`);
+        } catch (error) {
+          functions.logger.error(`Failed to send push to ${uid}`, error);
+          if (
+            error.code === "messaging/invalid-registration-token" ||
+            error.code === "messaging/registration-token-not-registered"
+          ) {
+            await db.collection("users").doc(uid)
+              .update({ fcmToken: admin.firestore.FieldValue.delete() });
+          }
+        }
+      });
+
+      await Promise.all(promises);
+      functions.logger.info(`onNewViolation complete: notified ${usersSnap.size} user(s)`);
+    } catch (err) {
+      functions.logger.error("Error in onNewViolation", err);
+      throw err;
+    }
+
+    return null;
+  });
