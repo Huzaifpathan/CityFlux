@@ -26,8 +26,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.TurnLeft
-import androidx.compose.material.icons.automirrored.filled.TurnRight
 import androidx.compose.material.icons.automirrored.outlined.ViewList
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
@@ -2159,16 +2157,18 @@ private fun NavigationPanel(
             Spacer(Modifier.height(Spacing.Medium))
             
             // ── Live Stats Row ──
-            Row(
+            Surface(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .background(
-                        colors.background.copy(alpha = 0.5f),
-                        RoundedCornerShape(CornerRadius.Large)
-                    )
-                    .padding(Spacing.Medium),
-                horizontalArrangement = Arrangement.SpaceEvenly
+                    .fillMaxWidth(),
+                shape = RoundedCornerShape(CornerRadius.Large),
+                color = colors.background.copy(alpha = 0.5f)
             ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(Spacing.Medium),
+                    horizontalArrangement = Arrangement.SpaceEvenly
+                ) {
                 // Remaining Distance
                 NavigationStat(
                     icon = Icons.Outlined.Straighten,
@@ -2208,6 +2208,7 @@ private fun NavigationPanel(
                     label = "Speed",
                     color = if (currentSpeed > 60f) AccentRed else colors.textSecondary
                 )
+                }
             }
             
             Spacer(Modifier.height(Spacing.Medium))
@@ -2292,13 +2293,12 @@ private fun formatDistanceMeters(meters: Int): String = when {
 }
 
 /** Get appropriate icon for navigation maneuver */
-@Composable
 private fun getManeuverIcon(maneuver: String): ImageVector {
     return when {
-        maneuver.contains("left") -> Icons.AutoMirrored.Filled.TurnLeft
-        maneuver.contains("right") -> Icons.AutoMirrored.Filled.TurnRight
-        maneuver.contains("uturn") || maneuver.contains("u-turn") -> Icons.Filled.UTurnLeft
-        maneuver.contains("merge") -> Icons.Filled.MergeType
+        maneuver.contains("left") -> Icons.Filled.KeyboardArrowLeft
+        maneuver.contains("right") -> Icons.Filled.KeyboardArrowRight
+        maneuver.contains("uturn") || maneuver.contains("u-turn") -> Icons.Filled.UTurnRight
+        maneuver.contains("merge") -> Icons.Filled.CallMerge
         maneuver.contains("ramp") -> Icons.Filled.CallMade
         maneuver.contains("fork") -> Icons.Filled.CallSplit
         maneuver.contains("roundabout") -> Icons.Filled.RotateRight
