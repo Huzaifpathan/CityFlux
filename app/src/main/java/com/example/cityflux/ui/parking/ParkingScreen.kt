@@ -4,10 +4,15 @@ import android.Manifest
 import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Paint
 import android.location.Location
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.net.Uri
+import android.os.Looper
+import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
@@ -21,6 +26,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.TurnLeft
+import androidx.compose.material.icons.automirrored.filled.TurnRight
 import androidx.compose.material.icons.automirrored.outlined.ViewList
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
@@ -33,25 +40,37 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.cityflux.model.ParkingSpot
 import com.example.cityflux.ui.theme.*
+import com.google.android.gms.location.LocationCallback
+import com.google.android.gms.location.LocationRequest
+import com.google.android.gms.location.LocationResult
 import com.google.android.gms.location.LocationServices
+import com.google.android.gms.location.Priority
 import com.google.android.gms.maps.CameraUpdateFactory
 import com.google.android.gms.maps.model.*
 import com.google.firebase.analytics.ktx.analytics
 import com.google.firebase.firestore.ktx.firestore
 import com.google.firebase.ktx.Firebase
 import com.google.maps.android.compose.*
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
+import kotlinx.coroutines.withContext
+import kotlin.math.*
 
 // ═══════════════════════════════════════════════════════════════════
 // ParkingScreen — Production-grade parking with list + map toggle
@@ -111,6 +130,138 @@ fun ParkingScreen(
     
     // ── Navigate target (for internal map navigation) ──
     var navigateToSpot by remember { mutableStateOf<ParkingSpot?>(null) }
+    
+    // ══════════════════════════════════════════════════════════════
+    // NAVIGATION MODE STATE (Google Maps style turn-by-turn)
+    // ══════════════════════════════════════════════════════════════
+    var isNavigating by remember { mutableStateOf(false) }
+    var navigationTarget by remember { mutableStateOf<ParkingSpot?>(null) }
+    var routePoints by remember { mutableStateOf<List<LatLng>>(emptyList()) }
+    var routeDistanceKm by remember { mutableStateOf(0.0) }
+    var routeDurationMin by remember { mutableStateOf(0) }
+    var isLoadingRoute by remember { mutableStateOf(false) }
+    val coroutineScope = rememberCoroutineScope()
+    
+    // ══════════════════════════════════════════════════════════════
+    // TURN-BY-TURN STATE (Phase 3)
+    // ══════════════════════════════════════════════════════════════
+    var navigationSteps by remember { mutableStateOf<List<NavigationStep>>(emptyList()) }
+    var currentStepIndex by remember { mutableIntStateOf(0) }
+    var distanceToNextStep by remember { mutableStateOf(0) } // meters
+    
+    // ══════════════════════════════════════════════════════════════
+    // LIVE TRACKING STATE (Phase 2)
+    // ══════════════════════════════════════════════════════════════
+    var remainingDistanceKm by remember { mutableStateOf(0.0) }
+    var remainingDurationMin by remember { mutableStateOf(0) }
+    var coveredDistanceKm by remember { mutableStateOf(0.0) }
+    var progressPercent by remember { mutableFloatStateOf(0f) }
+    var currentSpeed by remember { mutableFloatStateOf(0f) } // km/h
+    var hasArrived by remember { mutableStateOf(false) }
+    
+    // ── Live Location Tracking ──
+    val fusedLocationClient = remember { LocationServices.getFusedLocationProviderClient(context) }
+    val lifecycleOwner = LocalLifecycleOwner.current
+    
+    // Location callback for continuous updates during navigation
+    val locationCallback = remember {
+        object : LocationCallback() {
+            override fun onLocationResult(result: LocationResult) {
+                result.lastLocation?.let { location ->
+                    val newLatLng = LatLng(location.latitude, location.longitude)
+                    userLatLng = newLatLng
+                    vm.setUserLocation(location)
+                    
+                    // Update speed (m/s to km/h)
+                    currentSpeed = location.speed * 3.6f
+                    
+                    // Calculate remaining distance to destination
+                    navigationTarget?.location?.let { destGeo ->
+                        val destLatLng = LatLng(destGeo.latitude, destGeo.longitude)
+                        val remainingMeters = calculateDistance(newLatLng, destLatLng)
+                        remainingDistanceKm = remainingMeters / 1000.0
+                        
+                        // Estimate remaining time based on average speed or current speed
+                        val avgSpeedKmh = if (currentSpeed > 5f) currentSpeed else 30f // default 30 km/h
+                        remainingDurationMin = ((remainingDistanceKm / avgSpeedKmh) * 60).toInt().coerceAtLeast(1)
+                        
+                        // Calculate progress
+                        if (routeDistanceKm > 0) {
+                            coveredDistanceKm = routeDistanceKm - remainingDistanceKm
+                            progressPercent = ((coveredDistanceKm / routeDistanceKm) * 100).toFloat().coerceIn(0f, 100f)
+                        }
+                        
+                        // Check if arrived (within 30 meters)
+                        if (remainingMeters < 30) {
+                            hasArrived = true
+                        }
+                    }
+                    
+                    // ══════════════════════════════════════════════════════════════
+                    // TURN-BY-TURN: Track current step (Phase 3)
+                    // ══════════════════════════════════════════════════════════════
+                    if (navigationSteps.isNotEmpty() && currentStepIndex < navigationSteps.size) {
+                        val currentStep = navigationSteps[currentStepIndex]
+                        
+                        // Calculate distance to next step's end point
+                        val distToStepEnd = calculateDistance(newLatLng, currentStep.endLocation)
+                        distanceToNextStep = distToStepEnd.toInt()
+                        
+                        // If within 30m of step end, advance to next step
+                        if (distToStepEnd < 30 && currentStepIndex < navigationSteps.size - 1) {
+                            currentStepIndex++
+                            Log.d("ParkingNavigation", "Advanced to step ${currentStepIndex + 1}/${navigationSteps.size}")
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    // Start/Stop live location updates based on navigation state
+    DisposableEffect(isNavigating, hasLocationPermission) {
+        if (isNavigating && hasLocationPermission) {
+            val locationRequest = LocationRequest.Builder(
+                Priority.PRIORITY_HIGH_ACCURACY,
+                2000L // Update every 2 seconds
+            ).apply {
+                setMinUpdateIntervalMillis(1000L)
+                setMinUpdateDistanceMeters(5f) // Update when moved 5 meters
+            }.build()
+            
+            try {
+                fusedLocationClient.requestLocationUpdates(
+                    locationRequest,
+                    locationCallback,
+                    Looper.getMainLooper()
+                )
+                Log.d("ParkingNavigation", "Started live location tracking")
+            } catch (e: SecurityException) {
+                Log.e("ParkingNavigation", "Location permission denied: ${e.message}")
+            }
+        }
+        
+        onDispose {
+            fusedLocationClient.removeLocationUpdates(locationCallback)
+            Log.d("ParkingNavigation", "Stopped live location tracking")
+        }
+    }
+    
+    // Reset live tracking state when navigation stops
+    LaunchedEffect(isNavigating) {
+        if (!isNavigating) {
+            remainingDistanceKm = 0.0
+            remainingDurationMin = 0
+            coveredDistanceKm = 0.0
+            progressPercent = 0f
+            currentSpeed = 0f
+            hasArrived = false
+        } else {
+            // Initialize remaining with total when navigation starts
+            remainingDistanceKm = routeDistanceKm
+            remainingDurationMin = routeDurationMin
+        }
+    }
 
     // ── Connectivity ──
     val isOffline = remember { !isNetworkAvailable(context) }
@@ -492,6 +643,31 @@ fun ParkingScreen(
                         userLatLng = userLatLng,
                         navigateToSpot = navigateToSpot,
                         onNavigateConsumed = { navigateToSpot = null },
+                        // Navigation mode params
+                        isNavigating = isNavigating,
+                        routePoints = routePoints,
+                        routeDistanceKm = routeDistanceKm,
+                        routeDurationMin = routeDurationMin,
+                        navigationTarget = navigationTarget,
+                        // Live tracking params (Phase 2)
+                        remainingDistanceKm = remainingDistanceKm,
+                        remainingDurationMin = remainingDurationMin,
+                        progressPercent = progressPercent,
+                        currentSpeed = currentSpeed,
+                        hasArrived = hasArrived,
+                        // Turn-by-turn params (Phase 3)
+                        navigationSteps = navigationSteps,
+                        currentStepIndex = currentStepIndex,
+                        distanceToNextStep = distanceToNextStep,
+                        onStopNavigation = {
+                            isNavigating = false
+                            navigationTarget = null
+                            routePoints = emptyList()
+                            routeDistanceKm = 0.0
+                            routeDurationMin = 0
+                            navigationSteps = emptyList()
+                            currentStepIndex = 0
+                        },
                         onMarkerClick = { spot ->
                             try { Firebase.analytics.logEvent("parking_card_clicked", null) } catch (_: Exception) {}
                             selectedSpot = spot
@@ -569,9 +745,28 @@ fun ParkingScreen(
                                             notifySpotIds - spot.id else notifySpotIds + spot.id
                                     },
                                     onNavigate = {
-                                        spot.location?.let { _ ->
-                                            navigateToSpot = spot
+                                        spot.location?.let { geo ->
+                                            // Start navigation mode
+                                            navigationTarget = spot
                                             isMapView = true
+                                            isLoadingRoute = true
+                                            
+                                            // Fetch route from user location to parking
+                                            coroutineScope.launch {
+                                                userLatLng?.let { start ->
+                                                    val end = LatLng(geo.latitude, geo.longitude)
+                                                    val apiKey = getMapApiKey(context)
+                                                    val result = fetchDirectionsRoute(start, end, apiKey)
+                                                    routePoints = result.points
+                                                    routeDistanceKm = result.distanceKm
+                                                    routeDurationMin = result.durationMinutes
+                                                    // Phase 3: Save turn-by-turn steps
+                                                    navigationSteps = result.steps
+                                                    currentStepIndex = 0
+                                                    isNavigating = true
+                                                    isLoadingRoute = false
+                                                }
+                                            }
                                         }
                                     },
                                     onClick = {
@@ -679,7 +874,7 @@ fun ParkingScreen(
 
         // ══════════════════════ Detail Popup ══════════════════════
         AnimatedVisibility(
-            visible = selectedSpot != null,
+            visible = selectedSpot != null && !isNavigating,
             enter = slideInVertically { it } + fadeIn(),
             exit = slideOutVertically { it } + fadeOut(),
             modifier = Modifier.align(Alignment.BottomCenter)
@@ -693,10 +888,28 @@ fun ParkingScreen(
                         try {
                             Firebase.analytics.logEvent("navigate_to_parking_clicked", null)
                         } catch (_: Exception) {}
-                        spot.location?.let { _ ->
-                            navigateToSpot = spot
+                        spot.location?.let { geo ->
+                            // Start navigation mode with route
+                            navigationTarget = spot
                             selectedSpot = null
                             isMapView = true
+                            isLoadingRoute = true
+                            
+                            coroutineScope.launch {
+                                userLatLng?.let { start ->
+                                    val end = LatLng(geo.latitude, geo.longitude)
+                                    val apiKey = getMapApiKey(context)
+                                    val result = fetchDirectionsRoute(start, end, apiKey)
+                                    routePoints = result.points
+                                    routeDistanceKm = result.distanceKm
+                                    routeDurationMin = result.durationMinutes
+                                    // Phase 3: Save turn-by-turn steps
+                                    navigationSteps = result.steps
+                                    currentStepIndex = 0
+                                    isNavigating = true
+                                    isLoadingRoute = false
+                                }
+                            }
                         }
                     },
                     onDismiss = { selectedSpot = null }
@@ -1261,7 +1474,7 @@ private fun StatChip(
 
 
 // ═══════════════════════════════════════════════════════════════════
-// Parking Map View (mini map with markers)
+// Parking Map View (mini map with markers + Navigation support)
 // ═══════════════════════════════════════════════════════════════════
 
 @Composable
@@ -1271,8 +1484,26 @@ private fun ParkingMapView(
     userLatLng: LatLng?,
     navigateToSpot: ParkingSpot? = null,
     onNavigateConsumed: () -> Unit = {},
+    // Navigation mode params
+    isNavigating: Boolean = false,
+    routePoints: List<LatLng> = emptyList(),
+    routeDistanceKm: Double = 0.0,
+    routeDurationMin: Int = 0,
+    navigationTarget: ParkingSpot? = null,
+    // Live tracking params (Phase 2)
+    remainingDistanceKm: Double = 0.0,
+    remainingDurationMin: Int = 0,
+    progressPercent: Float = 0f,
+    currentSpeed: Float = 0f,
+    hasArrived: Boolean = false,
+    // Turn-by-turn params (Phase 3)
+    navigationSteps: List<NavigationStep> = emptyList(),
+    currentStepIndex: Int = 0,
+    distanceToNextStep: Int = 0,
+    onStopNavigation: () -> Unit = {},
     onMarkerClick: (ParkingSpot) -> Unit
 ) {
+    val colors = MaterialTheme.cityFluxColors
     val defaultLocation = LatLng(17.6599, 75.9064) // Solapur
     val cameraPositionState = rememberCameraPositionState {
         position = CameraPosition.fromLatLngZoom(userLatLng ?: defaultLocation, 14f)
@@ -1280,7 +1511,9 @@ private fun ParkingMapView(
 
     LaunchedEffect(userLatLng) {
         userLatLng?.let {
-            cameraPositionState.animate(CameraUpdateFactory.newLatLngZoom(it, 15f), durationMs = 600)
+            if (!isNavigating) {
+                cameraPositionState.animate(CameraUpdateFactory.newLatLngZoom(it, 15f), durationMs = 600)
+            }
         }
     }
     
@@ -1294,6 +1527,18 @@ private fun ParkingMapView(
             onNavigateConsumed()
         }
     }
+    
+    // Fit route in view when navigation starts
+    LaunchedEffect(routePoints) {
+        if (routePoints.size >= 2) {
+            val boundsBuilder = LatLngBounds.builder()
+            routePoints.forEach { boundsBuilder.include(it) }
+            cameraPositionState.animate(
+                CameraUpdateFactory.newLatLngBounds(boundsBuilder.build(), 100),
+                durationMs = 800
+            )
+        }
+    }
 
     val parkingGreenBitmap = remember {
         createCircleMarkerBitmap(AccentParking.toArgb(), 38)
@@ -1301,40 +1546,113 @@ private fun ParkingMapView(
     val parkingRedBitmap = remember {
         createCircleMarkerBitmap(AccentRed.toArgb(), 38)
     }
+    
+    // Route colors (Google Maps style purple/blue)
+    val routeColor = Color(0xFF4285F4)
+    val routeShadowColor = Color(0xFF1A73E8)
 
-    GoogleMap(
-        modifier = Modifier
-            .fillMaxSize()
-            .clip(RoundedCornerShape(topStart = 0.dp, topEnd = 0.dp)),
-        cameraPositionState = cameraPositionState,
-        properties = MapProperties(
-            isMyLocationEnabled = userLatLng != null,
-            mapType = MapType.NORMAL,
-            isBuildingEnabled = true
-        ),
-        uiSettings = MapUiSettings(
-            zoomControlsEnabled = true,
-            compassEnabled = true,
-            myLocationButtonEnabled = false,
-            mapToolbarEnabled = false
-        )
-    ) {
-        spots.forEach { spot ->
-            val loc = spot.location ?: return@forEach
-            val available = parkingLive[spot.id]?.availableSlots ?: spot.availableSlots
-            val isFull = available <= 0
-
-            Marker(
-                state = MarkerState(position = LatLng(loc.latitude, loc.longitude)),
-                title = spot.address.ifBlank { "Parking ${spot.id}" },
-                snippet = if (isFull) "FULL" else "$available slots available",
-                icon = BitmapDescriptorFactory.fromBitmap(
-                    if (isFull) parkingRedBitmap else parkingGreenBitmap
-                ),
-                onClick = {
-                    onMarkerClick(spot)
-                    true
+    Box(modifier = Modifier.fillMaxSize()) {
+        GoogleMap(
+            modifier = Modifier
+                .fillMaxSize()
+                .clip(RoundedCornerShape(topStart = 0.dp, topEnd = 0.dp)),
+            cameraPositionState = cameraPositionState,
+            properties = MapProperties(
+                isMyLocationEnabled = userLatLng != null,
+                mapType = MapType.NORMAL,
+                isBuildingEnabled = true
+            ),
+            uiSettings = MapUiSettings(
+                zoomControlsEnabled = !isNavigating,
+                compassEnabled = true,
+                myLocationButtonEnabled = false,
+                mapToolbarEnabled = false
+            )
+        ) {
+            // ══════════════════════════════════════════════════════
+            // ROUTE POLYLINE (Google Maps style)
+            // ══════════════════════════════════════════════════════
+            if (routePoints.isNotEmpty()) {
+                // Shadow/outline polyline
+                Polyline(
+                    points = routePoints,
+                    color = routeShadowColor.copy(alpha = 0.3f),
+                    width = 18f
+                )
+                // Main route polyline
+                Polyline(
+                    points = routePoints,
+                    color = routeColor,
+                    width = 12f
+                )
+                
+                // Start marker (user location)
+                routePoints.firstOrNull()?.let { start ->
+                    Marker(
+                        state = MarkerState(position = start),
+                        title = "Your Location",
+                        icon = BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_GREEN)
+                    )
                 }
+                
+                // End marker (parking destination)
+                routePoints.lastOrNull()?.let { end ->
+                    Marker(
+                        state = MarkerState(position = end),
+                        title = navigationTarget?.address ?: "Destination",
+                        icon = BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_RED)
+                    )
+                }
+            }
+            
+            // ══════════════════════════════════════════════════════
+            // PARKING MARKERS
+            // ══════════════════════════════════════════════════════
+            spots.forEach { spot ->
+                val loc = spot.location ?: return@forEach
+                val available = parkingLive[spot.id]?.availableSlots ?: spot.availableSlots
+                val isFull = available <= 0
+                
+                // Hide other markers during navigation, only show destination
+                if (isNavigating && spot.id != navigationTarget?.id) return@forEach
+
+                Marker(
+                    state = MarkerState(position = LatLng(loc.latitude, loc.longitude)),
+                    title = spot.address.ifBlank { "Parking ${spot.id}" },
+                    snippet = if (isFull) "FULL" else "$available slots available",
+                    icon = BitmapDescriptorFactory.fromBitmap(
+                        if (isFull) parkingRedBitmap else parkingGreenBitmap
+                    ),
+                    onClick = {
+                        onMarkerClick(spot)
+                        true
+                    }
+                )
+            }
+        }
+        
+        // ══════════════════════════════════════════════════════════
+        // NAVIGATION PANEL (Bottom bar - Google Maps style)
+        // ══════════════════════════════════════════════════════════
+        AnimatedVisibility(
+            visible = isNavigating,
+            enter = slideInVertically { it } + fadeIn(),
+            exit = slideOutVertically { it } + fadeOut(),
+            modifier = Modifier.align(Alignment.BottomCenter)
+        ) {
+            NavigationPanel(
+                destinationName = navigationTarget?.address ?: "Parking",
+                // Use live remaining values if available, otherwise total
+                distanceKm = if (remainingDistanceKm > 0) remainingDistanceKm else routeDistanceKm,
+                durationMin = if (remainingDurationMin > 0) remainingDurationMin else routeDurationMin,
+                progressPercent = progressPercent,
+                currentSpeed = currentSpeed,
+                hasArrived = hasArrived,
+                // Turn-by-turn (Phase 3)
+                navigationSteps = navigationSteps,
+                currentStepIndex = currentStepIndex,
+                distanceToNextStep = distanceToNextStep,
+                onStopNavigation = onStopNavigation
             )
         }
     }
@@ -1595,6 +1913,608 @@ private fun isNetworkAvailable(context: Context): Boolean {
     val network = cm.activeNetwork ?: return false
     val capabilities = cm.getNetworkCapabilities(network) ?: return false
     return capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+}
+
+
+// ═══════════════════════════════════════════════════════════════════
+// Navigation Panel (Google Maps style bottom bar with live tracking)
+// ═══════════════════════════════════════════════════════════════════
+
+@Composable
+private fun NavigationPanel(
+    destinationName: String,
+    distanceKm: Double,
+    durationMin: Int,
+    progressPercent: Float = 0f,
+    currentSpeed: Float = 0f,
+    hasArrived: Boolean = false,
+    // Turn-by-turn params (Phase 3)
+    navigationSteps: List<NavigationStep> = emptyList(),
+    currentStepIndex: Int = 0,
+    distanceToNextStep: Int = 0,
+    onStopNavigation: () -> Unit
+) {
+    val colors = MaterialTheme.cityFluxColors
+    
+    // Current step
+    val currentStep = navigationSteps.getOrNull(currentStepIndex)
+    val nextStep = navigationSteps.getOrNull(currentStepIndex + 1)
+    
+    // Animated progress
+    val animatedProgress by animateFloatAsState(
+        targetValue = progressPercent / 100f,
+        animationSpec = tween(500),
+        label = "nav_progress"
+    )
+    
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .navigationBarsPadding(),
+        shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
+        color = colors.cardBackground,
+        shadowElevation = 16.dp
+    ) {
+        Column(
+            modifier = Modifier.padding(Spacing.Large)
+        ) {
+            // ══════════════════════════════════════════════════════
+            // ARRIVED BANNER
+            // ══════════════════════════════════════════════════════
+            AnimatedVisibility(
+                visible = hasArrived,
+                enter = expandVertically() + fadeIn(),
+                exit = shrinkVertically() + fadeOut()
+            ) {
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = Spacing.Medium),
+                    shape = RoundedCornerShape(CornerRadius.Large),
+                    color = AccentParking.copy(alpha = 0.15f)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(Spacing.Medium),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        Icon(
+                            Icons.Filled.CheckCircle,
+                            contentDescription = null,
+                            tint = AccentParking,
+                            modifier = Modifier.size(24.dp)
+                        )
+                        Spacer(Modifier.width(Spacing.Small))
+                        Text(
+                            "You have arrived!",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = AccentParking
+                        )
+                    }
+                }
+            }
+            
+            // ══════════════════════════════════════════════════════════════
+            // TURN-BY-TURN INSTRUCTION CARD (Phase 3)
+            // ══════════════════════════════════════════════════════════════
+            AnimatedVisibility(
+                visible = currentStep != null && !hasArrived,
+                enter = expandVertically() + fadeIn(),
+                exit = shrinkVertically() + fadeOut()
+            ) {
+                currentStep?.let { step ->
+                    Surface(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = Spacing.Medium),
+                        shape = RoundedCornerShape(CornerRadius.Large),
+                        color = PrimaryBlue.copy(alpha = 0.1f)
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(Spacing.Medium),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            // Maneuver icon
+                            Surface(
+                                shape = CircleShape,
+                                color = PrimaryBlue,
+                                modifier = Modifier.size(48.dp)
+                            ) {
+                                Icon(
+                                    getManeuverIcon(step.maneuver),
+                                    contentDescription = step.maneuver,
+                                    tint = Color.White,
+                                    modifier = Modifier
+                                        .padding(12.dp)
+                                        .size(24.dp)
+                                )
+                            }
+                            
+                            Spacer(Modifier.width(Spacing.Medium))
+                            
+                            Column(modifier = Modifier.weight(1f)) {
+                                // Distance to next maneuver
+                                Text(
+                                    formatDistanceMeters(distanceToNextStep),
+                                    style = MaterialTheme.typography.headlineSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = PrimaryBlue
+                                )
+                                // Instruction text
+                                Text(
+                                    step.instruction,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = colors.textPrimary,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
+                        
+                        // Next step preview
+                        nextStep?.let { next ->
+                            Spacer(Modifier.height(Spacing.Small))
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = Spacing.Medium)
+                                    .padding(bottom = Spacing.Small),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    "Then: ",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = colors.textTertiary
+                                )
+                                Icon(
+                                    getManeuverIcon(next.maneuver),
+                                    contentDescription = null,
+                                    tint = colors.textTertiary,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                                Spacer(Modifier.width(4.dp))
+                                Text(
+                                    next.instruction.take(40) + if (next.instruction.length > 40) "..." else "",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = colors.textTertiary,
+                                    maxLines = 1
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+            
+            // ── Destination Header ──
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Navigation icon with pulse animation when navigating
+                val infiniteTransition = rememberInfiniteTransition(label = "pulse")
+                val pulseScale by infiniteTransition.animateFloat(
+                    initialValue = 1f,
+                    targetValue = 1.1f,
+                    animationSpec = infiniteRepeatable(
+                        animation = tween(1000),
+                        repeatMode = RepeatMode.Reverse
+                    ),
+                    label = "pulse_scale"
+                )
+                
+                Surface(
+                    shape = CircleShape,
+                    color = if (hasArrived) AccentParking else PrimaryBlue,
+                    modifier = Modifier
+                        .size(48.dp)
+                        .graphicsLayer {
+                            scaleX = if (!hasArrived) pulseScale else 1f
+                            scaleY = if (!hasArrived) pulseScale else 1f
+                        }
+                ) {
+                    Icon(
+                        if (hasArrived) Icons.Filled.LocalParking else Icons.Filled.Navigation,
+                        contentDescription = "Navigating",
+                        tint = Color.White,
+                        modifier = Modifier
+                            .padding(12.dp)
+                            .size(24.dp)
+                    )
+                }
+                
+                Spacer(Modifier.width(Spacing.Medium))
+                
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        if (hasArrived) "Arrived at" else "Navigating to",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = colors.textTertiary
+                    )
+                    Text(
+                        destinationName,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = colors.textPrimary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+                
+                // Stop navigation button
+                IconButton(
+                    onClick = onStopNavigation,
+                    modifier = Modifier
+                        .size(44.dp)
+                        .background(AccentRed.copy(alpha = 0.1f), CircleShape)
+                ) {
+                    Icon(
+                        Icons.Filled.Close,
+                        contentDescription = "Stop Navigation",
+                        tint = AccentRed
+                    )
+                }
+            }
+            
+            Spacer(Modifier.height(Spacing.Medium))
+            
+            // ── Live Stats Row ──
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(
+                        colors.background.copy(alpha = 0.5f),
+                        RoundedCornerShape(CornerRadius.Large)
+                    )
+                    .padding(Spacing.Medium),
+                horizontalArrangement = Arrangement.SpaceEvenly
+            ) {
+                // Remaining Distance
+                NavigationStat(
+                    icon = Icons.Outlined.Straighten,
+                    value = formatDistanceKm(distanceKm),
+                    label = "Remaining",
+                    color = PrimaryBlue
+                )
+                
+                // Divider
+                Box(
+                    Modifier
+                        .width(1.dp)
+                        .height(40.dp)
+                        .background(colors.textTertiary.copy(alpha = 0.2f))
+                )
+                
+                // ETA Duration
+                NavigationStat(
+                    icon = Icons.Outlined.Schedule,
+                    value = "$durationMin min",
+                    label = "ETA",
+                    color = AccentParking
+                )
+                
+                // Divider
+                Box(
+                    Modifier
+                        .width(1.dp)
+                        .height(40.dp)
+                        .background(colors.textTertiary.copy(alpha = 0.2f))
+                )
+                
+                // Current Speed
+                NavigationStat(
+                    icon = Icons.Outlined.Speed,
+                    value = "${currentSpeed.toInt()} km/h",
+                    label = "Speed",
+                    color = if (currentSpeed > 60f) AccentRed else colors.textSecondary
+                )
+            }
+            
+            Spacer(Modifier.height(Spacing.Medium))
+            
+            // ── Progress Bar with percentage ──
+            Column {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        "Progress",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = colors.textTertiary
+                    )
+                    Text(
+                        "${progressPercent.toInt()}%",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = PrimaryBlue
+                    )
+                }
+                Spacer(Modifier.height(4.dp))
+                LinearProgressIndicator(
+                    progress = { animatedProgress.coerceIn(0f, 1f) },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(6.dp)
+                        .clip(RoundedCornerShape(3.dp)),
+                    color = if (hasArrived) AccentParking else PrimaryBlue,
+                    trackColor = colors.textTertiary.copy(alpha = 0.1f)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun NavigationStat(
+    icon: ImageVector,
+    value: String,
+    label: String,
+    color: Color
+) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                icon,
+                contentDescription = null,
+                tint = color,
+                modifier = Modifier.size(20.dp)
+            )
+            Spacer(Modifier.width(6.dp))
+            Text(
+                value,
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+                color = color
+            )
+        }
+        Text(
+            label,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.cityFluxColors.textTertiary
+        )
+    }
+}
+
+private fun formatDistanceKm(km: Double): String = when {
+    km < 1.0 -> "${(km * 1000).toInt()}m"
+    else -> String.format("%.1f km", km)
+}
+
+private fun formatDistanceMeters(meters: Int): String = when {
+    meters < 1000 -> "${meters}m"
+    else -> String.format("%.1f km", meters / 1000.0)
+}
+
+/** Get appropriate icon for navigation maneuver */
+@Composable
+private fun getManeuverIcon(maneuver: String): ImageVector {
+    return when {
+        maneuver.contains("left") -> Icons.AutoMirrored.Filled.TurnLeft
+        maneuver.contains("right") -> Icons.AutoMirrored.Filled.TurnRight
+        maneuver.contains("uturn") || maneuver.contains("u-turn") -> Icons.Filled.UTurnLeft
+        maneuver.contains("merge") -> Icons.Filled.MergeType
+        maneuver.contains("ramp") -> Icons.Filled.CallMade
+        maneuver.contains("fork") -> Icons.Filled.CallSplit
+        maneuver.contains("roundabout") -> Icons.Filled.RotateRight
+        maneuver.contains("straight") -> Icons.Filled.Straight
+        maneuver.contains("arrive") || maneuver.contains("destination") -> Icons.Filled.Flag
+        else -> Icons.Filled.ArrowUpward // Default: go straight
+    }
+}
+
+
+// ═══════════════════════════════════════════════════════════════════
+// Directions API Helper Functions
+// ═══════════════════════════════════════════════════════════════════
+
+/** Single navigation step (turn-by-turn instruction) */
+data class NavigationStep(
+    val instruction: String,           // "Turn left onto Main St"
+    val distanceMeters: Int,           // Distance for this step
+    val durationSeconds: Int,          // Duration for this step
+    val maneuver: String,              // "turn-left", "turn-right", "straight", etc.
+    val startLocation: LatLng,         // Start point of this step
+    val endLocation: LatLng            // End point of this step
+)
+
+/** Directions API result with polyline, duration, distance and steps */
+private data class DirectionsResult(
+    val points: List<LatLng>,
+    val durationMinutes: Int,
+    val distanceKm: Double,
+    val steps: List<NavigationStep> = emptyList()  // Turn-by-turn steps
+)
+
+/** Get Google Maps API key from AndroidManifest.xml */
+private fun getMapApiKey(context: Context): String {
+    return try {
+        val ai = context.packageManager.getApplicationInfo(
+            context.packageName,
+            android.content.pm.PackageManager.GET_META_DATA
+        )
+        ai.metaData?.getString("com.google.android.geo.API_KEY") ?: ""
+    } catch (_: Exception) { "" }
+}
+
+/** Fetch route from Google Directions API, fallback to straight line */
+private suspend fun fetchDirectionsRoute(
+    start: LatLng,
+    end: LatLng,
+    apiKey: String
+): DirectionsResult = withContext(Dispatchers.IO) {
+    val fallback = DirectionsResult(listOf(start, end), 0, 0.0, emptyList())
+    try {
+        val url = "https://maps.googleapis.com/maps/api/directions/json" +
+                "?origin=${start.latitude},${start.longitude}" +
+                "&destination=${end.latitude},${end.longitude}" +
+                "&mode=driving" +
+                "&key=$apiKey"
+        Log.d("ParkingNavigation", "Directions API request: $url")
+        val connection = java.net.URL(url).openConnection() as java.net.HttpURLConnection
+        connection.connectTimeout = 10000
+        connection.readTimeout = 10000
+        connection.requestMethod = "GET"
+
+        val responseCode = connection.responseCode
+        val response = if (responseCode == 200) {
+            connection.inputStream.bufferedReader().readText()
+        } else {
+            val errorBody = connection.errorStream?.bufferedReader()?.readText() ?: "no body"
+            Log.e("ParkingNavigation", "Directions API HTTP $responseCode: $errorBody")
+            connection.disconnect()
+            return@withContext fallback
+        }
+        connection.disconnect()
+
+        val json = org.json.JSONObject(response)
+        val status = json.optString("status", "UNKNOWN")
+        Log.d("ParkingNavigation", "Directions API status: $status")
+
+        if (status != "OK") {
+            val errorMsg = json.optString("error_message", "no details")
+            Log.e("ParkingNavigation", "Directions API error: $status - $errorMsg")
+            return@withContext fallback
+        }
+
+        val routes = json.optJSONArray("routes")
+        if (routes == null || routes.length() == 0) {
+            Log.w("ParkingNavigation", "Directions API: no routes returned")
+            return@withContext fallback
+        }
+
+        val route = routes.getJSONObject(0)
+
+        // Extract duration & distance from first leg
+        val legs = route.optJSONArray("legs")
+        val leg = legs?.optJSONObject(0)
+        val durationSec = leg?.optJSONObject("duration")?.optInt("value", 0) ?: 0
+        val distanceMeters = leg?.optJSONObject("distance")?.optInt("value", 0) ?: 0
+        
+        // ══════════════════════════════════════════════════════════════
+        // PARSE TURN-BY-TURN STEPS (Phase 3)
+        // ══════════════════════════════════════════════════════════════
+        val navigationSteps = mutableListOf<NavigationStep>()
+        val stepsArray = leg?.optJSONArray("steps")
+        if (stepsArray != null) {
+            for (i in 0 until stepsArray.length()) {
+                val stepJson = stepsArray.getJSONObject(i)
+                
+                // Extract instruction (remove HTML tags)
+                val htmlInstruction = stepJson.optString("html_instructions", "")
+                val instruction = htmlInstruction
+                    .replace(Regex("<[^>]*>"), " ")  // Remove HTML tags
+                    .replace(Regex("\\s+"), " ")     // Normalize whitespace
+                    .trim()
+                
+                // Extract distance and duration
+                val stepDistance = stepJson.optJSONObject("distance")?.optInt("value", 0) ?: 0
+                val stepDuration = stepJson.optJSONObject("duration")?.optInt("value", 0) ?: 0
+                
+                // Extract maneuver (turn-left, turn-right, etc.)
+                val maneuver = stepJson.optString("maneuver", "straight")
+                
+                // Extract start/end locations
+                val startLoc = stepJson.optJSONObject("start_location")
+                val endLoc = stepJson.optJSONObject("end_location")
+                
+                val startLatLng = LatLng(
+                    startLoc?.optDouble("lat", 0.0) ?: 0.0,
+                    startLoc?.optDouble("lng", 0.0) ?: 0.0
+                )
+                val endLatLng = LatLng(
+                    endLoc?.optDouble("lat", 0.0) ?: 0.0,
+                    endLoc?.optDouble("lng", 0.0) ?: 0.0
+                )
+                
+                navigationSteps.add(
+                    NavigationStep(
+                        instruction = instruction,
+                        distanceMeters = stepDistance,
+                        durationSeconds = stepDuration,
+                        maneuver = maneuver,
+                        startLocation = startLatLng,
+                        endLocation = endLatLng
+                    )
+                )
+            }
+            Log.d("ParkingNavigation", "Parsed ${navigationSteps.size} navigation steps")
+        }
+
+        val overviewPolyline = route
+            .optJSONObject("overview_polyline")
+            ?.optString("points", "")
+            ?: ""
+
+        if (overviewPolyline.isNotEmpty()) {
+            val decoded = decodePolyline(overviewPolyline)
+            Log.d("ParkingNavigation", "Directions API: decoded ${decoded.size} points, ${durationSec}s, ${distanceMeters}m")
+            DirectionsResult(
+                points = decoded,
+                durationMinutes = (durationSec / 60.0).toInt().coerceAtLeast(1),
+                distanceKm = distanceMeters / 1000.0,
+                steps = navigationSteps
+            )
+        } else {
+            Log.w("ParkingNavigation", "Directions API: empty polyline")
+            fallback
+        }
+    } catch (e: Exception) {
+        Log.e("ParkingNavigation", "Directions API failed: ${e.javaClass.simpleName}: ${e.message}")
+        fallback
+    }
+}
+
+/** Decode Google Maps encoded polyline string into LatLng list */
+private fun decodePolyline(encoded: String): List<LatLng> {
+    val poly = mutableListOf<LatLng>()
+    var index = 0
+    val len = encoded.length
+    var lat = 0
+    var lng = 0
+
+    while (index < len) {
+        // Decode latitude
+        var shift = 0
+        var result = 0
+        var b: Int
+        do {
+            b = encoded[index++].code - 63
+            result = result or ((b and 0x1F) shl shift)
+            shift += 5
+        } while (b >= 0x20)
+        lat += if (result and 1 != 0) (result shr 1).inv() else result shr 1
+
+        // Decode longitude
+        shift = 0
+        result = 0
+        do {
+            b = encoded[index++].code - 63
+            result = result or ((b and 0x1F) shl shift)
+            shift += 5
+        } while (b >= 0x20)
+        lng += if (result and 1 != 0) (result shr 1).inv() else result shr 1
+
+        poly.add(LatLng(lat / 1E5, lng / 1E5))
+    }
+    return poly
+}
+
+/** Calculate distance between two LatLng points using Haversine formula (returns meters) */
+private fun calculateDistance(from: LatLng, to: LatLng): Double {
+    val earthRadius = 6371000.0 // meters
+    val dLat = Math.toRadians(to.latitude - from.latitude)
+    val dLng = Math.toRadians(to.longitude - from.longitude)
+    val a = sin(dLat / 2).pow(2) +
+            cos(Math.toRadians(from.latitude)) * cos(Math.toRadians(to.latitude)) *
+            sin(dLng / 2).pow(2)
+    val c = 2 * atan2(sqrt(a), sqrt(1 - a))
+    return earthRadius * c
 }
 
 
