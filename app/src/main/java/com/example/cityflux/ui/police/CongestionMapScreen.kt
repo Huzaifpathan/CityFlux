@@ -250,7 +250,7 @@ fun CongestionMapScreen(
     }
 
     // ── Camera State ──
-    val defaultLocation = LatLng(19.0760, 72.8777) // Mumbai
+    val defaultLocation = LatLng(17.6599, 75.9064) // Solapur
     val cameraPositionState = rememberCameraPositionState {
         position = CameraPosition.fromLatLngZoom(userLocation ?: defaultLocation, 13f)
     }

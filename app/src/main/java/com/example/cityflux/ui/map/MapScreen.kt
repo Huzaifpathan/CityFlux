@@ -136,7 +136,7 @@ fun MapScreen(
     }
 
     // ── Camera / Map State ──
-    val defaultLocation = LatLng(19.0760, 72.8777) // Mumbai default
+    val defaultLocation = LatLng(17.6599, 75.9064) // Solapur default
     val cameraPositionState = rememberCameraPositionState {
         position = CameraPosition.fromLatLngZoom(userLocation ?: defaultLocation, 14f)
     }
