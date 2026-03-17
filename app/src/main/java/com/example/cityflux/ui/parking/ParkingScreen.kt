@@ -1292,7 +1292,7 @@ private fun ParkingMapView(
             isBuildingEnabled = true
         ),
         uiSettings = MapUiSettings(
-            zoomControlsEnabled = false,
+            zoomControlsEnabled = true,
             compassEnabled = true,
             myLocationButtonEnabled = false,
             mapToolbarEnabled = false

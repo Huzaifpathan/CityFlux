@@ -53,18 +53,6 @@ fun CitizenMainScreen(
     val notificationsVm: NotificationsViewModel = viewModel()
     val unreadCount by notificationsVm.unreadCount.collectAsState()
 
-    // Context-aware FAB config per tab
-    val fabConfig = when {
-        showProfile -> null
-        else -> when (tabs[selectedTab]) {
-            CitizenTab.HOME -> null // Home has its own SOS FAB
-            CitizenTab.MAP -> null  // Map has its own Go Live FAB
-            CitizenTab.PARKING -> FabConfig("Find Parking", Icons.Outlined.NearMe, AccentParking)
-            CitizenTab.REPORT -> null // Report screen has its own submit
-            CitizenTab.ALERTS -> null
-        }
-    }
-
     Scaffold(
         bottomBar = {
             NavigationBar(
@@ -151,26 +139,6 @@ fun CitizenMainScreen(
                 }
             }
         },
-        // Context-aware FAB
-        floatingActionButton = {
-            fabConfig?.let { config ->
-                AnimatedVisibility(
-                    visible = true,
-                    enter = scaleIn(spring(dampingRatio = Spring.DampingRatioMediumBouncy)) + fadeIn(),
-                    exit = scaleOut() + fadeOut()
-                ) {
-                    FloatingActionButton(
-                        onClick = { /* Tab-specific action */ },
-                        containerColor = config.color,
-                        contentColor = Color.White,
-                        shape = CircleShape,
-                        modifier = Modifier.size(52.dp)
-                    ) {
-                        Icon(config.icon, config.label, modifier = Modifier.size(24.dp))
-                    }
-                }
-            }
-        },
         containerColor = MaterialTheme.colorScheme.background
     ) { innerPadding ->
         // Crossfade transition between tabs
@@ -214,8 +182,4 @@ fun CitizenMainScreen(
     }
 }
 
-private data class FabConfig(
-    val label: String,
-    val icon: ImageVector,
-    val color: Color
-)
+
