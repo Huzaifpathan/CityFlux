@@ -396,6 +396,23 @@ exports.onReportStatusChange = functions.firestore
       token: fcmToken,
     };
 
+    // 1. Save in-app notification
+    const notifTitle = `${statusEmoji} Report Status Updated`;
+    const notifBody = `Your report "${after.title || "Untitled"}" is now: ${after.status}`;
+    await db.collection("users").doc(citizenUid)
+      .collection("notifications")
+      .doc(`status_${context.params.reportId}_${after.status}`)
+      .set({
+        title: notifTitle,
+        message: notifBody,
+        type: "report",
+        priority: after.status === "Resolved" ? "high" : "medium",
+        read: false,
+        pinned: false,
+        timestamp: admin.firestore.Timestamp.now(),
+      });
+
+    // 2. Send FCM push
     try {
       await messaging.send(message);
       functions.logger.info(
