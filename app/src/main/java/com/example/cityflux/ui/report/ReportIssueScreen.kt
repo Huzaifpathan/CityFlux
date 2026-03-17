@@ -1839,6 +1839,7 @@ private fun ReportFullDetailDialog(
                     // Chat section
                     ReportChatSection(
                         reportId = report.id,
+                        reportStatus = report.status,
                         colors = colors,
                         onSendMessage = { message -> onSendChatMessage(report.id, message) }
                     )
@@ -1978,7 +1979,7 @@ private fun reportTypeLabelFor(type: String): String = when (type) {
 // ═══════════════════════════════════════════════════════════════════
 
 @Composable
-private fun ReportChatSection(reportId: String, colors: CityFluxColors, onSendMessage: (String) -> Unit) {
+private fun ReportChatSection(reportId: String, reportStatus: String, colors: CityFluxColors, onSendMessage: (String) -> Unit) {
     var chatMessages by remember { mutableStateOf<List<Map<String, Any>>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
     var chatInput by remember { mutableStateOf("") }
@@ -2066,47 +2067,68 @@ private fun ReportChatSection(reportId: String, colors: CityFluxColors, onSendMe
         Spacer(Modifier.height(Spacing.Small))
     }
 
-    // Chat input (Feature 1)
-    Surface(
-        shape = RoundedCornerShape(CornerRadius.Round),
-        color = colors.surfaceVariant.copy(alpha = 0.5f),
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = Spacing.Small, vertical = 4.dp),
-            verticalAlignment = Alignment.CenterVertically
+    val isClosed = reportStatus.lowercase() in listOf("resolved", "rejected")
+
+    if (isClosed) {
+        // Chat closed banner
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(CornerRadius.Small),
+            color = colors.surfaceVariant.copy(alpha = 0.3f)
         ) {
-            BasicTextField(
-                value = chatInput,
-                onValueChange = { chatInput = it },
-                modifier = Modifier
-                    .weight(1f)
-                    .padding(horizontal = Spacing.Small, vertical = Spacing.Small),
-                singleLine = true,
-                textStyle = MaterialTheme.typography.bodySmall.copy(color = colors.textPrimary),
-                decorationBox = { inner ->
-                    if (chatInput.isEmpty()) {
-                        Text("Type a message...", style = MaterialTheme.typography.bodySmall, color = colors.textTertiary)
-                    }
-                    inner()
-                }
-            )
-            IconButton(
-                onClick = {
-                    if (chatInput.isNotBlank()) {
-                        onSendMessage(chatInput.trim())
-                        chatInput = ""
-                    }
-                },
-                modifier = Modifier.size(32.dp),
-                enabled = chatInput.isNotBlank()
+            Row(
+                Modifier.padding(Spacing.Small),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Center
             ) {
-                Icon(
-                    Icons.AutoMirrored.Outlined.Send,
-                    "Send",
-                    tint = if (chatInput.isNotBlank()) PrimaryBlue else colors.textTertiary,
-                    modifier = Modifier.size(18.dp)
+                Icon(Icons.Outlined.Lock, null, tint = colors.textTertiary, modifier = Modifier.size(14.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("Chat closed — report ${reportStatus.lowercase()}", fontSize = 10.sp, color = colors.textTertiary)
+            }
+        }
+    } else {
+        // Chat input (Feature 1)
+        Surface(
+            shape = RoundedCornerShape(CornerRadius.Round),
+            color = colors.surfaceVariant.copy(alpha = 0.5f),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = Spacing.Small, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                BasicTextField(
+                    value = chatInput,
+                    onValueChange = { chatInput = it },
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(horizontal = Spacing.Small, vertical = Spacing.Small),
+                    singleLine = true,
+                    textStyle = MaterialTheme.typography.bodySmall.copy(color = colors.textPrimary),
+                    decorationBox = { inner ->
+                        if (chatInput.isEmpty()) {
+                            Text("Type a message...", style = MaterialTheme.typography.bodySmall, color = colors.textTertiary)
+                        }
+                        inner()
+                    }
                 )
+                IconButton(
+                    onClick = {
+                        if (chatInput.isNotBlank()) {
+                            onSendMessage(chatInput.trim())
+                            chatInput = ""
+                        }
+                    },
+                    modifier = Modifier.size(32.dp),
+                    enabled = chatInput.isNotBlank()
+                ) {
+                    Icon(
+                        Icons.AutoMirrored.Outlined.Send,
+                        "Send",
+                        tint = if (chatInput.isNotBlank()) PrimaryBlue else colors.textTertiary,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
             }
         }
     }

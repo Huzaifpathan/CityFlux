@@ -1593,71 +1593,94 @@ private fun ChatDialog(
 
                 HorizontalDivider(color = colors.cardBorder.copy(alpha = 0.15f))
 
-                // Input
-                Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .padding(8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    // Camera button
-                    IconButton(
-                        onClick = { cameraPermLauncher.launch(Manifest.permission.CAMERA) },
-                        modifier = Modifier.size(36.dp)
-                    ) {
-                        Icon(Icons.Outlined.CameraAlt, "Camera", tint = colors.textTertiary, modifier = Modifier.size(20.dp))
-                    }
-                    // Gallery button
-                    IconButton(
-                        onClick = { galleryLauncher.launch("image/*") },
-                        modifier = Modifier.size(36.dp)
-                    ) {
-                        Icon(Icons.Outlined.Image, "Gallery", tint = colors.textTertiary, modifier = Modifier.size(20.dp))
-                    }
+                val isClosed = report.status.lowercase() in listOf("resolved", "rejected")
 
-                    OutlinedTextField(
-                        value = inputText, onValueChange = { inputText = it },
-                        modifier = Modifier.weight(1f),
-                        placeholder = { Text("Type message...", style = MaterialTheme.typography.bodySmall, color = colors.textTertiary) },
-                        singleLine = false, maxLines = 3,
-                        shape = RoundedCornerShape(CornerRadius.Round),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedContainerColor = colors.cardBackground,
-                            unfocusedContainerColor = colors.textTertiary.copy(alpha = 0.04f),
-                            focusedBorderColor = PrimaryBlue,
-                            unfocusedBorderColor = Color.Transparent,
-                            cursorColor = PrimaryBlue
-                        ),
-                        textStyle = MaterialTheme.typography.bodySmall.copy(color = colors.textPrimary)
-                    )
-
-                    IconButton(
-                        onClick = {
-                            if (inputText.isBlank() && chatPhotoUri == null) return@IconButton
-                            isSending = true
-                            vm.sendChatMessage(
-                                reportId = report.id,
-                                message = inputText.trim(),
-                                imageUri = chatPhotoUri,
-                                onSuccess = {
-                                    inputText = ""; chatPhotoUri = null; isSending = false
-                                },
-                                onError = { msg ->
-                                    isSending = false
-                                    Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
-                                }
+                if (isClosed) {
+                    Surface(
+                        Modifier.fillMaxWidth(),
+                        color = colors.surfaceVariant.copy(alpha = 0.5f)
+                    ) {
+                        Row(
+                            Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.Center
+                        ) {
+                            Icon(Icons.Outlined.Lock, null, tint = colors.textTertiary, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                "Chat closed — report ${report.status.lowercase()}",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = colors.textTertiary
                             )
-                        },
-                        modifier = Modifier
-                            .size(40.dp)
-                            .background(PrimaryBlue, CircleShape),
-                        enabled = !isSending && (inputText.isNotBlank() || chatPhotoUri != null)
+                        }
+                    }
+                } else {
+                    // Input
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        if (isSending) {
-                            CircularProgressIndicator(Modifier.size(16.dp), color = Color.White, strokeWidth = 2.dp)
-                        } else {
-                            Icon(Icons.Filled.Send, "Send", tint = Color.White, modifier = Modifier.size(18.dp))
+                        // Camera button
+                        IconButton(
+                            onClick = { cameraPermLauncher.launch(Manifest.permission.CAMERA) },
+                            modifier = Modifier.size(36.dp)
+                        ) {
+                            Icon(Icons.Outlined.CameraAlt, "Camera", tint = colors.textTertiary, modifier = Modifier.size(20.dp))
+                        }
+                        // Gallery button
+                        IconButton(
+                            onClick = { galleryLauncher.launch("image/*") },
+                            modifier = Modifier.size(36.dp)
+                        ) {
+                            Icon(Icons.Outlined.Image, "Gallery", tint = colors.textTertiary, modifier = Modifier.size(20.dp))
+                        }
+
+                        OutlinedTextField(
+                            value = inputText, onValueChange = { inputText = it },
+                            modifier = Modifier.weight(1f),
+                            placeholder = { Text("Type message...", style = MaterialTheme.typography.bodySmall, color = colors.textTertiary) },
+                            singleLine = false, maxLines = 3,
+                            shape = RoundedCornerShape(CornerRadius.Round),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedContainerColor = colors.cardBackground,
+                                unfocusedContainerColor = colors.textTertiary.copy(alpha = 0.04f),
+                                focusedBorderColor = PrimaryBlue,
+                                unfocusedBorderColor = Color.Transparent,
+                                cursorColor = PrimaryBlue
+                            ),
+                            textStyle = MaterialTheme.typography.bodySmall.copy(color = colors.textPrimary)
+                        )
+
+                        IconButton(
+                            onClick = {
+                                if (inputText.isBlank() && chatPhotoUri == null) return@IconButton
+                                isSending = true
+                                vm.sendChatMessage(
+                                    reportId = report.id,
+                                    message = inputText.trim(),
+                                    imageUri = chatPhotoUri,
+                                    onSuccess = {
+                                        inputText = ""; chatPhotoUri = null; isSending = false
+                                    },
+                                    onError = { msg ->
+                                        isSending = false
+                                        Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                                    }
+                                )
+                            },
+                            modifier = Modifier
+                                .size(40.dp)
+                                .background(PrimaryBlue, CircleShape),
+                            enabled = !isSending && (inputText.isNotBlank() || chatPhotoUri != null)
+                        ) {
+                            if (isSending) {
+                                CircularProgressIndicator(Modifier.size(16.dp), color = Color.White, strokeWidth = 2.dp)
+                            } else {
+                                Icon(Icons.Filled.Send, "Send", tint = Color.White, modifier = Modifier.size(18.dp))
+                            }
                         }
                     }
                 }

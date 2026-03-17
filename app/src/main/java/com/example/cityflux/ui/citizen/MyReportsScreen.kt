@@ -1083,54 +1083,78 @@ private fun ColumnScope.ChatTabContent(report: Report, colors: CityFluxColors) {
 
     HorizontalDivider(color = colors.cardBorder.copy(alpha = 0.15f))
 
-    // Input bar
-    Row(
-        Modifier.fillMaxWidth().padding(8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(6.dp)
-    ) {
-        OutlinedTextField(
-            value = inputText, onValueChange = { inputText = it },
-            modifier = Modifier.weight(1f),
-            placeholder = { Text("Type message...", style = MaterialTheme.typography.bodySmall, color = colors.textTertiary) },
-            singleLine = false, maxLines = 3,
-            shape = RoundedCornerShape(CornerRadius.Round),
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedContainerColor = colors.cardBackground,
-                unfocusedContainerColor = colors.textTertiary.copy(alpha = 0.04f),
-                focusedBorderColor = PrimaryBlue,
-                unfocusedBorderColor = Color.Transparent,
-                cursorColor = PrimaryBlue
-            ),
-            textStyle = MaterialTheme.typography.bodySmall.copy(color = colors.textPrimary),
-            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
-            keyboardActions = KeyboardActions(onSend = {
-                if (inputText.isNotBlank() && !isSending) {
+    val isClosed = report.status.lowercase() in listOf("resolved", "rejected")
+
+    if (isClosed) {
+        // Chat closed banner
+        Surface(
+            Modifier.fillMaxWidth(),
+            color = colors.surfaceVariant.copy(alpha = 0.5f)
+        ) {
+            Row(
+                Modifier.padding(horizontal = Spacing.Large, vertical = Spacing.Medium),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Center
+            ) {
+                Icon(Icons.Outlined.Lock, null, tint = colors.textTertiary, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    "Chat closed — report ${report.status.lowercase()}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = colors.textTertiary
+                )
+            }
+        }
+    } else {
+        // Input bar
+        Row(
+            Modifier.fillMaxWidth().padding(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            OutlinedTextField(
+                value = inputText, onValueChange = { inputText = it },
+                modifier = Modifier.weight(1f),
+                placeholder = { Text("Type message...", style = MaterialTheme.typography.bodySmall, color = colors.textTertiary) },
+                singleLine = false, maxLines = 3,
+                shape = RoundedCornerShape(CornerRadius.Round),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedContainerColor = colors.cardBackground,
+                    unfocusedContainerColor = colors.textTertiary.copy(alpha = 0.04f),
+                    focusedBorderColor = PrimaryBlue,
+                    unfocusedBorderColor = Color.Transparent,
+                    cursorColor = PrimaryBlue
+                ),
+                textStyle = MaterialTheme.typography.bodySmall.copy(color = colors.textPrimary),
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+                keyboardActions = KeyboardActions(onSend = {
+                    if (inputText.isNotBlank() && !isSending) {
+                        isSending = true
+                        sendCitizenChat(firestore, report.id, currentUid, displayName, inputText.trim(),
+                            onSuccess = { inputText = ""; isSending = false },
+                            onError = { isSending = false; Toast.makeText(context, it, Toast.LENGTH_SHORT).show() })
+                    }
+                })
+            )
+
+            IconButton(
+                onClick = {
+                    if (inputText.isBlank() || isSending) return@IconButton
                     isSending = true
                     sendCitizenChat(firestore, report.id, currentUid, displayName, inputText.trim(),
                         onSuccess = { inputText = ""; isSending = false },
                         onError = { isSending = false; Toast.makeText(context, it, Toast.LENGTH_SHORT).show() })
+                },
+                modifier = Modifier
+                    .size(40.dp)
+                    .background(PrimaryBlue, CircleShape),
+                enabled = !isSending && inputText.isNotBlank()
+            ) {
+                if (isSending) {
+                    CircularProgressIndicator(Modifier.size(16.dp), color = Color.White, strokeWidth = 2.dp)
+                } else {
+                    Icon(Icons.Filled.Send, "Send", tint = Color.White, modifier = Modifier.size(18.dp))
                 }
-            })
-        )
-
-        IconButton(
-            onClick = {
-                if (inputText.isBlank() || isSending) return@IconButton
-                isSending = true
-                sendCitizenChat(firestore, report.id, currentUid, displayName, inputText.trim(),
-                    onSuccess = { inputText = ""; isSending = false },
-                    onError = { isSending = false; Toast.makeText(context, it, Toast.LENGTH_SHORT).show() })
-            },
-            modifier = Modifier
-                .size(40.dp)
-                .background(PrimaryBlue, CircleShape),
-            enabled = !isSending && inputText.isNotBlank()
-        ) {
-            if (isSending) {
-                CircularProgressIndicator(Modifier.size(16.dp), color = Color.White, strokeWidth = 2.dp)
-            } else {
-                Icon(Icons.Filled.Send, "Send", tint = Color.White, modifier = Modifier.size(18.dp))
             }
         }
     }
