@@ -35,8 +35,13 @@ service cloud.firestore {
     // - No user can modify another user's profile
     // ═══════════════════════════════════════════════════════════
     match /users/{userId} {
+
+      // user apna profile read/write kar sakta hai
       allow read, write: if isAuthenticated()
         && request.auth.uid == userId;
+
+      // admin dashboard sab users read kar sakta hai
+      allow read: if isAdmin();
 
       // ── Notifications sub-collection ──
       // Each user can only read/write their own notifications
