@@ -583,53 +583,51 @@ fun ParkingScreen(
         }
 
         // ══════════════════════ FABs (bottom-right) ══════════════════════
-        if (!isMapView) {
-            Column(
-                modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .padding(end = Spacing.Medium, bottom = Spacing.Large)
-                    .navigationBarsPadding(),
-                verticalArrangement = Arrangement.spacedBy(Spacing.Medium),
-                horizontalAlignment = Alignment.End
+        Column(
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(end = Spacing.Medium, bottom = 24.dp)
+                .navigationBarsPadding(),
+            verticalArrangement = Arrangement.spacedBy(Spacing.Medium),
+            horizontalAlignment = Alignment.End
+        ) {
+            // Filter FAB
+            SmallFloatingActionButton(
+                onClick = { showFilterSheet = true },
+                shape = CircleShape,
+                containerColor = colors.cardBackground,
+                contentColor = colors.textPrimary,
+                elevation = FloatingActionButtonDefaults.elevation(6.dp)
             ) {
-                // Filter FAB
-                SmallFloatingActionButton(
-                    onClick = { showFilterSheet = true },
-                    shape = CircleShape,
-                    containerColor = colors.cardBackground,
-                    contentColor = colors.textPrimary,
-                    elevation = FloatingActionButtonDefaults.elevation(6.dp)
-                ) {
-                    Icon(Icons.Outlined.FilterList, "Filter", Modifier.size(20.dp))
-                }
+                Icon(Icons.Outlined.FilterList, "Filter", Modifier.size(20.dp))
+            }
 
-                // Report Illegal Parking FAB
-                SmallFloatingActionButton(
-                    onClick = { showReportDialog = true },
-                    shape = CircleShape,
-                    containerColor = AccentRed.copy(alpha = 0.9f),
-                    contentColor = Color.White,
-                    elevation = FloatingActionButtonDefaults.elevation(6.dp)
-                ) {
-                    Icon(Icons.Outlined.ReportProblem, "Report", Modifier.size(20.dp))
-                }
+            // Report Illegal Parking FAB
+            SmallFloatingActionButton(
+                onClick = { showReportDialog = true },
+                shape = CircleShape,
+                containerColor = AccentRed.copy(alpha = 0.9f),
+                contentColor = Color.White,
+                elevation = FloatingActionButtonDefaults.elevation(6.dp)
+            ) {
+                Icon(Icons.Outlined.ReportProblem, "Report", Modifier.size(20.dp))
+            }
 
-                // Nearest Parking FAB
-                FloatingActionButton(
-                    onClick = {
-                        try {
-                            Firebase.analytics.logEvent("nearest_parking_clicked", null)
-                        } catch (_: Exception) {}
-                        val nearest = vm.findNearestAvailable()
-                        nearest?.let { selectedSpot = it }
-                    },
-                    shape = CircleShape,
-                    containerColor = AccentParking,
-                    contentColor = Color.White,
-                    elevation = FloatingActionButtonDefaults.elevation(8.dp)
-                ) {
-                    Icon(Icons.Filled.NearMe, "Nearest Parking", Modifier.size(24.dp))
-                }
+            // Nearest Parking FAB
+            FloatingActionButton(
+                onClick = {
+                    try {
+                        Firebase.analytics.logEvent("nearest_parking_clicked", null)
+                    } catch (_: Exception) {}
+                    val nearest = vm.findNearestAvailable()
+                    nearest?.let { selectedSpot = it }
+                },
+                shape = CircleShape,
+                containerColor = AccentParking,
+                contentColor = Color.White,
+                elevation = FloatingActionButtonDefaults.elevation(8.dp)
+            ) {
+                Icon(Icons.Filled.NearMe, "Nearest Parking", Modifier.size(24.dp))
             }
         }
 
@@ -1294,7 +1292,7 @@ private fun ParkingMapView(
             isBuildingEnabled = true
         ),
         uiSettings = MapUiSettings(
-            zoomControlsEnabled = true,
+            zoomControlsEnabled = false,
             compassEnabled = true,
             myLocationButtonEnabled = false,
             mapToolbarEnabled = false
