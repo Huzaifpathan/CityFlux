@@ -2009,9 +2009,12 @@ private fun ReportChatSection(reportId: String, colors: CityFluxColors, onSendMe
             )
             Spacer(Modifier.height(Spacing.Small))
             chatMessages.forEach { msg ->
-                val sender = (msg["sender"] as? String) ?: "System"
+                val senderRole = (msg["senderRole"] as? String) ?: ""
+                val senderName = (msg["senderName"] as? String)
+                    ?: (msg["sender"] as? String)
+                    ?: if (senderRole == "police") "Police" else "Citizen"
                 val text = (msg["message"] as? String) ?: ""
-                val isPolice = sender.lowercase().contains("police") || sender.lowercase().contains("officer")
+                val isPolice = senderRole == "police"
 
                 Surface(
                     modifier = Modifier
@@ -2033,7 +2036,7 @@ private fun ReportChatSection(reportId: String, colors: CityFluxColors, onSendMe
                         Spacer(Modifier.width(6.dp))
                         Column {
                             Text(
-                                sender,
+                                if (isPolice) "Police" else senderName,
                                 fontSize = 9.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = if (isPolice) PrimaryBlue else AccentGreen

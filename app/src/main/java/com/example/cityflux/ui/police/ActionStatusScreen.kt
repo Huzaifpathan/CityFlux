@@ -1479,7 +1479,16 @@ private fun ChatDialog(
             .addSnapshotListener { snap, err ->
                 if (err != null) return@addSnapshotListener
                 messages = snap?.documents?.mapNotNull { doc ->
-                    doc.toObject(ChatMessage::class.java)?.copy(id = doc.id)
+                    val data = doc.data ?: return@mapNotNull null
+                    ChatMessage(
+                        id = doc.id,
+                        senderId = data["senderId"] as? String ?: "",
+                        senderName = data["senderName"] as? String ?: data["sender"] as? String ?: "",
+                        senderRole = data["senderRole"] as? String ?: "",
+                        message = data["message"] as? String ?: "",
+                        imageUrl = data["imageUrl"] as? String ?: "",
+                        timestamp = data["timestamp"] as? Timestamp
+                    )
                 } ?: emptyList()
             }
         onDispose { registration.remove() }
@@ -1670,7 +1679,9 @@ private fun ChatBubble(msg: ChatMessage, isMe: Boolean, colors: CityFluxColors) 
     val timeStr = msg.timestamp?.let {
         SimpleDateFormat("hh:mm a", Locale.getDefault()).format(it.toDate())
     } ?: ""
-    val roleColor = when (msg.senderRole) {
+    // If senderRole is empty, infer: if isMe → police, else → citizen
+    val effectiveRole = msg.senderRole.ifBlank { if (isMe) "police" else "citizen" }
+    val roleColor = when (effectiveRole) {
         "police" -> PrimaryBlue; "citizen" -> AccentGreen; else -> colors.textTertiary
     }
 
@@ -1692,7 +1703,7 @@ private fun ChatBubble(msg: ChatMessage, isMe: Boolean, colors: CityFluxColors) 
                         .background(roleColor)
                 )
                 Text(
-                    msg.senderName.ifBlank { msg.senderRole.replaceFirstChar { it.uppercase() } },
+                    msg.senderName.ifBlank { effectiveRole.replaceFirstChar { it.uppercase() } },
                     style = MaterialTheme.typography.labelSmall,
                     fontWeight = FontWeight.SemiBold,
                     color = roleColor
