@@ -108,6 +108,9 @@ fun ParkingScreen(
 
     // ── Selected parking for detail popup ──
     var selectedSpot by remember { mutableStateOf<ParkingSpot?>(null) }
+    
+    // ── Navigate target (for internal map navigation) ──
+    var navigateToSpot by remember { mutableStateOf<ParkingSpot?>(null) }
 
     // ── Connectivity ──
     val isOffline = remember { !isNetworkAvailable(context) }
@@ -487,6 +490,8 @@ fun ParkingScreen(
                         spots = displaySpots,
                         parkingLive = state.parkingLive,
                         userLatLng = userLatLng,
+                        navigateToSpot = navigateToSpot,
+                        onNavigateConsumed = { navigateToSpot = null },
                         onMarkerClick = { spot ->
                             try { Firebase.analytics.logEvent("parking_card_clicked", null) } catch (_: Exception) {}
                             selectedSpot = spot
@@ -564,8 +569,9 @@ fun ParkingScreen(
                                             notifySpotIds - spot.id else notifySpotIds + spot.id
                                     },
                                     onNavigate = {
-                                        spot.location?.let { geo ->
-                                            openNavigation(context, geo.latitude, geo.longitude)
+                                        spot.location?.let { _ ->
+                                            navigateToSpot = spot
+                                            isMapView = true
                                         }
                                     },
                                     onClick = {
@@ -687,8 +693,10 @@ fun ParkingScreen(
                         try {
                             Firebase.analytics.logEvent("navigate_to_parking_clicked", null)
                         } catch (_: Exception) {}
-                        spot.location?.let { geo ->
-                            openNavigation(context, geo.latitude, geo.longitude)
+                        spot.location?.let { _ ->
+                            navigateToSpot = spot
+                            selectedSpot = null
+                            isMapView = true
                         }
                     },
                     onDismiss = { selectedSpot = null }
@@ -1261,6 +1269,8 @@ private fun ParkingMapView(
     spots: List<ParkingSpot>,
     parkingLive: Map<String, com.example.cityflux.model.ParkingLive>,
     userLatLng: LatLng?,
+    navigateToSpot: ParkingSpot? = null,
+    onNavigateConsumed: () -> Unit = {},
     onMarkerClick: (ParkingSpot) -> Unit
 ) {
     val defaultLocation = LatLng(17.6599, 75.9064) // Solapur
@@ -1271,6 +1281,17 @@ private fun ParkingMapView(
     LaunchedEffect(userLatLng) {
         userLatLng?.let {
             cameraPositionState.animate(CameraUpdateFactory.newLatLngZoom(it, 15f), durationMs = 600)
+        }
+    }
+    
+    // Navigate to selected parking spot
+    LaunchedEffect(navigateToSpot) {
+        navigateToSpot?.location?.let { geo ->
+            cameraPositionState.animate(
+                CameraUpdateFactory.newLatLngZoom(LatLng(geo.latitude, geo.longitude), 17f),
+                durationMs = 800
+            )
+            onNavigateConsumed()
         }
     }
 
