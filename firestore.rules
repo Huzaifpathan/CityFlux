@@ -76,18 +76,17 @@ service cloud.firestore {
         && request.resource.data.userId == request.auth.uid;
 
       // Citizens can update their own reports (any field)
-      // Police can update ONLY the status field on any report
+      // Police can update status and assignedTo fields
       allow update: if isAuthenticated() && (
         // Citizen editing own report
         (isCitizen() && resource.data.userId == request.auth.uid)
         ||
-        // Police updating status only (no other fields changed)
+        // Police updating status/assignedTo
         (isPolice()
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']))
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'assignedTo']))
         ||
-        // Admin updating status only (web dashboard)
-        (isAdmin()
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']))
+        // Admin can update any field
+        isAdmin()
       );
 
       // No one can delete reports

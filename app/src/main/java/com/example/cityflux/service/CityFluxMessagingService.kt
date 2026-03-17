@@ -67,11 +67,9 @@ class CityFluxMessagingService : FirebaseMessagingService() {
             ?: "You have a new notification"
 
         val type = message.data["type"] ?: "general"
-        val latitude = message.data["latitude"]?.toDoubleOrNull() ?: 0.0
-        val longitude = message.data["longitude"]?.toDoubleOrNull() ?: 0.0
 
-        // Save to Firestore for in-app display
-        saveNotificationToFirestore(title, body, type, latitude, longitude)
+        // Don't save to Firestore here — Cloud Functions already handle in-app notifications
+        // This avoids duplicate entries in users/{uid}/notifications
 
         showNotification(title, body, type)
     }
@@ -142,7 +140,7 @@ class CityFluxMessagingService : FirebaseMessagingService() {
             .build()
 
         notificationManager.notify(
-            System.currentTimeMillis().toInt(),
+            System.nanoTime().hashCode(),
             notification
         )
     }
