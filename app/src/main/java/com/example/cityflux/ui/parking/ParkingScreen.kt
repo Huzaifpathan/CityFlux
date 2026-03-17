@@ -582,8 +582,8 @@ fun ParkingScreen(
             }
         }
 
-        // ══════════════════════ FABs (bottom-right) ══════════════════════
-        Column(
+        // ══════════════════════ FABs (bottom-right, list view only) ══════════════════════
+        if (!isMapView) Column(
             modifier = Modifier
                 .align(Alignment.BottomEnd)
                 .padding(end = Spacing.Medium, bottom = 24.dp)
