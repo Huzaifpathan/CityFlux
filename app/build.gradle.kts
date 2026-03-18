@@ -93,6 +93,10 @@ dependencies {
     // 🧭 Navigation
     implementation("androidx.navigation:navigation-compose:2.7.7")
 
+    // 📱 QR Code Generation (Phase 4)
+    implementation("com.google.zxing:core:3.5.3")
+    implementation("com.journeyapps:zxing-android-embedded:4.3.0")
+
     // 🧪 Testing
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)

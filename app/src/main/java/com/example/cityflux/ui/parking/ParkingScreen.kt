@@ -26,9 +26,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.TurnLeft
-import androidx.compose.material.icons.automirrored.filled.TurnRight
-import androidx.compose.material.icons.automirrored.outlined.ViewList
+import androidx.compose.material.icons.automirrored.filled.*
+import androidx.compose.material.icons.automirrored.outlined.*
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
@@ -2163,7 +2162,7 @@ private fun NavigationPanel(
                 modifier = Modifier
                     .fillMaxWidth()
                     .background(
-                        colors.background.copy(alpha = 0.5f),
+                        colors.cardBackground.copy(alpha = 0.5f),
                         RoundedCornerShape(CornerRadius.Large)
                     )
                     .padding(Spacing.Medium),
@@ -2295,8 +2294,8 @@ private fun formatDistanceMeters(meters: Int): String = when {
 @Composable
 private fun getManeuverIcon(maneuver: String): ImageVector {
     return when {
-        maneuver.contains("left") -> Icons.AutoMirrored.Filled.TurnLeft
-        maneuver.contains("right") -> Icons.AutoMirrored.Filled.TurnRight
+        maneuver.contains("left") -> Icons.Filled.TurnLeft
+        maneuver.contains("right") -> Icons.Filled.TurnRight
         maneuver.contains("uturn") || maneuver.contains("u-turn") -> Icons.Filled.UTurnLeft
         maneuver.contains("merge") -> Icons.Filled.MergeType
         maneuver.contains("ramp") -> Icons.Filled.CallMade
