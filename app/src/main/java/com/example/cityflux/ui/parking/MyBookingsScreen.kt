@@ -73,7 +73,7 @@ fun MyBookingsScreen(
                     text = {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(Spacing.ExtraSmall)
+                            horizontalArrangement = Arrangement.spacedBy(Spacing.XSmall)
                         ) {
                             Text("Active")
                             if (uiState.activeBookings.isNotEmpty()) {
@@ -410,8 +410,8 @@ private fun BookingStatusBadge(
             "Confirmed"
         )
         BookingStatus.ACTIVE -> Triple(
-            AccentSuccess.copy(alpha = 0.1f),
-            AccentSuccess,
+            AccentGreen.copy(alpha = 0.1f),
+            AccentGreen,
             "Active"
         )
         BookingStatus.COMPLETED -> Triple(

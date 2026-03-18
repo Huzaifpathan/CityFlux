@@ -43,7 +43,7 @@ fun BookingBottomSheet(
     LaunchedEffect(parkingSpot) {
         viewModel.initBookingForm(
             spotId = parkingSpot.id,
-            spotName = parkingSpot.name,
+            spotName = parkingSpot.address,
             spotAddress = parkingSpot.address
         )
     }
@@ -117,7 +117,7 @@ fun BookingBottomSheet(
                 color = colors.textSecondary
             )
             
-            Spacer(Modifier.height(Spacing.ExtraSmall))
+            Spacer(Modifier.height(Spacing.XSmall))
             
             VehicleTypeSelector(
                 selectedType = formState.vehicleType,
@@ -237,7 +237,7 @@ private fun ParkingSpotInfoCard(spot: ParkingSpot, colors: CityFluxColors) {
             Spacer(Modifier.width(Spacing.Medium))
             Column {
                 Text(
-                    text = spot.name,
+                    text = spot.address,
                     style = MaterialTheme.typography.titleMedium,
                     color = colors.textPrimary,
                     fontWeight = FontWeight.Bold
@@ -424,7 +424,7 @@ private fun PriceBreakdownCard(
                     "Discount ${pricing.getDiscountLabel()}",
                     -pricing.discount,
                     colors,
-                    color = AccentSuccess
+                    color = AccentGreen
                 )
             }
             

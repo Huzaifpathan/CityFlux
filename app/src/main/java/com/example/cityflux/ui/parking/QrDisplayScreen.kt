@@ -74,10 +74,10 @@ fun QrDisplayScreen(
                 color = if (isExpiring) 
                     AccentAlerts.copy(alpha = 0.1f) 
                 else 
-                    AccentSuccess.copy(alpha = 0.1f),
+                    AccentGreen.copy(alpha = 0.1f),
                 border = BorderStroke(
                     1.dp,
-                    if (isExpiring) AccentAlerts else AccentSuccess
+                    if (isExpiring) AccentAlerts else AccentGreen
                 )
             ) {
                 Row(
@@ -87,7 +87,7 @@ fun QrDisplayScreen(
                     Icon(
                         imageVector = if (isExpiring) Icons.Default.Warning else Icons.Default.CheckCircle,
                         contentDescription = null,
-                        tint = if (isExpiring) AccentAlerts else AccentSuccess,
+                        tint = if (isExpiring) AccentAlerts else AccentGreen,
                         modifier = Modifier.size(32.dp)
                     )
                     Spacer(Modifier.width(Spacing.Medium))
@@ -98,7 +98,7 @@ fun QrDisplayScreen(
                             else 
                                 "Active Booking",
                             style = MaterialTheme.typography.titleMedium,
-                            color = if (isExpiring) AccentAlerts else AccentSuccess,
+                            color = if (isExpiring) AccentAlerts else AccentGreen,
                             fontWeight = FontWeight.Bold
                         )
                         Text(

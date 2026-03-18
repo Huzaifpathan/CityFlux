@@ -7,6 +7,7 @@ import com.example.cityflux.data.BookingRepository
 import com.example.cityflux.model.BookingStatus
 import com.example.cityflux.model.ParkingBooking
 import com.example.cityflux.model.VehicleType
+import com.example.cityflux.model.isActive
 import com.example.cityflux.service.PricingService
 import com.google.firebase.Timestamp
 import com.google.firebase.auth.FirebaseAuth
@@ -71,8 +72,8 @@ class BookingViewModel : ViewModel() {
                     _uiState.update { it.copy(error = "Failed to load bookings") }
                 }
                 .collect { bookings ->
-                    val active = bookings.filter { it.status.isActive() }
-                    val past = bookings.filter { !it.status.isActive() }
+                    val active = bookings.filter { booking -> booking.status.isActive() }
+                    val past = bookings.filter { booking -> !booking.status.isActive() }
                     
                     _uiState.update {
                         it.copy(
