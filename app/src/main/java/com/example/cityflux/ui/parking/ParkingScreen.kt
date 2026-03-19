@@ -1215,7 +1215,7 @@ private fun ParkingCard(
                 }
             }
 
-            // ── Action Row: Navigate + Notify ──
+            // ── Action Row: Book + Navigate + Notify ──
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -1223,6 +1223,26 @@ private fun ParkingCard(
                     .padding(bottom = Spacing.Small),
                 horizontalArrangement = Arrangement.spacedBy(Spacing.Small)
             ) {
+                // Book Now button (Phase 4)
+                if (available > 0) {
+                    Surface(
+                        onClick = onClick,
+                        shape = RoundedCornerShape(CornerRadius.Round),
+                        color = AccentParking.copy(alpha = 0.12f),
+                        modifier = Modifier.weight(1f).height(30.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.Center
+                        ) {
+                            Icon(Icons.Filled.CalendarMonth, null, tint = AccentParking, modifier = Modifier.size(13.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("Book Now", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = AccentParking)
+                        }
+                    }
+                }
+                
                 // Navigate button
                 if (spot.location != null) {
                     Surface(
