@@ -146,6 +146,9 @@ fun ReportIssueScreen(
         }
     }
 
+    // ── Location picker dialog state ──
+    var showLocationPicker by remember { mutableStateOf(false) }
+
     // ── Connectivity ──
     val isOffline = remember { !isNetworkAvailable(context) }
 
@@ -300,6 +303,7 @@ fun ReportIssueScreen(
                                     )
                                 }
                             },
+                            onManualLocationSelect = { showLocationPicker = true },
                             onAnonymousChanged = { vm.setAnonymous(it) },
                             onPriorityChanged = { vm.setPriority(it) },
                             onSubmit = {
@@ -321,6 +325,33 @@ fun ReportIssueScreen(
                 }
             }
         }
+    }
+
+    // ── Location Picker Dialog ──
+    if (showLocationPicker) {
+        LocationPickerDialog(
+            currentLatitude = state.latitude,
+            currentLongitude = state.longitude,
+            onLocationSelected = { lat, lng ->
+                vm.setLocation(lat, lng)
+            },
+            onDismiss = { showLocationPicker = false },
+            onUseCurrentLocation = {
+                if (hasLocation) {
+                    try {
+                        val fused = LocationServices.getFusedLocationProviderClient(context)
+                        fused.lastLocation.addOnSuccessListener { loc ->
+                            loc?.let { vm.setLocation(it.latitude, it.longitude) }
+                        }
+                    } catch (_: Exception) {}
+                } else {
+                    locationPermLauncher.launch(
+                        arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
+                    )
+                }
+            },
+            colors = colors
+        )
     }
 }
 
@@ -400,6 +431,7 @@ private fun NewReportContent(
     onGalleryClick: () -> Unit,
     onRemovePhoto: (Int) -> Unit,
     onRefreshLocation: () -> Unit,
+    onManualLocationSelect: () -> Unit,
     onAnonymousChanged: (Boolean) -> Unit,
     onPriorityChanged: (ReportViewModel.Priority) -> Unit,
     onSubmit: () -> Unit
@@ -635,7 +667,8 @@ private fun NewReportContent(
                 latitude = state.latitude,
                 longitude = state.longitude,
                 colors = colors,
-                onRefresh = onRefreshLocation
+                onRefresh = onRefreshLocation,
+                onManualLocationSelect = onManualLocationSelect
             )
         }
 
@@ -1010,7 +1043,8 @@ private fun LocationCard(
     latitude: Double,
     longitude: Double,
     colors: CityFluxColors,
-    onRefresh: () -> Unit
+    onRefresh: () -> Unit,
+    onManualLocationSelect: () -> Unit
 ) {
     Card(
         modifier = Modifier
@@ -1089,14 +1123,294 @@ private fun LocationCard(
                         color = colors.textSecondary
                     )
                 }
-                IconButton(onClick = onRefresh) {
-                    Icon(Icons.Outlined.Refresh, "Refresh location", tint = PrimaryBlue)
+                Row {
+                    IconButton(onClick = onManualLocationSelect) {
+                        Icon(Icons.Outlined.Edit, "Select location manually", tint = PrimaryBlue)
+                    }
+                    IconButton(onClick = onRefresh) {
+                        Icon(Icons.Outlined.Refresh, "Refresh location", tint = PrimaryBlue)
+                    }
                 }
             }
         }
     }
 }
 
+// ═══════════════════════════════════════════════════════════════════
+// Location Picker Dialog
+// ═══════════════════════════════════════════════════════════════════
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun LocationPickerDialog(
+    currentLatitude: Double,
+    currentLongitude: Double,
+    onLocationSelected: (Double, Double) -> Unit,
+    onDismiss: () -> Unit,
+    onUseCurrentLocation: () -> Unit,
+    colors: CityFluxColors
+) {
+    var selectedLatLng by remember {
+        mutableStateOf(
+            if (currentLatitude != 0.0 && currentLongitude != 0.0) {
+                LatLng(currentLatitude, currentLongitude)
+            } else {
+                LatLng(17.6702, 75.9063) // Default to Solapur
+            }
+        )
+    }
+    var manualLatInput by remember { mutableStateOf(currentLatitude.takeIf { it != 0.0 }?.toString() ?: "") }
+    var manualLngInput by remember { mutableStateOf(currentLongitude.takeIf { it != 0.0 }?.toString() ?: "") }
+    var showManualInput by remember { mutableStateOf(false) }
+
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .fillMaxHeight(0.85f),
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = colors.cardBackground)
+        ) {
+            Column(
+                modifier = Modifier.fillMaxSize()
+            ) {
+                // Header
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        "Select Location",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = colors.textPrimary
+                    )
+                    IconButton(onClick = onDismiss) {
+                        Icon(Icons.Default.Close, "Close", tint = colors.textPrimary)
+                    }
+                }
+
+                // Tab buttons for Map vs Manual input
+                Row(
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    FilterChip(
+                        onClick = { showManualInput = false },
+                        label = { Text("Map Selection") },
+                        selected = !showManualInput,
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = PrimaryBlue.copy(alpha = 0.2f),
+                            selectedLabelColor = PrimaryBlue
+                        )
+                    )
+                    FilterChip(
+                        onClick = { showManualInput = true },
+                        label = { Text("Manual Input") },
+                        selected = showManualInput,
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = PrimaryBlue.copy(alpha = 0.2f),
+                            selectedLabelColor = PrimaryBlue
+                        )
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                if (showManualInput) {
+                    // Manual input section
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f)
+                            .padding(horizontal = 16.dp)
+                    ) {
+                        Text(
+                            "Enter Coordinates",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = colors.textPrimary
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        OutlinedTextField(
+                            value = manualLatInput,
+                            onValueChange = {
+                                manualLatInput = it
+                                it.toDoubleOrNull()?.let { lat ->
+                                    manualLngInput.toDoubleOrNull()?.let { lng ->
+                                        selectedLatLng = LatLng(lat, lng)
+                                    }
+                                }
+                            },
+                            label = { Text("Latitude") },
+                            placeholder = { Text("17.6702") },
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = PrimaryBlue,
+                                focusedLabelColor = PrimaryBlue
+                            )
+                        )
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        OutlinedTextField(
+                            value = manualLngInput,
+                            onValueChange = {
+                                manualLngInput = it
+                                it.toDoubleOrNull()?.let { lng ->
+                                    manualLatInput.toDoubleOrNull()?.let { lat ->
+                                        selectedLatLng = LatLng(lat, lng)
+                                    }
+                                }
+                            },
+                            label = { Text("Longitude") },
+                            placeholder = { Text("75.9063") },
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = PrimaryBlue,
+                                focusedLabelColor = PrimaryBlue
+                            )
+                        )
+
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        // Preview of selected location
+                        if (manualLatInput.toDoubleOrNull() != null && manualLngInput.toDoubleOrNull() != null) {
+                            Card(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(200.dp),
+                                colors = CardDefaults.cardColors(containerColor = colors.cardBackground)
+                            ) {
+                                val cameraPositionState = rememberCameraPositionState {
+                                    position = CameraPosition.fromLatLngZoom(selectedLatLng, 14f)
+                                }
+
+                                GoogleMap(
+                                    modifier = Modifier.fillMaxSize(),
+                                    cameraPositionState = cameraPositionState,
+                                    uiSettings = MapUiSettings(
+                                        zoomControlsEnabled = false,
+                                        scrollGesturesEnabled = false,
+                                        zoomGesturesEnabled = false,
+                                        rotationGesturesEnabled = false,
+                                        tiltGesturesEnabled = false
+                                    )
+                                ) {
+                                    Marker(
+                                        state = MarkerState(position = selectedLatLng),
+                                        title = "Selected Location"
+                                    )
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    // Map selection section
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f)
+                    ) {
+                        Text(
+                            "Tap on the map to select location",
+                            modifier = Modifier.padding(horizontal = 16.dp),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = colors.textSecondary
+                        )
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .weight(1f)
+                                .padding(horizontal = 16.dp),
+                            colors = CardDefaults.cardColors(containerColor = colors.cardBackground)
+                        ) {
+                            val cameraPositionState = rememberCameraPositionState {
+                                position = CameraPosition.fromLatLngZoom(selectedLatLng, 14f)
+                            }
+
+                            GoogleMap(
+                                modifier = Modifier.fillMaxSize(),
+                                cameraPositionState = cameraPositionState,
+                                onMapClick = { latLng ->
+                                    selectedLatLng = latLng
+                                    manualLatInput = latLng.latitude.toString()
+                                    manualLngInput = latLng.longitude.toString()
+                                },
+                                uiSettings = MapUiSettings(
+                                    zoomControlsEnabled = true,
+                                    myLocationButtonEnabled = false
+                                )
+                            ) {
+                                Marker(
+                                    state = MarkerState(position = selectedLatLng),
+                                    title = "Selected Location"
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        Text(
+                            "Selected: ${String.format("%.4f", selectedLatLng.latitude)}, ${String.format("%.4f", selectedLatLng.longitude)}",
+                            modifier = Modifier.padding(horizontal = 16.dp),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = colors.textSecondary
+                        )
+                    }
+                }
+
+                // Action buttons
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    OutlinedButton(
+                        onClick = onUseCurrentLocation,
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            contentColor = PrimaryBlue
+                        ),
+                        border = ButtonDefaults.outlinedButtonBorder.copy(
+                            brush = Brush.linearGradient(listOf(PrimaryBlue, PrimaryBlue))
+                        )
+                    ) {
+                        Icon(
+                            Icons.Outlined.MyLocation,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Use GPS")
+                    }
+
+                    Button(
+                        onClick = {
+                            onLocationSelected(selectedLatLng.latitude, selectedLatLng.longitude)
+                            onDismiss()
+                        },
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = PrimaryBlue,
+                            contentColor = Color.White
+                        )
+                    ) {
+                        Text("Select Location")
+                    }
+                }
+            }
+        }
+    }
+}
 
 // ═══════════════════════════════════════════════════════════════════
 // My Reports Content
