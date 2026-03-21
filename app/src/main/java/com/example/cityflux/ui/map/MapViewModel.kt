@@ -8,10 +8,12 @@ import com.example.cityflux.model.LiveUserLocation
 import com.example.cityflux.model.ParkingLive
 import com.example.cityflux.model.ParkingSpot
 import com.example.cityflux.model.Report
+import com.example.cityflux.model.SolapurDummyData
 import com.example.cityflux.model.TrafficStatus
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 
@@ -47,12 +49,30 @@ class MapViewModel : ViewModel() {
     private val firestore = FirebaseFirestore.getInstance()
     private val currentUserId = FirebaseAuth.getInstance().currentUser?.uid ?: ""
 
+    // ── Dummy Solapur live users (refreshed every 60s to stay "alive") ──
+    private val _dummyLocations = MutableStateFlow(SolapurDummyData.dummy50Users)
+
     init {
         observeTraffic()
         observeParkingLive()
         observeLiveLocations()
         fetchParkingSpots()
         fetchIncidents()
+        keepDummyUsersAlive() // refresh dummy timestamps so they aren't filtered out
+    }
+
+    /** Keeps dummy user timestamps fresh so the 2-minute staleness filter in
+     *  RealtimeDbService doesn't hide them. Runs every 60 seconds. */
+    private fun keepDummyUsersAlive() {
+        viewModelScope.launch {
+            while (true) {
+                delay(60_000L)
+                val now = System.currentTimeMillis()
+                _dummyLocations.value = _dummyLocations.value.mapValues {
+                    it.value.copy(timestamp = now)
+                }
+            }
+        }
     }
 
     // ═══════════════════════════════════════════════════════
@@ -100,9 +120,12 @@ class MapViewModel : ViewModel() {
                     Log.e(TAG, "Live locations observe error", e)
                     _uiState.update { it.copy(error = "Live locations unavailable") }
                 }
-                .collect { map ->
+                .collect { realMap ->
+                    // Merge: dummy users as base, real Firebase users override
+                    val merged = _dummyLocations.value.toMutableMap()
+                    merged.putAll(realMap)
                     _uiState.update {
-                        it.copy(liveLocations = map, isLoading = false)
+                        it.copy(liveLocations = merged, isLoading = false)
                     }
                 }
         }

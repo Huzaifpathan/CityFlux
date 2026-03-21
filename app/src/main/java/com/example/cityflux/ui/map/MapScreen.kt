@@ -135,20 +135,12 @@ fun MapScreen(
         } catch (_: Exception) { /* graceful fallback */ }
     }
 
-    // ── Camera / Map State ──
-    val defaultLocation = LatLng(17.6599, 75.9064) // Solapur default
+    // ── Camera / Map State — always opens on Solapur city ──
+    val solapurCity = LatLng(17.6599, 75.9064) // Solapur, Maharashtra
+    val defaultLocation = solapurCity
     val cameraPositionState = rememberCameraPositionState {
-        position = CameraPosition.fromLatLngZoom(userLocation ?: defaultLocation, 14f)
-    }
-
-    // Move camera when user location is first obtained
-    LaunchedEffect(userLocation) {
-        userLocation?.let { loc ->
-            cameraPositionState.animate(
-                CameraUpdateFactory.newLatLngZoom(loc, 15f),
-                durationMs = 800
-            )
-        }
+        // Zoom 12 shows the full Solapur city within city boundaries
+        position = CameraPosition.fromLatLngZoom(solapurCity, 12f)
     }
 
     // ── Map Type Toggle ──

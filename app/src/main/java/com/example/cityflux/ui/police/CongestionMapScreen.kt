@@ -50,6 +50,7 @@ import com.example.cityflux.model.LocationUtils
 import com.example.cityflux.model.ParkingLive
 import com.example.cityflux.model.ParkingSpot
 import com.example.cityflux.model.Report
+import com.example.cityflux.model.SolapurDummyData
 import com.example.cityflux.model.TrafficStatus
 import com.example.cityflux.ui.theme.*
 import com.google.android.gms.location.LocationServices
@@ -59,6 +60,7 @@ import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
 import com.google.maps.android.compose.*
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
@@ -103,12 +105,29 @@ class CongestionMapViewModel : ViewModel() {
     private var policeLat = 0.0
     private var policeLon = 0.0
 
+    // ── Dummy Solapur live users (refreshed every 60s to stay "alive") ──
+    private val _dummyLocations = MutableStateFlow(SolapurDummyData.dummy50Users)
+
     init {
         observeTraffic()
         observeParkingLive()
         observeLiveLocations()
         fetchParkingSpots()
         fetchPoliceLocationThenIncidents()
+        keepDummyUsersAlive()
+    }
+
+    /** Keeps dummy timestamps fresh so online users stay visible on the map. */
+    private fun keepDummyUsersAlive() {
+        viewModelScope.launch {
+            while (true) {
+                delay(60_000L)
+                val now = System.currentTimeMillis()
+                _dummyLocations.value = _dummyLocations.value.mapValues {
+                    it.value.copy(timestamp = now)
+                }
+            }
+        }
     }
 
     private fun observeTraffic() {
@@ -140,8 +159,11 @@ class CongestionMapViewModel : ViewModel() {
         viewModelScope.launch {
             RealtimeDbService.observeLiveLocations()
                 .catch { e -> Log.e(TAG, "Live locations error", e) }
-                .collect { map ->
-                    _uiState.update { it.copy(liveLocations = map, isLoading = false) }
+                .collect { realMap ->
+                    // Merge: dummy users as base, real Firebase users override
+                    val merged = _dummyLocations.value.toMutableMap()
+                    merged.putAll(realMap)
+                    _uiState.update { it.copy(liveLocations = merged, isLoading = false) }
                 }
         }
     }
@@ -249,17 +271,12 @@ fun CongestionMapScreen(
         } catch (_: Exception) {}
     }
 
-    // ── Camera State ──
-    val defaultLocation = LatLng(17.6599, 75.9064) // Solapur
+    // ── Camera State — always opens on Solapur city ──
+    val solapurCity = LatLng(17.6599, 75.9064) // Solapur, Maharashtra
+    val defaultLocation = solapurCity
     val cameraPositionState = rememberCameraPositionState {
-        position = CameraPosition.fromLatLngZoom(userLocation ?: defaultLocation, 13f)
-    }
-    LaunchedEffect(userLocation) {
-        userLocation?.let { loc ->
-            cameraPositionState.animate(
-                CameraUpdateFactory.newLatLngZoom(loc, 14f), durationMs = 800
-            )
-        }
+        // Zoom 12 shows the full Solapur city within city boundaries
+        position = CameraPosition.fromLatLngZoom(solapurCity, 12f)
     }
 
     // ── Map Properties ──
