@@ -11,10 +11,15 @@ import android.widget.Toast
  */
 object UpiPaymentService {
     
-    // Default UPI ID for CityFlux parking payments
-    // This should be configured per parking zone in production
-    private const val DEFAULT_UPI_ID = "cityflux@ybl"
+    // ══════════════════════════════════════════════════════════════
+    // 🔧 CONFIGURED UPI ID FOR PAYMENTS
+    // Real UPI ID for receiving CityFlux parking payments
+    // ══════════════════════════════════════════════════════════════
+    private const val DEFAULT_UPI_ID = "shivamatram2002-1@okhdfcbank"
     private const val MERCHANT_NAME = "CityFlux Parking"
+    
+    // Test mode flag - set to true to skip actual payment
+    var testMode: Boolean = false
     
     /**
      * Create UPI payment intent

@@ -32,6 +32,7 @@ class BookingViewModel : ViewModel() {
     data class BookingUiState(
         val isLoading: Boolean = false,
         val activeBookings: List<ParkingBooking> = emptyList(),
+        val upcomingBookings: List<ParkingBooking> = emptyList(),
         val pastBookings: List<ParkingBooking> = emptyList(),
         val selectedBooking: ParkingBooking? = null,
         val error: String? = null,
@@ -73,20 +74,67 @@ class BookingViewModel : ViewModel() {
                 }
                 .collect { result: Result<List<ParkingBooking>> ->
                     result.onSuccess { bookings: List<ParkingBooking> ->
-                        val active = bookings.filter { booking -> booking.status.isActive() }
-                        val past = bookings.filter { booking -> !booking.status.isActive() }
-                        
-                        _uiState.update {
-                            it.copy(
-                                activeBookings = active,
-                                pastBookings = past,
-                                isLoading = false
-                            )
-                        }
+                        updateBookingBuckets(bookings)
                     }.onFailure { e: Throwable ->
                         _uiState.update { it.copy(error = e.message ?: "Unknown error") }
                     }
                 }
+        }
+    }
+
+    fun refreshBookings() {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isLoading = true, error = null) }
+            repository.observeUserBookings()
+                .firstOrNull()
+                ?.onSuccess { bookings: List<ParkingBooking> ->
+                    updateBookingBuckets(bookings)
+                }
+                ?.onFailure { e: Throwable ->
+                    _uiState.update {
+                        it.copy(
+                            isLoading = false,
+                            error = e.message ?: "Failed to refresh bookings"
+                        )
+                    }
+                }
+        }
+    }
+
+    private fun updateBookingBuckets(bookings: List<ParkingBooking>) {
+        val now = Date()
+        val terminalStatuses = setOf(
+            BookingStatus.COMPLETED,
+            BookingStatus.CANCELLED,
+            BookingStatus.EXPIRED,
+            BookingStatus.NO_SHOW,
+            BookingStatus.REFUNDED
+        )
+
+        val upcoming = bookings.filter { booking ->
+            booking.status == BookingStatus.PENDING ||
+                (booking.bookingStartTime?.toDate()?.after(now) == true &&
+                    booking.status !in terminalStatuses)
+        }
+        val upcomingIds = upcoming.map { it.id }.toSet()
+
+        val active = bookings.filter { booking ->
+            booking.id !in upcomingIds &&
+                booking.status.isActive()
+        }
+        val activeIds = active.map { it.id }.toSet()
+
+        val past = bookings.filter { booking ->
+            booking.id !in activeIds && booking.id !in upcomingIds
+        }
+
+        _uiState.update {
+            it.copy(
+                activeBookings = active,
+                upcomingBookings = upcoming,
+                pastBookings = past,
+                isLoading = false
+            )
         }
     }
     

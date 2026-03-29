@@ -25,6 +25,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.cityflux.model.*
+import com.example.cityflux.service.PricingBreakdown
 import com.example.cityflux.service.PricingService
 import com.example.cityflux.ui.theme.*
 import kotlinx.coroutines.delay
@@ -166,6 +167,7 @@ fun BookNowDialog(
                             onPaymentMethodSelected = { viewModel.selectPaymentMethod(it) },
                             onBack = { viewModel.moveToPreviousStep() },
                             onConfirmBooking = { viewModel.createBooking() },
+                            onUpdatePricing = { viewModel.updatePricing(it) },
                             colors = colors
                         )
                     }
@@ -606,11 +608,17 @@ private fun PaymentStep(
     onPaymentMethodSelected: (PaymentMethod) -> Unit,
     onBack: () -> Unit,
     onConfirmBooking: () -> Unit,
+    onUpdatePricing: (PricingBreakdown) -> Unit,
     colors: CityFluxColors
 ) {
     val context = LocalContext.current
     val pricing = PricingService.calculateParkingFee(bookingForm.vehicleType, bookingForm.durationHours)
     var showPaymentConfirmation by remember { mutableStateOf(false) }
+    
+    // Update pricing in ViewModel when entering this step
+    LaunchedEffect(pricing) {
+        onUpdatePricing(pricing)
+    }
     
     Column {
         Text(

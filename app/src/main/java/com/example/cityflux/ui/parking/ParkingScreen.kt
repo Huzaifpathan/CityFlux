@@ -122,7 +122,7 @@ fun ParkingScreen(
     }
 
     // ── View mode toggle ──
-    var isMapView by remember { mutableStateOf(false) }
+    var selectedTab by remember { mutableIntStateOf(0) } // 0=List, 1=Map, 2=My Bookings
 
     // ── Filter sheet ──
     var showFilterSheet by remember { mutableStateOf(false) }
@@ -553,43 +553,52 @@ fun ParkingScreen(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // List / Map toggle
-                Surface(
-                    shape = RoundedCornerShape(CornerRadius.Round),
-                    color = colors.surfaceVariant,
-                    modifier = Modifier.height(36.dp)
+                // List / Map / My Bookings tabs
+                TabRow(
+                    selectedTabIndex = selectedTab,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(CornerRadius.Round)),
+                    containerColor = colors.surfaceVariant.copy(alpha = 0.5f),
+                    contentColor = PrimaryBlue,
+                    divider = {}
                 ) {
-                    Row {
-                        ViewToggleButton(
-                            label = "List",
-                            icon = Icons.AutoMirrored.Outlined.ViewList,
-                            isSelected = !isMapView,
-                            onClick = { isMapView = false }
-                        )
-                        ViewToggleButton(
-                            label = "Map",
-                            icon = Icons.Outlined.Map,
-                            isSelected = isMapView,
-                            onClick = { isMapView = true }
-                        )
-                    }
+                    Tab(
+                        selected = selectedTab == 0,
+                        onClick = { selectedTab = 0 },
+                        text = { Text("List", style = MaterialTheme.typography.labelMedium) },
+                        icon = { Icon(Icons.AutoMirrored.Outlined.ViewList, null, Modifier.size(18.dp)) }
+                    )
+                    Tab(
+                        selected = selectedTab == 1,
+                        onClick = { selectedTab = 1 },
+                        text = { Text("Map", style = MaterialTheme.typography.labelMedium) },
+                        icon = { Icon(Icons.Outlined.Map, null, Modifier.size(18.dp)) }
+                    )
+                    Tab(
+                        selected = selectedTab == 2,
+                        onClick = { selectedTab = 2 },
+                        text = { Text("My Bookings", style = MaterialTheme.typography.labelMedium) },
+                        icon = { Icon(Icons.Outlined.History, null, Modifier.size(18.dp)) }
+                    )
                 }
 
-                // Filter chips row
-                Row(horizontalArrangement = Arrangement.spacedBy(Spacing.Small)) {
-                    // Available only toggle
-                    FilterChip(
-                        selected = state.showAvailableOnly,
-                        onClick = { vm.toggleAvailableOnly() },
-                        label = {
-                            Text(
-                                "Available",
-                                style = MaterialTheme.typography.labelSmall,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                        },
-                        leadingIcon = if (state.showAvailableOnly) {
-                            { Icon(Icons.Filled.Check, null, Modifier.size(14.dp)) }
+                // Filter chips row (only for List & Map tabs)
+                if (selectedTab < 2) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(Spacing.Small)) {
+                        // Available only toggle
+                        FilterChip(
+                            selected = state.showAvailableOnly,
+                            onClick = { vm.toggleAvailableOnly() },
+                            label = {
+                                Text(
+                                    "Available",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            },
+                            leadingIcon = if (state.showAvailableOnly) {
+                                { Icon(Icons.Filled.Check, null, Modifier.size(14.dp)) }
                         } else null,
                         shape = RoundedCornerShape(CornerRadius.Round),
                         colors = FilterChipDefaults.filterChipColors(
@@ -613,6 +622,7 @@ fun ParkingScreen(
                     }
                 }
             }
+            } // End of if (selectedTab < 2)
 
             // ══════════════════════ Active Filters Row ══════════════════════
             if (state.legalFilter != ParkingViewModel.LegalFilter.ALL ||
@@ -679,7 +689,7 @@ fun ParkingScreen(
 
             // ══════════════════════ Content ══════════════════════
             Crossfade(
-                targetState = isMapView,
+                targetState = selectedTab == 1,
                 animationSpec = tween(300),
                 label = "parking_view_toggle"
             ) { showMap ->
@@ -796,7 +806,7 @@ fun ParkingScreen(
                                         spot.location?.let { geo ->
                                             // Start navigation mode
                                             navigationTarget = spot
-                                            isMapView = true
+                                            selectedTab = 1
                                             isLoadingRoute = true
                                             
                                             // Fetch route from user location to parking
@@ -836,7 +846,7 @@ fun ParkingScreen(
         }
 
         // ══════════════════════ FABs (bottom-right, list view only) ══════════════════════
-        if (!isMapView) Column(
+        if (selectedTab == 0) Column(
             modifier = Modifier
                 .align(Alignment.BottomEnd)
                 .padding(end = Spacing.Medium, bottom = 24.dp)
@@ -943,7 +953,7 @@ fun ParkingScreen(
                             // Start navigation mode with route
                             navigationTarget = spot
                             selectedSpot = null
-                            isMapView = true
+                            selectedTab = 1
                             isLoadingRoute = true
                             
                             coroutineScope.launch {
@@ -1005,7 +1015,7 @@ fun ParkingScreen(
                     showFindNearbyDialog = false
                     spot.location?.let { geo ->
                         navigationTarget = spot
-                        isMapView = true
+                        selectedTab = 1
                         isLoadingRoute = true
                         coroutineScope.launch {
                             userLatLng?.let { start ->
@@ -1060,7 +1070,7 @@ fun ParkingScreen(
                         navigationTarget = bookNowSpot
                         showBookNowDialog = false
                         bookNowSpot = null
-                        isMapView = true
+                        selectedTab = 1
                         isLoadingRoute = true
                         
                         coroutineScope.launch {
