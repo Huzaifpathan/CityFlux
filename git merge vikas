@@ -1,0 +1,154 @@
+[1mdiff --git a/.idea/deploymentTargetSelector.xml b/.idea/deploymentTargetSelector.xml[m
+[1mindex 0b0baa7..fcf47a6 100644[m
+[1m--- a/.idea/deploymentTargetSelector.xml[m
+[1m+++ b/.idea/deploymentTargetSelector.xml[m
+[36m@@ -4,10 +4,10 @@[m
+     <selectionStates>[m
+       <SelectionState runConfigName="app">[m
+         <option name="selectionMode" value="DROPDOWN" />[m
+[31m-        <DropdownSelection timestamp="2026-03-29T14:14:53.258957700Z">[m
+[32m+[m[32m        <DropdownSelection timestamp="2026-03-12T22:15:36.443491900Z">[m
+           <Target type="DEFAULT_BOOT">[m
+             <handle>[m
+[31m-              <DeviceId pluginId="PhysicalDevice" identifier="serial=EU4PZHVWOBS8RSTW" />[m
+[32m+[m[32m              <DeviceId pluginId="LocalEmulator" identifier="path=C:\Users\vikas\.android\avd\Pixel_9_Pro.avd" />[m
+             </handle>[m
+           </Target>[m
+         </DropdownSelection>[m
+[1mdiff --git a/.idea/deviceManager.xml b/.idea/deviceManager.xml[m
+[1mindex ce6ef0e..19db3d7 100644[m
+[1m--- a/.idea/deviceManager.xml[m
+[1m+++ b/.idea/deviceManager.xml[m
+[36m@@ -3,10 +3,6 @@[m
+   <component name="DeviceTable">[m
+     <option name="columnSorters">[m
+       <list>[m
+[31m-        <ColumnSorterState>[m
+[31m-          <option name="column" value="Type" />[m
+[31m-          <option name="order" value="ASCENDING" />[m
+[31m-        </ColumnSorterState>[m
+         <ColumnSorterState>[m
+           <option name="column" value="API" />[m
+           <option name="order" value="ASCENDING" />[m
+[1mdiff --git a/app/src/main/java/com/example/cityflux/data/ParkingSetupHelper.kt b/app/src/main/java/com/example/cityflux/data/ParkingSetupHelper.kt[m
+[1mindex 8a13f1f..cf19c5a 100644[m
+[1m--- a/app/src/main/java/com/example/cityflux/data/ParkingSetupHelper.kt[m
+[1m+++ b/app/src/main/java/com/example/cityflux/data/ParkingSetupHelper.kt[m
+[36m@@ -15,59 +15,59 @@[m [mobject ParkingSetupHelper {[m
+     fun addSampleParkingSpots() {[m
+         val spots = listOf([m
+             mapOf([m
+[31m-                "address" to "Kranti Chowk, Near Prozone Mall, Aurangabad",[m
+[32m+[m[32m                "address" to "City Center, Near Mall, Solapur",[m
+                 "availableSlots" to 45,[m
+                 "isLegal" to true,[m
+[31m-                "location" to GeoPoint(19.8762, 75.3433),[m
+[32m+[m[32m                "location" to GeoPoint(17.6599, 75.9064),[m
+                 "totalSlots" to 100[m
+             ),[m
+             mapOf([m
+[31m-                "address" to "Railway Station Road, Aurangabad",[m
+[32m+[m[32m                "address" to "Railway Station Road, Solapur",[m
+                 "availableSlots" to 20,[m
+                 "isLegal" to true,[m
+[31m-                "location" to GeoPoint(19.8670, 75.3280),[m
+[32m+[m[32m                "location" to GeoPoint(17.6715, 75.9164),[m
+                 "totalSlots" to 50[m
+             ),[m
+             mapOf([m
+[31m-                "address" to "MGM Hospital, N-6 CIDCO, Aurangabad",[m
+[32m+[m[32m                "address" to "Civil Hospital, Medical Road, Solapur",[m
+                 "availableSlots" to 10,[m
+                 "isLegal" to true,[m
+[31m-                "location" to GeoPoint(19.8550, 75.3750),[m
+[32m+[m[32m                "location" to GeoPoint(17.6530, 75.9130),[m
+                 "totalSlots" to 30[m
+             ),[m
+             mapOf([m
+[31m-                "address" to "Nirala Bazaar, City Chowk, Aurangabad",[m
+[32m+[m[32m                "address" to "Budhwar Peth Market, Solapur",[m
+                 "availableSlots" to 5,[m
+                 "isLegal" to true,[m
+[31m-                "location" to GeoPoint(19.8755, 75.3410),[m
+[32m+[m[32m                "location" to GeoPoint(17.6650, 75.9100),[m
+                 "totalSlots" to 25[m
+             ),[m
+             mapOf([m
+[31m-                "address" to "Gulmandi Market, Aurangabad",[m
+[32m+[m[32m                "address" to "College Road, Solapur",[m
+                 "availableSlots" to 0,[m
+                 "isLegal" to false,[m
+[31m-                "location" to GeoPoint(19.8705, 75.3355),[m
+[32m+[m[32m                "location" to GeoPoint(17.6450, 75.9200),[m
+                 "totalSlots" to 15[m
+             ),[m
+             mapOf([m
+[31m-                "address" to "Central Bus Stand Parking, Aurangabad",[m
+[32m+[m[32m                "address" to "Bus Stand Parking, Solapur",[m
+                 "availableSlots" to 30,[m
+                 "isLegal" to true,[m
+[31m-                "location" to GeoPoint(19.8650, 75.3550),[m
+[32m+[m[32m                "location" to GeoPoint(17.6700, 75.9050),[m
+                 "totalSlots" to 75[m
+             ),[m
+             mapOf([m
+[31m-                "address" to "Jalna Road Shopping Complex",[m
+[32m+[m[32m                "address" to "Shopping Complex, Murarji Peth",[m
+                 "availableSlots" to 15,[m
+                 "isLegal" to true,[m
+[31m-                "location" to GeoPoint(19.8790, 75.3555),[m
+[32m+[m[32m                "location" to GeoPoint(17.6580, 75.9080),[m
+                 "totalSlots" to 40[m
+             ),[m
+             mapOf([m
+[31m-                "address" to "Waluj MIDC Parking",[m
+[32m+[m[32m                "address" to "Sports Stadium Parking",[m
+                 "availableSlots" to 60,[m
+                 "isLegal" to true,[m
+[31m-                "location" to GeoPoint(19.8150, 75.2900),[m
+[32m+[m[32m                "location" to GeoPoint(17.6620, 75.9150),[m
+                 "totalSlots" to 120[m
+             )[m
+         )[m
+[1mdiff --git a/app/src/main/java/com/example/cityflux/model/SolapurDummyData.kt b/app/src/main/java/com/example/cityflux/model/SolapurDummyData.kt[m
+[1mindex 35bfe9a..774c970 100644[m
+[1m--- a/app/src/main/java/com/example/cityflux/model/SolapurDummyData.kt[m
+[1m+++ b/app/src/main/java/com/example/cityflux/model/SolapurDummyData.kt[m
+[36m@@ -1,13 +1,13 @@[m
+ package com.example.cityflux.model[m
+ [m
+ /**[m
+[31m- * Dummy live user locations on real Aurangabad (Chhatrapati Sambhajinagar) city roads.[m
+[32m+[m[32m * Dummy live user locations on real Solapur city roads.[m
+  * Used to demonstrate live citizen tracking on map screens.[m
+[31m- * 50 users spread across major Aurangabad roads/areas with varying congestion levels.[m
+[32m+[m[32m * 50 users spread across major Solapur roads/areas.[m
+  */[m
+[31m-object AurangabadDummyData {[m
+[32m+[m[32mobject SolapurDummyData {[m
+ [m
+[31m-    // Marathwada Marathi names for dummy users[m
+[32m+[m[32m    // Solapur Marathi names for dummy users[m
+     private val dummyNames = listOf([m
+         "Rahul Jadhav", "Priya Kulkarni", "Amit Shinde", "Sunita Patil", "Ravi Deshpande",[m
+         "Meena Gaikwad", "Vijay Chavan", "Kavita More", "Suresh Pawar", "Anjali Bhosle",[m
+[36m@@ -22,86 +22,85 @@[m [mobject AurangabadDummyData {[m
+     )[m
+ [m
+     /**[m
+[31m-     * 50 dummy live users positioned on major Aurangabad (Chhatrapati Sambhajinagar) city roads.[m
+[31m-     * Coordinates are on real Aurangabad roads: Jalna Road, Station Road, CIDCO,[m
+[31m-     * Adalat Road, Nirala Bazaar, Kranti Chowk, Paithan Road, etc.[m
+[31m-     * Mix of HIGH (stopped/slow), MEDIUM (moderate), LOW (fast) congestion areas.[m
+[32m+[m[32m     * 50 dummy live users positioned on major Solapur city roads.[m
+[32m+[m[32m     * Coordinates are on real Solapur roads: Pune-Hyderabad Highway,[m
+[32m+[m[32m     * Station Road, Hotgi Road, Akkalkot Road, Vijaypur Road, etc.[m
+      */[m
+     val dummy50Users: Map<String, LiveUserLocation> = buildMap {[m
+ [m
+[31m-        // Data: (lat, lng, speed, heading)[m
+[32m+[m[32m        // Data: (lat, lng, speed, heading, nameIndex)[m
+         val roadUsers = listOf([m
+[31m-            // ── Jalna Road (NH-753) - HIGH CONGESTION near Kranti Chowk ──[m
+[31m-            Triple(19.8785, 75.3520, 5 to 90.0),    // user_001 (nearly stopped - HIGH)[m
+[31m-            Triple(19.8790, 75.3555, 8 to 90.
