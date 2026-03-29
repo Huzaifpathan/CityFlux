@@ -49,10 +49,13 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.cityflux.model.ParkingSpot
+import com.example.cityflux.model.ParkingLive
 import com.example.cityflux.ui.theme.*
 import com.google.android.gms.location.LocationCallback
 import com.google.android.gms.location.LocationRequest
@@ -272,6 +275,9 @@ fun ParkingScreen(
     // ── Report Illegal Parking ──
     var showReportDialog by remember { mutableStateOf(false) }
 
+    // ── Find Nearby Best Parking Dialog ──
+    var showFindNearbyDialog by remember { mutableStateOf(true) }  // Show automatically on screen open
+
     // ── Favorite Spots ──
     var favoriteIds by remember { mutableStateOf(setOf<String>()) }
 
@@ -433,6 +439,45 @@ fun ParkingScreen(
                             )
                         }
                     }
+                }
+            }
+
+            // ══════════════════════ Find Best Nearby Parking Button ══════════════════════
+            Surface(
+                onClick = { showFindNearbyDialog = true },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = Spacing.XLarge, vertical = Spacing.Small),
+                shape = RoundedCornerShape(CornerRadius.Large),
+                color = AccentParking.copy(alpha = 0.15f)
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    Icon(
+                        Icons.Outlined.TravelExplore,
+                        contentDescription = "Find nearby",
+                        tint = AccentParking,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        "🎯 Find Best Nearby Parking",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = AccentParking
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Icon(
+                        Icons.AutoMirrored.Filled.ArrowForward,
+                        contentDescription = "Go",
+                        tint = AccentParking,
+                        modifier = Modifier.size(16.dp)
+                    )
                 }
             }
 
@@ -821,14 +866,13 @@ fun ParkingScreen(
                 Icon(Icons.Outlined.ReportProblem, "Report", Modifier.size(20.dp))
             }
 
-            // Nearest Parking FAB
+            // Find Best Nearby Parking FAB
             FloatingActionButton(
                 onClick = {
                     try {
-                        Firebase.analytics.logEvent("nearest_parking_clicked", null)
+                        Firebase.analytics.logEvent("find_best_parking_clicked", null)
                     } catch (_: Exception) {}
-                    val nearest = vm.findNearestAvailable()
-                    nearest?.let { selectedSpot = it }
+                    showFindNearbyDialog = true
                 },
                 shape = CircleShape,
                 containerColor = AccentParking,
@@ -942,6 +986,49 @@ fun ParkingScreen(
             ReportIllegalParkingDialog(
                 userLatLng = userLatLng,
                 onDismiss = { showReportDialog = false }
+            )
+        }
+
+        // ══════════════════════ Find Nearby Best Parking Dialog ══════════════════════
+        if (showFindNearbyDialog) {
+            FindNearbyBestParkingDialog(
+                userLatLng = userLatLng,
+                hasLocationPermission = hasLocationPermission,
+                spots = filteredSpots,
+                parkingLive = state.parkingLive,
+                vm = vm,
+                onSpotSelected = { spot ->
+                    selectedSpot = spot
+                    showFindNearbyDialog = false
+                },
+                onNavigateToSpot = { spot ->
+                    showFindNearbyDialog = false
+                    spot.location?.let { geo ->
+                        navigationTarget = spot
+                        isMapView = true
+                        isLoadingRoute = true
+                        coroutineScope.launch {
+                            userLatLng?.let { start ->
+                                val end = LatLng(geo.latitude, geo.longitude)
+                                val apiKey = getMapApiKey(context)
+                                val result = fetchDirectionsRoute(start, end, apiKey)
+                                routePoints = result.points
+                                routeDistanceKm = result.distanceKm
+                                routeDurationMin = result.durationMinutes
+                                navigationSteps = result.steps
+                                currentStepIndex = 0
+                                isNavigating = true
+                                isLoadingRoute = false
+                            }
+                        }
+                    }
+                },
+                onBookNow = { spot ->
+                    showFindNearbyDialog = false
+                    bookNowSpot = spot
+                    showBookNowDialog = true
+                },
+                onDismiss = { showFindNearbyDialog = false }
             )
         }
         
@@ -3033,4 +3120,410 @@ private fun ReportIllegalParkingDialog(
             }
         }
     )
+}
+
+// ══════════════════════ Find Nearby Best Parking Dialog ══════════════════════
+@Composable
+private fun FindNearbyBestParkingDialog(
+    userLatLng: LatLng?,
+    hasLocationPermission: Boolean,
+    spots: List<ParkingSpot>,
+    parkingLive: Map<String, ParkingLive>,
+    vm: ParkingViewModel,
+    onSpotSelected: (ParkingSpot) -> Unit,
+    onNavigateToSpot: (ParkingSpot) -> Unit,
+    onBookNow: (ParkingSpot) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val colors = MaterialTheme.cityFluxColors
+    val context = LocalContext.current
+    
+    // Calculate best parking spots
+    val bestParkingSpots = remember(userLatLng, spots, parkingLive) {
+        if (userLatLng == null || !hasLocationPermission) {
+            emptyList()
+        } else {
+            calculateBestParking(userLatLng, spots, parkingLive, vm)
+        }
+    }
+    
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(
+            usePlatformDefaultWidth = false
+        )
+    ) {
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = colors.surfaceVariant
+            ),
+            shape = RoundedCornerShape(16.dp)
+        ) {
+            Column(
+                modifier = Modifier
+                    .padding(20.dp)
+                    .fillMaxWidth()
+            ) {
+                // Header
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "🎯 Find Best Nearby Parking",
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = PrimaryBlue
+                    )
+                    
+                    IconButton(onClick = onDismiss) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "Close",
+                            tint = colors.textPrimary
+                        )
+                    }
+                }
+                
+                Spacer(modifier = Modifier.height(16.dp))
+                
+                // Location status
+                if (!hasLocationPermission || userLatLng == null) {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(
+                            containerColor = AccentRed.copy(alpha = 0.1f)
+                        ),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(16.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.LocationOff,
+                                contentDescription = "Location disabled",
+                                tint = AccentRed,
+                                modifier = Modifier.size(24.dp)
+                            )
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Text(
+                                text = "Enable location to find nearby parking",
+                                color = colors.textPrimary,
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                        }
+                    }
+                } else {
+                    // Subtitle
+                    Text(
+                        text = "Top 5 parking spots ranked by distance, availability & rating",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = colors.textSecondary
+                    )
+                    
+                    Spacer(modifier = Modifier.height(16.dp))
+                    
+                    // Results
+                    if (bestParkingSpots.isEmpty()) {
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = CardDefaults.cardColors(
+                                containerColor = colors.surfaceVariant.copy(alpha = 0.5f)
+                            ),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(24.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.SearchOff,
+                                    contentDescription = "No results",
+                                    tint = colors.textTertiary,
+                                    modifier = Modifier.size(48.dp)
+                                )
+                                Spacer(modifier = Modifier.height(16.dp))
+                                Text(
+                                    text = "No parking spots found within 5km",
+                                    color = colors.textSecondary,
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    textAlign = TextAlign.Center
+                                )
+                            }
+                        }
+                    } else {
+                        LazyColumn {
+                            items(bestParkingSpots) { rankedSpot ->
+                                NearbyParkingResultCard(
+                                    rankedSpot = rankedSpot,
+                                    colors = colors,
+                                    onSpotSelected = onSpotSelected,
+                                    onNavigateToSpot = onNavigateToSpot,
+                                    onBookNow = onBookNow
+                                )
+                                
+                                if (rankedSpot != bestParkingSpots.last()) {
+                                    Spacer(modifier = Modifier.height(12.dp))
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                Spacer(modifier = Modifier.height(20.dp))
+                
+                // Action buttons
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End
+                ) {
+                    OutlinedButton(
+                        onClick = onDismiss,
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            contentColor = PrimaryBlue
+                        ),
+                        border = BorderStroke(1.dp, PrimaryBlue)
+                    ) {
+                        Text("Close")
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun NearbyParkingResultCard(
+    rankedSpot: RankedParkingSpot,
+    colors: CityFluxColors,
+    onSpotSelected: (ParkingSpot) -> Unit,
+    onNavigateToSpot: (ParkingSpot) -> Unit,
+    onBookNow: (ParkingSpot) -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onSpotSelected(rankedSpot.spot) },
+        colors = CardDefaults.cardColors(
+            containerColor = colors.surfaceVariant.copy(alpha = 0.7f)
+        ),
+        shape = RoundedCornerShape(12.dp)
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp)
+        ) {
+            // Header with ranking badge
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.Top
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    // Ranking badge
+                    Card(
+                        colors = CardDefaults.cardColors(
+                            containerColor = when (rankedSpot.rank) {
+                                1 -> Color(0xFFFFD700) // Gold
+                                2 -> Color(0xFFC0C0C0) // Silver
+                                3 -> Color(0xFFCD7F32) // Bronze
+                                else -> PrimaryBlue
+                            }
+                        ),
+                        shape = CircleShape,
+                        modifier = Modifier.size(28.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = "#${rankedSpot.rank}",
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold,
+                                style = MaterialTheme.typography.labelSmall
+                            )
+                        }
+                    }
+                    
+                    Spacer(modifier = Modifier.width(12.dp))
+                    
+                    Column {
+                        Text(
+                            text = rankedSpot.spot.address.ifEmpty { "Parking ${rankedSpot.spot.id.takeLast(4)}" },
+                            fontWeight = FontWeight.SemiBold,
+                            color = colors.textPrimary,
+                            style = MaterialTheme.typography.titleMedium,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        
+                        Text(
+                            text = "${rankedSpot.distanceKm} km away",
+                            color = colors.textSecondary,
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                }
+                
+                // Score badge
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = PrimaryBlue.copy(alpha = 0.15f)
+                    ),
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Text(
+                        text = "${rankedSpot.totalScore}pts",
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                        color = PrimaryBlue,
+                        fontWeight = FontWeight.SemiBold,
+                        style = MaterialTheme.typography.labelMedium
+                    )
+                }
+            }
+            
+            Spacer(modifier = Modifier.height(12.dp))
+            
+            // Details
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                // Available spots
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.LocalParking,
+                        contentDescription = "Available spots",
+                        tint = if (rankedSpot.spot.availableSlots > 0) AccentParking else AccentRed,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = "${rankedSpot.spot.availableSlots}/${rankedSpot.spot.totalSlots} free",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = colors.textSecondary
+                    )
+                }
+                
+                // Type badge
+                Text(
+                    text = if (rankedSpot.spot.isLegal) "✅ Legal" else "⚠️ Unofficial",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (rankedSpot.spot.isLegal) AccentParking else AccentAlerts,
+                    fontWeight = FontWeight.Medium
+                )
+            }
+            
+            Spacer(modifier = Modifier.height(12.dp))
+            
+            // Action buttons
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                // Navigate button
+                OutlinedButton(
+                    onClick = { onNavigateToSpot(rankedSpot.spot) },
+                    modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        contentColor = PrimaryBlue
+                    ),
+                    border = BorderStroke(1.dp, PrimaryBlue)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Directions,
+                        contentDescription = "Navigate",
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Navigate")
+                }
+                
+                // Book Now button
+                Button(
+                    onClick = { onBookNow(rankedSpot.spot) },
+                    modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = PrimaryBlue,
+                        contentColor = Color.White
+                    ),
+                    enabled = rankedSpot.spot.availableSlots > 0
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.CalendarMonth,
+                        contentDescription = "Book Now",
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Book Now")
+                }
+            }
+        }
+    }
+}
+
+// ══════════════════════ Parking Calculation Logic ══════════════════════
+
+data class RankedParkingSpot(
+    val spot: ParkingSpot,
+    val rank: Int,
+    val totalScore: Int,
+    val distanceKm: String,
+    val distanceScore: Int,
+    val availabilityScore: Int,
+    val legalBonus: Int
+)
+
+private fun calculateBestParking(
+    userLatLng: LatLng,
+    spots: List<ParkingSpot>,
+    parkingLive: Map<String, ParkingLive>,
+    vm: ParkingViewModel
+): List<RankedParkingSpot> {
+    
+    return spots.mapNotNull { spot ->
+        val distanceMeters = vm.distanceTo(spot)
+        distanceMeters?.let { distance ->
+            val distanceKm = distance / 1000.0
+            
+            // Filter by 5km radius
+            if (distanceKm <= 5.0) {
+                // Get live availability if available
+                val liveData = parkingLive[spot.id]
+                val actualAvailable = liveData?.availableSlots ?: spot.availableSlots
+                
+                // Calculate scores
+                val distanceScore = ((5.0 - distanceKm) * 10).toInt().coerceIn(0, 50)
+                val availabilityScore = if (actualAvailable > 0) {
+                    val ratio = actualAvailable.toDouble() / spot.totalSlots
+                    (ratio * 30).toInt()
+                } else 0
+                val legalBonus = if (spot.isLegal) 20 else 0
+                val totalScore = distanceScore + availabilityScore + legalBonus
+                
+                RankedParkingSpot(
+                    spot = spot.copy(availableSlots = actualAvailable),
+                    rank = 0, // Will be set after sorting
+                    totalScore = totalScore,
+                    distanceKm = String.format("%.1f", distanceKm),
+                    distanceScore = distanceScore,
+                    availabilityScore = availabilityScore,
+                    legalBonus = legalBonus
+                )
+            } else null
+        }
+    }
+    .sortedByDescending { it.totalScore }
+    .take(5)
+    .mapIndexed { index, spot ->
+        spot.copy(rank = index + 1)
+    }
 }
