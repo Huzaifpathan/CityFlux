@@ -1,0 +1,91 @@
+[debug] [2026-03-29T13:56:47.825Z] ----------------------------------------------------------------------
+[debug] [2026-03-29T13:56:47.827Z] Command:       C:\Program Files\nodejs\node.exe C:\Users\Shivam\AppData\Roaming\npm\node_modules\firebase-tools\lib\bin\firebase.js projects:list
+[debug] [2026-03-29T13:56:47.827Z] CLI Version:   15.11.0
+[debug] [2026-03-29T13:56:47.827Z] Platform:      win32
+[debug] [2026-03-29T13:56:47.827Z] Node Version:  v24.12.0
+[debug] [2026-03-29T13:56:47.827Z] Time:          Sun Mar 29 2026 19:26:47 GMT+0530 (India Standard Time)
+[debug] [2026-03-29T13:56:47.827Z] ----------------------------------------------------------------------
+[debug] 
+[debug] [2026-03-29T13:56:47.942Z] Object "/storage" in "firebase.json" has unknown property: {"additionalProperty":"bucket"}
+[debug] [2026-03-29T13:56:47.943Z] Field "/storage" in "firebase.json" is possibly invalid: must be array
+[debug] [2026-03-29T13:56:47.943Z] Field "/storage" in "firebase.json" is possibly invalid: must match a schema in anyOf
+[debug] [2026-03-29T13:56:47.946Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2026-03-29T13:56:47.947Z] > authorizing via signed-in user (shivamatram04@gmail.com)
+[debug] [2026-03-29T13:56:47.949Z] Checked if tokens are valid: true, expires at: 1774796189922
+[debug] [2026-03-29T13:56:47.949Z] Checked if tokens are valid: true, expires at: 1774796189922
+[debug] [2026-03-29T13:56:47.950Z] >>> [apiv2][query] GET https://firebase.googleapis.com/v1beta1/projects pageSize=1000
+[debug] [2026-03-29T13:56:48.928Z] <<< [apiv2][status] GET https://firebase.googleapis.com/v1beta1/projects 200
+[debug] [2026-03-29T13:56:59.392Z] ----------------------------------------------------------------------
+[debug] [2026-03-29T13:56:59.394Z] Command:       C:\Program Files\nodejs\node.exe C:\Users\Shivam\AppData\Roaming\npm\node_modules\firebase-tools\lib\bin\firebase.js deploy --only firestore:rules --project cityflux-1adab
+[debug] [2026-03-29T13:56:59.394Z] CLI Version:   15.11.0
+[debug] [2026-03-29T13:56:59.394Z] Platform:      win32
+[debug] [2026-03-29T13:56:59.394Z] Node Version:  v24.12.0
+[debug] [2026-03-29T13:56:59.395Z] Time:          Sun Mar 29 2026 19:26:59 GMT+0530 (India Standard Time)
+[debug] [2026-03-29T13:56:59.395Z] ----------------------------------------------------------------------
+[debug] 
+[debug] [2026-03-29T13:57:00.399Z] Object "/storage" in "firebase.json" has unknown property: {"additionalProperty":"bucket"}
+[debug] [2026-03-29T13:57:00.400Z] Field "/storage" in "firebase.json" is possibly invalid: must be array
+[debug] [2026-03-29T13:57:00.401Z] Field "/storage" in "firebase.json" is possibly invalid: must match a schema in anyOf
+[debug] [2026-03-29T13:57:00.404Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2026-03-29T13:57:00.404Z] > authorizing via signed-in user (shivamatram04@gmail.com)
+[debug] [2026-03-29T13:57:00.404Z] [iam] checking project cityflux-1adab for permissions ["datastore.indexes.create","datastore.indexes.delete","datastore.indexes.list","datastore.indexes.update","firebase.projects.get"]
+[debug] [2026-03-29T13:57:00.405Z] Checked if tokens are valid: true, expires at: 1774796189922
+[debug] [2026-03-29T13:57:00.405Z] Checked if tokens are valid: true, expires at: 1774796189922
+[debug] [2026-03-29T13:57:00.406Z] >>> [apiv2][query] POST https://cloudresourcemanager.googleapis.com/v1/projects/cityflux-1adab:testIamPermissions [none]
+[debug] [2026-03-29T13:57:00.406Z] >>> [apiv2][(partial)header] POST https://cloudresourcemanager.googleapis.com/v1/projects/cityflux-1adab:testIamPermissions  x-goog-user-project=cityflux-1adab
+[debug] [2026-03-29T13:57:00.406Z] >>> [apiv2][body] POST https://cloudresourcemanager.googleapis.com/v1/projects/cityflux-1adab:testIamPermissions {"permissions":["datastore.indexes.create","datastore.indexes.delete","datastore.indexes.list","datastore.indexes.update","firebase.projects.get"]}
+[debug] [2026-03-29T13:57:02.004Z] <<< [apiv2][status] POST https://cloudresourcemanager.googleapis.com/v1/projects/cityflux-1adab:testIamPermissions 403
+[debug] [2026-03-29T13:57:02.005Z] <<< [apiv2][body] POST https://cloudresourcemanager.googleapis.com/v1/projects/cityflux-1adab:testIamPermissions {"error":{"code":403,"message":"Caller does not have required permission to use project cityflux-1adab. Grant the caller the roles/serviceusage.serviceUsageConsumer role, or a custom role with the serviceusage.services.use permission, by visiting https://console.developers.google.com/iam-admin/iam?project=cityflux-1adab and then retry. Propagation of the new permission may take a few minutes.","status":"PERMISSION_DENIED","details":[{"@type":"type.googleapis.com/google.rpc.ErrorInfo","reason":"USER_PROJECT_DENIED","domain":"googleapis.com","metadata":{"service":"cloudresourcemanager.googleapis.com","consumer":"projects/cityflux-1adab","containerInfo":"cityflux-1adab","consoleUrl":"https://console.developers.google.com/iam-admin/iam?project=cityflux-1adab"}},{"@type":"type.googleapis.com/google.rpc.LocalizedMessage","locale":"en-US","message":"Caller does not have required permission to use project cityflux-1adab. Grant the caller the roles/serviceusage.serviceUsageConsumer role, or a custom role with the serviceusage.services.use permission, by visiting https://console.developers.google.com/iam-admin/iam?project=cityflux-1adab and then retry. Propagation of the new permission may take a few minutes."},{"@type":"type.googleapis.com/google.rpc.Help","links":[{"description":"Google developer console IAM admin","url":"https://console.developers.google.com/iam-admin/iam?project=cityflux-1adab"}]}]}}
+[debug] [2026-03-29T13:57:02.007Z] [iam] error while checking permissions, command may fail: Request to https://cloudresourcemanager.googleapis.com/v1/projects/cityflux-1adab:testIamPermissions had HTTP Error: 403, Caller does not have required permission to use project cityflux-1adab. Grant the caller the roles/serviceusage.serviceUsageConsumer role, or a custom role with the serviceusage.services.use permission, by visiting https://console.developers.google.com/iam-admin/iam?project=cityflux-1adab and then retry. Propagation of the new permission may take a few minutes.
+[info] 
+[info] === Deploying to 'cityflux-1adab'...
+[info] 
+[info] i  deploying firestore 
+[info] i  firestore: ensuring required API firestore.googleapis.com is enabled... 
+[debug] [2026-03-29T13:57:02.017Z] Checked if tokens are valid: true, expires at: 1774796189922
+[debug] [2026-03-29T13:57:02.017Z] Checked if tokens are valid: true, expires at: 1774796189922
+[debug] [2026-03-29T13:57:02.018Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/cityflux-1adab/services/firestore.googleapis.com [none]
+[debug] [2026-03-29T13:57:02.018Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/cityflux-1adab/services/firestore.googleapis.com  x-goog-user-project=cityflux-1adab
+[debug] [2026-03-29T13:57:03.789Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/cityflux-1adab/services/firestore.googleapis.com 403
+[debug] [2026-03-29T13:57:03.789Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/cityflux-1adab/services/firestore.googleapis.com [omitted]
+[error] 
+[error] Error: Request to https://serviceusage.googleapis.com/v1/projects/cityflux-1adab/services/firestore.googleapis.com had HTTP Error: 403, Caller does not have required permission to use project cityflux-1adab. Grant the caller the roles/serviceusage.serviceUsageConsumer role, or a custom role with the serviceusage.services.use permission, by visiting https://console.developers.google.com/iam-admin/iam?project=cityflux-1adab and then retry. Propagation of the new permission may take a few minutes.
+[debug] [2026-03-29T13:57:03.791Z] Error Context: {
+  "body": {
+    "error": {
+      "code": 403,
+      "message": "Caller does not have required permission to use project cityflux-1adab. Grant the caller the roles/serviceusage.serviceUsageConsumer role, or a custom role with the serviceusage.services.use permission, by visiting https://console.developers.google.com/iam-admin/iam?project=cityflux-1adab and then retry. Propagation of the new permission may take a few minutes.",
+      "status": "PERMISSION_DENIED",
+      "details": [
+        {
+          "@type": "type.googleapis.com/google.rpc.ErrorInfo",
+          "reason": "USER_PROJECT_DENIED",
+          "domain": "googleapis.com",
+          "metadata": {
+            "containerInfo": "cityflux-1adab",
+            "consoleUrl": "https://console.developers.google.com/iam-admin/iam?project=cityflux-1adab",
+            "consumer": "projects/cityflux-1adab",
+            "service": "serviceusage.googleapis.com"
+          }
+        },
+        {
+          "@type": "type.googleapis.com/google.rpc.LocalizedMessage",
+          "locale": "en-US",
+          "message": "Caller does not have required permission to use project cityflux-1adab. Grant the caller the roles/serviceusage.serviceUsageConsumer role, or a custom role with the serviceusage.services.use permission, by visiting https://console.developers.google.com/iam-admin/iam?project=cityflux-1adab and then retry. Propagation of the new permission may take a few minutes."
+        },
+        {
+          "@type": "type.googleapis.com/google.rpc.Help",
+          "links": [
+            {
+              "description": "Google developer console IAM admin",
+              "url": "https://console.developers.google.com/iam-admin/iam?project=cityflux-1adab"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "response": {
+    "statusCode": 403
+  }
+}

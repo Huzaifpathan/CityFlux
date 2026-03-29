@@ -127,6 +127,10 @@ fun ParkingScreen(
     // ── Selected parking for detail popup ──
     var selectedSpot by remember { mutableStateOf<ParkingSpot?>(null) }
     
+    // ── Book Now Dialog State ──
+    var showBookNowDialog by remember { mutableStateOf(false) }
+    var bookNowSpot by remember { mutableStateOf<ParkingSpot?>(null) }
+    
     // ── Navigate target (for internal map navigation) ──
     var navigateToSpot by remember { mutableStateOf<ParkingSpot?>(null) }
     
@@ -768,6 +772,10 @@ fun ParkingScreen(
                                             }
                                         }
                                     },
+                                    onBookNow = {
+                                        bookNowSpot = spot
+                                        showBookNowDialog = true
+                                    },
                                     onClick = {
                                         try {
                                             Firebase.analytics.logEvent("parking_card_clicked", null)
@@ -936,6 +944,56 @@ fun ParkingScreen(
                 onDismiss = { showReportDialog = false }
             )
         }
+        
+        // ══════════════════════ Book Now Dialog ══════════════════════
+        if (showBookNowDialog && bookNowSpot != null) {
+            BookNowDialog(
+                parkingSpot = bookNowSpot!!,
+                userLocation = userLatLng?.let { 
+                    android.location.Location("user").apply {
+                        latitude = it.latitude
+                        longitude = it.longitude
+                    }
+                },
+                onDismiss = { 
+                    showBookNowDialog = false
+                    bookNowSpot = null
+                },
+                onBookingCreated = { bookingId ->
+                    showBookNowDialog = false
+                    bookNowSpot = null
+                    // Navigate to QR display or booking details
+                    try {
+                        Firebase.analytics.logEvent("booking_created", null)
+                    } catch (_: Exception) {}
+                },
+                onNavigateToParking = {
+                    bookNowSpot?.location?.let { geo ->
+                        // Start navigation to parking
+                        navigationTarget = bookNowSpot
+                        showBookNowDialog = false
+                        bookNowSpot = null
+                        isMapView = true
+                        isLoadingRoute = true
+                        
+                        coroutineScope.launch {
+                            userLatLng?.let { start ->
+                                val end = LatLng(geo.latitude, geo.longitude)
+                                val apiKey = getMapApiKey(context)
+                                val result = fetchDirectionsRoute(start, end, apiKey)
+                                routePoints = result.points
+                                routeDistanceKm = result.distanceKm
+                                routeDurationMin = result.durationMinutes
+                                navigationSteps = result.steps
+                                currentStepIndex = 0
+                                isNavigating = true
+                                isLoadingRoute = false
+                            }
+                        }
+                    }
+                }
+            )
+        }
     }
 }
 
@@ -991,6 +1049,7 @@ private fun ParkingCard(
     onToggleFavorite: () -> Unit,
     onToggleNotify: () -> Unit,
     onNavigate: () -> Unit,
+    onBookNow: () -> Unit,
     onClick: () -> Unit
 ) {
     val colors = MaterialTheme.cityFluxColors
@@ -1226,7 +1285,7 @@ private fun ParkingCard(
                 // Book Now button (Phase 4)
                 if (available > 0) {
                     Surface(
-                        onClick = onClick,
+                        onClick = onBookNow,
                         shape = RoundedCornerShape(CornerRadius.Round),
                         color = AccentParking.copy(alpha = 0.12f),
                         modifier = Modifier.weight(1f).height(30.dp)

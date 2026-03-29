@@ -167,6 +167,38 @@ service cloud.firestore {
     }
 
     // ═══════════════════════════════════════════════════════════
+    // 🎫 BOOKINGS COLLECTION (Parking Reservations)
+    // - Any authenticated user can create bookings (userId must match)
+    // - Users can read only their own bookings
+    // - Users can update only their own bookings (for cancellation, etc.)
+    // - Police/Admin can read all bookings
+    // - No one can delete bookings (maintain history)
+    // ═══════════════════════════════════════════════════════════
+    match /bookings/{bookingId} {
+      // Users can read their own bookings, Police/Admin can read all
+      allow read: if isAuthenticated() && (
+        resource.data.userId == request.auth.uid
+        || isPolice()
+        || isAdmin()
+      );
+
+      // Any authenticated user can create a booking (userId must match auth uid)
+      allow create: if isAuthenticated()
+        && request.resource.data.userId == request.auth.uid;
+
+      // Users can update their own bookings (cancel, extend, etc.)
+      // Police/Admin can also update any booking
+      allow update: if isAuthenticated() && (
+        resource.data.userId == request.auth.uid
+        || isPolice()
+        || isAdmin()
+      );
+
+      // No one can delete bookings (maintain booking history)
+      allow delete: if false;
+    }
+
+    // ═══════════════════════════════════════════════════════════
     // � PARKING VIOLATIONS COLLECTION
     // - Police can create violations (officerId must match auth uid)
     // - All authenticated users can read violations

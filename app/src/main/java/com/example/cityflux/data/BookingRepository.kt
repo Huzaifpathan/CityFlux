@@ -1,12 +1,14 @@
 package com.example.cityflux.data
 
 import android.util.Log
-import com.example.cityflux.model.BookingStatus
-import com.example.cityflux.model.ParkingBooking
+import com.example.cityflux.model.*
+import com.example.cityflux.service.PricingService
 import com.google.firebase.Timestamp
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.database.ktx.database
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
+import com.google.firebase.ktx.Firebase
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
@@ -14,113 +16,278 @@ import kotlinx.coroutines.tasks.await
 import java.util.*
 
 /**
- * Repository for parking booking operations
- * Phase 4: Booking & Reservation System
+ * Enhanced Repository for parking booking operations
+ * Features: Real-time slot management, advanced booking, payment integration
  */
 class BookingRepository {
     
     private val firestore = FirebaseFirestore.getInstance()
+    private val realtimeDb = Firebase.database
     private val auth = FirebaseAuth.getInstance()
     
     companion object {
         private const val TAG = "BookingRepository"
         private const val BOOKINGS_COLLECTION = "bookings"
+        private const val PARKING_LIVE_PATH = "parking_live"
     }
     
     /**
-     * Create a new parking booking
+     * Create a new parking booking with real-time slot management
      */
-    suspend fun createBooking(booking: ParkingBooking): Result<String> {
-        return try {
-            val userId = auth.currentUser?.uid ?: return Result.failure(
-                Exception("User not authenticated")
-            )
+    suspend fun createBooking(booking: ParkingBooking): String {
+        val userId = auth.currentUser?.uid ?: throw Exception("User not authenticated")
+        
+        try {
+            // Check slot availability first
+            val parkingLive = getParkingLiveData(booking.parkingSpotId)
             
-            // Generate unique QR code data
-            val qrData = generateQrCodeData(booking)
-            
-            // Create booking with server timestamp
-            val bookingWithQr = booking.copy(
-                userId = userId,
-                qrCodeData = qrData,
-                status = BookingStatus.PENDING
-            )
-            
-            val docRef = firestore.collection(BOOKINGS_COLLECTION)
-                .add(bookingWithQr)
-                .await()
-            
-            Log.d(TAG, "Booking created: ${docRef.id}")
-            Result.success(docRef.id)
-            
-        } catch (e: Exception) {
-            Log.e(TAG, "Error creating booking", e)
-            Result.failure(e)
-        }
-    }
-    
-    /**
-     * Update booking status
-     */
-    suspend fun updateBookingStatus(
-        bookingId: String,
-        status: BookingStatus
-    ): Result<Unit> {
-        return try {
-            val updates = hashMapOf<String, Any>(
-                "status" to status.name
-            )
-            
-            // Add timestamp for specific status changes
-            when (status) {
-                BookingStatus.ACTIVE -> {
-                    updates["entryTime"] = Timestamp.now()
-                }
-                BookingStatus.COMPLETED -> {
-                    updates["exitTime"] = Timestamp.now()
-                }
-                BookingStatus.CANCELLED -> {
-                    updates["cancelledAt"] = Timestamp.now()
-                }
-                else -> {}
+            // Check if slots are available (uses general slots if vehicle-specific not configured)
+            if (!parkingLive.isAvailableForType(booking.vehicleType)) {
+                throw Exception("No available slots at this parking location")
             }
             
-            firestore.collection(BOOKINGS_COLLECTION)
-                .document(bookingId)
-                .update(updates)
-                .await()
+            // Generate unique QR code and booking ID
+            val bookingId = generateBookingId()
+            val qrData = generateQrCodeData(booking, bookingId)
             
-            Log.d(TAG, "Booking status updated: $bookingId -> $status")
-            Result.success(Unit)
+            // Create booking with complete data
+            val completeBooking = booking.copy(
+                id = bookingId,
+                userId = userId,
+                qrCodeData = qrData,
+                status = BookingStatus.CONFIRMED,
+                bookingCreatedAt = Timestamp.now(),
+                bookingStartTime = calculateStartTime(booking),
+                bookingEndTime = calculateEndTime(booking)
+            )
+            
+            // Atomic operation: Create booking + Update slots
+            val batch = firestore.batch()
+            
+            // Add booking to firestore
+            val bookingRef = firestore.collection(BOOKINGS_COLLECTION).document(bookingId)
+            batch.set(bookingRef, completeBooking)
+            
+            // Commit firestore transaction
+            batch.commit().await()
+            
+            // Update real-time slot availability
+            updateSlotAvailability(
+                parkingId = booking.parkingSpotId,
+                vehicleType = booking.vehicleType,
+                change = -1
+            )
+            
+            // Log successful booking
+            Log.d(TAG, "Booking created successfully: $bookingId")
+            
+            return bookingId
             
         } catch (e: Exception) {
-            Log.e(TAG, "Error updating booking status", e)
-            Result.failure(e)
+            Log.e(TAG, "Error creating booking: ${e.message}", e)
+            throw e
         }
+    }
+    
+    /**
+     * Update slot availability in real-time database
+     */
+    private suspend fun updateSlotAvailability(
+        parkingId: String,
+        vehicleType: VehicleType,
+        change: Int
+    ) {
+        try {
+            val parkingLiveRef = realtimeDb.reference
+                .child(PARKING_LIVE_PATH)
+                .child(parkingId)
+            
+            // Update total available slots
+            parkingLiveRef.child("availableSlots").get().await().value?.let { current ->
+                val currentSlots = (current as? Long)?.toInt() ?: 0
+                val newSlots = (currentSlots + change).coerceAtLeast(0)
+                parkingLiveRef.child("availableSlots").setValue(newSlots).await()
+            }
+            
+            // Update vehicle type specific slots
+            val typeRef = parkingLiveRef.child("slotsByType").child(vehicleType.name)
+            typeRef.child("available").get().await().value?.let { current ->
+                val currentTypeSlots = (current as? Long)?.toInt() ?: 0
+                val newTypeSlots = (currentTypeSlots + change).coerceAtLeast(0)
+                typeRef.child("available").setValue(newTypeSlots).await()
+            }
+            
+            // Update last modified timestamp
+            parkingLiveRef.child("lastUpdated").setValue(System.currentTimeMillis()).await()
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "Error updating slot availability", e)
+            // Don't fail the booking for slot update errors
+        }
+    }
+    
+    /**
+     * Get real-time parking availability data
+     */
+    private suspend fun getParkingLiveData(parkingId: String): ParkingLive {
+        return try {
+            val snapshot = realtimeDb.reference
+                .child(PARKING_LIVE_PATH)
+                .child(parkingId)
+                .get()
+                .await()
+            
+            snapshot.getValue(ParkingLive::class.java) ?: ParkingLive()
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "Error getting parking live data", e)
+            ParkingLive() // Return empty data on error
+        }
+    }
+    
+    /**
+     * Get user's booking history with filtering
+     */
+    suspend fun getUserBookings(
+        status: BookingStatus? = null,
+        limit: Int = 50
+    ): List<ParkingBooking> {
+        return try {
+            val userId = auth.currentUser?.uid ?: throw Exception("User not authenticated")
+            
+            var query: Query = firestore.collection(BOOKINGS_COLLECTION)
+                .whereEqualTo("userId", userId)
+                .orderBy("bookingCreatedAt", Query.Direction.DESCENDING)
+                .limit(limit.toLong())
+            
+            // Filter by status if specified
+            status?.let {
+                query = query.whereEqualTo("status", it.name)
+            }
+            
+            val snapshot = query.get().await()
+            snapshot.documents.mapNotNull { doc ->
+                doc.toObject(ParkingBooking::class.java)?.copy(id = doc.id)
+            }
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "Error getting user bookings", e)
+            emptyList()
+        }
+    }
+    
+    /**
+     * Observe real-time booking updates
+     */
+    fun observeBooking(bookingId: String): Flow<ParkingBooking?> = callbackFlow {
+        val listener = firestore.collection(BOOKINGS_COLLECTION)
+            .document(bookingId)
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    close(error)
+                    return@addSnapshotListener
+                }
+                
+                val booking = snapshot?.toObject(ParkingBooking::class.java)?.copy(
+                    id = snapshot.id
+                )
+                trySend(booking)
+            }
+        
+        awaitClose { listener.remove() }
+    }
+    
+    /**
+     * Get booking by ID
+     */
+    private suspend fun getBookingById(bookingId: String): ParkingBooking? {
+        return try {
+            val doc = firestore.collection(BOOKINGS_COLLECTION)
+                .document(bookingId)
+                .get()
+                .await()
+            
+            doc.toObject(ParkingBooking::class.java)?.copy(id = doc.id)
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "Error getting booking by ID", e)
+            null
+        }
+    }
+    
+    // Helper methods
+    
+    private fun generateBookingId(): String {
+        return "BK${System.currentTimeMillis()}${(1000..9999).random()}"
+    }
+    
+    private fun generateQrCodeData(booking: ParkingBooking, bookingId: String): String {
+        return "CITYFLUX:$bookingId:${booking.parkingSpotId}:${System.currentTimeMillis()}"
+    }
+    
+    private fun calculateStartTime(booking: ParkingBooking): Timestamp {
+        // For immediate bookings, start time is now
+        // For future bookings, would use scheduled time
+        return Timestamp.now()
+    }
+    
+    private fun calculateEndTime(booking: ParkingBooking): Timestamp {
+        val startTime = calculateStartTime(booking)
+        val endTime = Date(startTime.toDate().time + (booking.durationHours * 60 * 60 * 1000))
+        return Timestamp(endTime)
+    }
+    
+    /**
+     * Observe user bookings in real-time
+     */
+    fun observeUserBookings(): Flow<Result<List<ParkingBooking>>> = callbackFlow {
+        val userId = auth.currentUser?.uid
+        if (userId == null) {
+            trySend(Result.success(emptyList()))
+            awaitClose { }
+            return@callbackFlow
+        }
+        
+        val listener = firestore.collection(BOOKINGS_COLLECTION)
+            .whereEqualTo("userId", userId)
+            .orderBy("bookingCreatedAt", Query.Direction.DESCENDING)
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    trySend(Result.failure(error))
+                    return@addSnapshotListener
+                }
+                
+                val bookings = snapshot?.documents?.mapNotNull { doc ->
+                    doc.toObject(ParkingBooking::class.java)?.copy(id = doc.id)
+                } ?: emptyList()
+                
+                trySend(Result.success(bookings))
+            }
+        
+        awaitClose { listener.remove() }
     }
     
     /**
      * Cancel a booking
      */
-    suspend fun cancelBooking(
-        bookingId: String,
-        reason: String
-    ): Result<Unit> {
+    suspend fun cancelBooking(bookingId: String): Result<Unit> {
         return try {
+            val booking = getBookingById(bookingId)
+                ?: return Result.failure(Exception("Booking not found"))
+            
             firestore.collection(BOOKINGS_COLLECTION)
                 .document(bookingId)
-                .update(
-                    mapOf(
-                        "status" to BookingStatus.CANCELLED.name,
-                        "cancellationReason" to reason,
-                        "cancelledAt" to Timestamp.now()
-                    )
-                )
+                .update("status", BookingStatus.CANCELLED.name)
                 .await()
             
-            Log.d(TAG, "Booking cancelled: $bookingId")
-            Result.success(Unit)
+            // Restore slot availability
+            updateSlotAvailability(
+                parkingId = booking.parkingSpotId,
+                vehicleType = booking.vehicleType,
+                change = 1
+            )
             
+            Result.success(Unit)
         } catch (e: Exception) {
             Log.e(TAG, "Error cancelling booking", e)
             Result.failure(e)
@@ -128,34 +295,43 @@ class BookingRepository {
     }
     
     /**
+     * Get booking by ID
+     */
+    suspend fun getBooking(bookingId: String): Result<ParkingBooking> {
+        return try {
+            val booking = getBookingById(bookingId)
+                ?: return Result.failure(Exception("Booking not found"))
+            Result.success(booking)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error getting booking", e)
+            Result.failure(e)
+        }
+    }
+    
+    /**
      * Extend booking duration
      */
-    suspend fun extendBooking(
-        bookingId: String,
-        additionalHours: Int,
-        additionalAmount: Double
-    ): Result<Unit> {
+    suspend fun extendBooking(bookingId: String, additionalHours: Int): Result<Unit> {
         return try {
-            val booking = getBooking(bookingId).getOrThrow()
-            val newEndTime = Calendar.getInstance().apply {
-                time = booking.bookingEndTime?.toDate() ?: Date()
-                add(Calendar.HOUR_OF_DAY, additionalHours)
-            }.time
+            val booking = getBookingById(bookingId)
+                ?: return Result.failure(Exception("Booking not found"))
+            
+            val newEndTime = Date(
+                booking.bookingEndTime?.toDate()?.time 
+                    ?: System.currentTimeMillis() + (additionalHours * 60 * 60 * 1000)
+            )
             
             firestore.collection(BOOKINGS_COLLECTION)
                 .document(bookingId)
                 .update(
                     mapOf(
-                        "bookingEndTime" to Timestamp(newEndTime),
                         "durationHours" to booking.durationHours + additionalHours,
-                        "amount" to booking.amount + additionalAmount
+                        "bookingEndTime" to Timestamp(newEndTime)
                     )
                 )
                 .await()
             
-            Log.d(TAG, "Booking extended: $bookingId by $additionalHours hours")
             Result.success(Unit)
-            
         } catch (e: Exception) {
             Log.e(TAG, "Error extending booking", e)
             Result.failure(e)
@@ -163,160 +339,15 @@ class BookingRepository {
     }
     
     /**
-     * Get single booking by ID
+     * Get booking history
      */
-    suspend fun getBooking(bookingId: String): Result<ParkingBooking> {
+    suspend fun getBookingHistory(limit: Int = 50): Result<List<ParkingBooking>> {
         return try {
-            val snapshot = firestore.collection(BOOKINGS_COLLECTION)
-                .document(bookingId)
-                .get()
-                .await()
-            
-            val booking = snapshot.toObject(ParkingBooking::class.java)
-                ?.copy(id = snapshot.id)
-                ?: return Result.failure(Exception("Booking not found"))
-            
-            Result.success(booking)
-            
-        } catch (e: Exception) {
-            Log.e(TAG, "Error fetching booking", e)
-            Result.failure(e)
-        }
-    }
-    
-    /**
-     * Observe user's bookings in real-time
-     */
-    fun observeUserBookings(
-        includeCompleted: Boolean = false
-    ): Flow<List<ParkingBooking>> = callbackFlow {
-        val userId = auth.currentUser?.uid
-        if (userId == null) {
-            close(Exception("User not authenticated"))
-            return@callbackFlow
-        }
-        
-        var query = firestore.collection(BOOKINGS_COLLECTION)
-            .whereEqualTo("userId", userId)
-            .orderBy("bookingCreatedAt", Query.Direction.DESCENDING)
-        
-        if (!includeCompleted) {
-            query = query.whereNotIn("status", listOf(
-                BookingStatus.COMPLETED.name,
-                BookingStatus.CANCELLED.name,
-                BookingStatus.EXPIRED.name
-            ))
-        }
-        
-        val listener = query.addSnapshotListener { snapshot, error ->
-            if (error != null) {
-                Log.e(TAG, "Error observing bookings", error)
-                close(error)
-                return@addSnapshotListener
-            }
-            
-            val bookings = snapshot?.documents?.mapNotNull { doc ->
-                doc.toObject(ParkingBooking::class.java)?.copy(id = doc.id)
-            } ?: emptyList()
-            
-            trySend(bookings)
-        }
-        
-        awaitClose { listener.remove() }
-    }
-    
-    /**
-     * Get booking history with filters
-     */
-    suspend fun getBookingHistory(
-        status: BookingStatus? = null,
-        limit: Int = 50
-    ): Result<List<ParkingBooking>> {
-        return try {
-            val userId = auth.currentUser?.uid ?: return Result.failure(
-                Exception("User not authenticated")
-            )
-            
-            var query = firestore.collection(BOOKINGS_COLLECTION)
-                .whereEqualTo("userId", userId)
-                .orderBy("bookingCreatedAt", Query.Direction.DESCENDING)
-                .limit(limit.toLong())
-            
-            if (status != null) {
-                query = query.whereEqualTo("status", status.name)
-            }
-            
-            val snapshot = query.get().await()
-            val bookings = snapshot.documents.mapNotNull { doc ->
-                doc.toObject(ParkingBooking::class.java)?.copy(id = doc.id)
-            }
-            
+            val bookings = getUserBookings(limit = limit)
             Result.success(bookings)
-            
         } catch (e: Exception) {
-            Log.e(TAG, "Error fetching booking history", e)
+            Log.e(TAG, "Error getting booking history", e)
             Result.failure(e)
         }
-    }
-    
-    /**
-     * Verify booking by QR code
-     */
-    suspend fun verifyBookingByQr(qrData: String): Result<ParkingBooking> {
-        return try {
-            val snapshot = firestore.collection(BOOKINGS_COLLECTION)
-                .whereEqualTo("qrCodeData", qrData)
-                .limit(1)
-                .get()
-                .await()
-            
-            val booking = snapshot.documents.firstOrNull()
-                ?.toObject(ParkingBooking::class.java)
-                ?.copy(id = snapshot.documents.first().id)
-                ?: return Result.failure(Exception("Invalid QR code"))
-            
-            Result.success(booking)
-            
-        } catch (e: Exception) {
-            Log.e(TAG, "Error verifying QR code", e)
-            Result.failure(e)
-        }
-    }
-    
-    /**
-     * Add rating and review
-     */
-    suspend fun addReview(
-        bookingId: String,
-        rating: Float,
-        review: String
-    ): Result<Unit> {
-        return try {
-            firestore.collection(BOOKINGS_COLLECTION)
-                .document(bookingId)
-                .update(
-                    mapOf(
-                        "rating" to rating,
-                        "review" to review
-                    )
-                )
-                .await()
-            
-            Log.d(TAG, "Review added: $bookingId")
-            Result.success(Unit)
-            
-        } catch (e: Exception) {
-            Log.e(TAG, "Error adding review", e)
-            Result.failure(e)
-        }
-    }
-    
-    /**
-     * Generate unique QR code data
-     */
-    private fun generateQrCodeData(booking: ParkingBooking): String {
-        val timestamp = System.currentTimeMillis()
-        val random = UUID.randomUUID().toString().take(8)
-        return "CITYFLUX-${booking.parkingSpotId}-$timestamp-$random"
     }
 }

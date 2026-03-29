@@ -66,21 +66,25 @@ class BookingViewModel : ViewModel() {
     
     private fun observeBookings() {
         viewModelScope.launch {
-            repository.observeUserBookings(includeCompleted = false)
-                .catch { e ->
+            repository.observeUserBookings()
+                .catch { e: Throwable ->
                     Log.e(TAG, "Error observing bookings", e)
                     _uiState.update { it.copy(error = "Failed to load bookings") }
                 }
-                .collect { bookings ->
-                    val active = bookings.filter { booking -> booking.status.isActive() }
-                    val past = bookings.filter { booking -> !booking.status.isActive() }
-                    
-                    _uiState.update {
-                        it.copy(
-                            activeBookings = active,
-                            pastBookings = past,
-                            isLoading = false
-                        )
+                .collect { result: Result<List<ParkingBooking>> ->
+                    result.onSuccess { bookings: List<ParkingBooking> ->
+                        val active = bookings.filter { booking -> booking.status.isActive() }
+                        val past = bookings.filter { booking -> !booking.status.isActive() }
+                        
+                        _uiState.update {
+                            it.copy(
+                                activeBookings = active,
+                                pastBookings = past,
+                                isLoading = false
+                            )
+                        }
+                    }.onFailure { e: Throwable ->
+                        _uiState.update { it.copy(error = e.message ?: "Unknown error") }
                     }
                 }
         }
@@ -137,26 +141,25 @@ class BookingViewModel : ViewModel() {
                 status = BookingStatus.PENDING
             )
             
-            repository.createBooking(booking)
-                .onSuccess { bookingId ->
-                    Log.d(TAG, "Booking created successfully: $bookingId")
-                    _uiState.update {
-                        it.copy(
-                            isLoading = false,
-                            successMessage = "Booking created! ID: $bookingId"
-                        )
-                    }
-                    resetForm()
+            try {
+                val bookingId = repository.createBooking(booking)
+                Log.d(TAG, "Booking created successfully: $bookingId")
+                _uiState.update {
+                    it.copy(
+                        isLoading = false,
+                        successMessage = "Booking created! ID: $bookingId"
+                    )
                 }
-                .onFailure { e ->
-                    Log.e(TAG, "Failed to create booking", e)
-                    _uiState.update {
-                        it.copy(
-                            isLoading = false,
-                            error = e.message ?: "Failed to create booking"
-                        )
-                    }
+                resetForm()
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to create booking", e)
+                _uiState.update {
+                    it.copy(
+                        isLoading = false,
+                        error = e.message ?: "Failed to create booking"
+                    )
                 }
+            }
         }
     }
     
@@ -168,7 +171,7 @@ class BookingViewModel : ViewModel() {
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true, error = null) }
             
-            repository.cancelBooking(bookingId, reason)
+            repository.cancelBooking(bookingId)
                 .onSuccess {
                     Log.d(TAG, "Booking cancelled: $bookingId")
                     _uiState.update {
@@ -178,7 +181,7 @@ class BookingViewModel : ViewModel() {
                         )
                     }
                 }
-                .onFailure { e ->
+                .onFailure { e: Throwable ->
                     Log.e(TAG, "Failed to cancel booking", e)
                     _uiState.update {
                         it.copy(
@@ -200,7 +203,7 @@ class BookingViewModel : ViewModel() {
             
             // Get current booking to determine vehicle type
             repository.getBooking(bookingId)
-                .onSuccess { booking ->
+                .onSuccess { booking: ParkingBooking ->
                     val pricing = PricingService.calculateParkingFee(
                         vehicleType = booking.vehicleType,
                         durationHours = additionalHours
@@ -208,8 +211,7 @@ class BookingViewModel : ViewModel() {
                     
                     repository.extendBooking(
                         bookingId = bookingId,
-                        additionalHours = additionalHours,
-                        additionalAmount = pricing.totalAmount
+                        additionalHours = additionalHours
                     )
                         .onSuccess {
                             Log.d(TAG, "Booking extended: $bookingId")
@@ -220,7 +222,7 @@ class BookingViewModel : ViewModel() {
                                 )
                             }
                         }
-                        .onFailure { e ->
+                        .onFailure { e: Throwable ->
                             _uiState.update {
                                 it.copy(
                                     isLoading = false,
@@ -229,7 +231,7 @@ class BookingViewModel : ViewModel() {
                             }
                         }
                 }
-                .onFailure { e ->
+                .onFailure { e: Throwable ->
                     _uiState.update {
                         it.copy(
                             isLoading = false,
@@ -301,10 +303,10 @@ class BookingViewModel : ViewModel() {
     fun loadBookingHistory() {
         viewModelScope.launch {
             repository.getBookingHistory()
-                .onSuccess { bookings ->
+                .onSuccess { bookings: List<ParkingBooking> ->
                     _uiState.update { it.copy(pastBookings = bookings) }
                 }
-                .onFailure { e ->
+                .onFailure { e: Throwable ->
                     Log.e(TAG, "Failed to load history", e)
                 }
         }
