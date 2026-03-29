@@ -135,12 +135,12 @@ fun MapScreen(
         } catch (_: Exception) { /* graceful fallback */ }
     }
 
-    // ── Camera / Map State — always opens on Solapur city ──
-    val solapurCity = LatLng(17.6599, 75.9064) // Solapur, Maharashtra
-    val defaultLocation = solapurCity
+    // ── Camera / Map State — always opens on Aurangabad (Chhatrapati Sambhajinagar) city ──
+    val aurangabadCity = LatLng(19.8762, 75.3433) // Aurangabad (Chhatrapati Sambhajinagar), Maharashtra
+    val defaultLocation = aurangabadCity
     val cameraPositionState = rememberCameraPositionState {
-        // Zoom 12 shows the full Solapur city within city boundaries
-        position = CameraPosition.fromLatLngZoom(solapurCity, 12f)
+        // Zoom 12 shows the full Aurangabad city within city boundaries
+        position = CameraPosition.fromLatLngZoom(aurangabadCity, 12f)
     }
 
     // ── Map Type Toggle ──

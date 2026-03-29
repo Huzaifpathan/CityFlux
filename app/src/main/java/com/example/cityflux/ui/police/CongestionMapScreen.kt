@@ -50,7 +50,7 @@ import com.example.cityflux.model.LocationUtils
 import com.example.cityflux.model.ParkingLive
 import com.example.cityflux.model.ParkingSpot
 import com.example.cityflux.model.Report
-import com.example.cityflux.model.SolapurDummyData
+import com.example.cityflux.model.AurangabadDummyData
 import com.example.cityflux.model.TrafficStatus
 import com.example.cityflux.ui.theme.*
 import com.google.android.gms.location.LocationServices
@@ -105,8 +105,8 @@ class CongestionMapViewModel : ViewModel() {
     private var policeLat = 0.0
     private var policeLon = 0.0
 
-    // ── Dummy Solapur live users (refreshed every 60s to stay "alive") ──
-    private val _dummyLocations = MutableStateFlow(SolapurDummyData.dummy50Users)
+    // ── Dummy Aurangabad live users (refreshed every 60s to stay "alive") ──
+    private val _dummyLocations = MutableStateFlow(AurangabadDummyData.dummyUsers)
 
     init {
         observeTraffic()
@@ -271,12 +271,12 @@ fun CongestionMapScreen(
         } catch (_: Exception) {}
     }
 
-    // ── Camera State — always opens on Solapur city ──
-    val solapurCity = LatLng(17.6599, 75.9064) // Solapur, Maharashtra
-    val defaultLocation = solapurCity
+    // ── Camera State — always opens on Aurangabad city ──
+    val aurangabadCity = LatLng(19.8762, 75.3433) // Aurangabad (Chhatrapati Sambhajinagar), Maharashtra
+    val defaultLocation = aurangabadCity
     val cameraPositionState = rememberCameraPositionState {
-        // Zoom 12 shows the full Solapur city within city boundaries
-        position = CameraPosition.fromLatLngZoom(solapurCity, 12f)
+        // Zoom 12 shows the full Aurangabad city within city boundaries
+        position = CameraPosition.fromLatLngZoom(aurangabadCity, 12f)
     }
 
     // ── Map Properties ──
