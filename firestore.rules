@@ -1,3 +1,32 @@
+
+    // ═══════════════════════════════════════════════════════════
+    // 🔔 BOOKING NOTIFICATIONS COLLECTION
+    // - Users can read their own notifications
+    // - Users can create their own notifications (auto-generated)
+    // - Users can update only isRead field of their notifications
+    // - Users can delete their own notifications
+    // ═══════════════════════════════════════════════════════════
+    match /booking_notifications/{notificationId} {
+      // Users can read their own notifications
+      allow read: if isAuthenticated()
+        && resource.data.userId == request.auth.uid;
+      
+      // Users can create their own notifications (userId must match)
+      allow create: if isAuthenticated()
+        && request.resource.data.userId == request.auth.uid;
+      
+      // Users can update only isRead field of their own notifications
+      allow update: if isAuthenticated()
+        && resource.data.userId == request.auth.uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isRead']);
+      
+      // Users can delete their own notifications
+      allow delete: if isAuthenticated()
+        && resource.data.userId == request.auth.uid;
+      
+      // Admin can read all notifications
+      allow read: if isAdmin();
+    }
 rules_version = '2';
 
 service cloud.firestore {

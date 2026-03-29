@@ -33,9 +33,17 @@ data class ParkingBooking(
     
     // Status & Payment
     val status: BookingStatus = BookingStatus.PENDING,
+    val paymentStatus: PaymentStatus = PaymentStatus.PENDING,
     val amount: Double = 0.0,
+    val totalAmount: Double = 0.0,
+    val baseAmount: Double = 0.0,
+    val gstAmount: Double = 0.0,
+    val discountAmount: Double = 0.0,
     val isPaid: Boolean = false,
     val paymentId: String? = null,
+    val paymentMethod: String? = null,
+    val paymentTimestamp: Timestamp? = null,
+    val transactionId: String? = null,
     
     // QR Code & Verification
     val qrCodeData: String = "",
@@ -54,14 +62,28 @@ data class ParkingBooking(
 /**
  * Booking status enum
  */
-enum class BookingStatus {
-    PENDING,        // Just created, not yet paid
-    CONFIRMED,      // Payment successful, waiting for entry
-    ACTIVE,         // Vehicle has entered
-    COMPLETED,      // Vehicle has exited
-    CANCELLED,      // Cancelled by user
-    EXPIRED,        // Booking time expired without entry
-    NO_SHOW         // User didn't show up
+enum class BookingStatus(val displayName: String) {
+    PENDING("Pending"),           // Just created, not yet paid
+    CONFIRMED("Confirmed"),       // Payment successful, waiting for entry
+    ACTIVE("Active"),             // Vehicle has entered
+    ENDING_SOON("Ending Soon"),   // Less than 30 min remaining
+    COMPLETED("Completed"),       // Vehicle has exited
+    CANCELLED("Cancelled"),       // Cancelled by user
+    EXPIRED("Expired"),           // Booking time expired without entry
+    NO_SHOW("No Show"),           // User didn't show up
+    REFUNDED("Refunded")          // Money refunded
+}
+
+/**
+ * Payment status enum
+ */
+enum class PaymentStatus(val displayName: String) {
+    PENDING("Pending"),
+    PROCESSING("Processing"),
+    COMPLETED("Completed"),
+    FAILED("Failed"),
+    REFUND_INITIATED("Refund Initiated"),
+    REFUNDED("Refunded")
 }
 
 /**

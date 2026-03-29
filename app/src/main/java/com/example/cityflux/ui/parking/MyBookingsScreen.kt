@@ -434,6 +434,16 @@ private fun BookingStatusBadge(
             AccentRed,
             "No Show"
         )
+        BookingStatus.ENDING_SOON -> Triple(
+            AccentOrange.copy(alpha = 0.1f),
+            AccentOrange,
+            "Ending Soon"
+        )
+        BookingStatus.REFUNDED -> Triple(
+            PrimaryBlue.copy(alpha = 0.1f),
+            PrimaryBlue,
+            "Refunded"
+        )
     }
     
     Surface(

@@ -3,8 +3,10 @@ package com.example.cityflux.ui.parking
 import android.location.Location
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.cityflux.data.BookingNotificationRepository
 import com.example.cityflux.data.BookingRepository
 import com.example.cityflux.model.*
+import com.example.cityflux.service.PricingBreakdown
 import com.example.cityflux.service.PricingService
 import com.google.firebase.database.ktx.database
 import com.google.firebase.ktx.Firebase
@@ -18,7 +20,8 @@ import kotlin.math.roundToInt
  * real-time slot tracking, and instant booking
  */
 class BookNowViewModel(
-    private val bookingRepository: BookingRepository = BookingRepository()
+    private val bookingRepository: BookingRepository = BookingRepository(),
+    private val notificationRepository: BookingNotificationRepository = BookingNotificationRepository()
 ) : ViewModel() {
     
     private val _dialogState = MutableStateFlow(BookNowDialogState())
@@ -247,9 +250,15 @@ class BookNowViewModel(
      */
     fun createBooking() {
         val form = _bookingForm.value
+        val pricing = _uiState.value.pricingBreakdown
         
         if (form.vehicleNumber.isBlank()) {
             _uiState.value = _uiState.value.copy(error = "Please enter vehicle number")
+            return
+        }
+        
+        if (pricing == null) {
+            _uiState.value = _uiState.value.copy(error = "Pricing information not available")
             return
         }
         
@@ -263,7 +272,12 @@ class BookNowViewModel(
                     throw Exception("No slots available. Please try another parking spot.")
                 }
                 
-                // Create booking
+                // Calculate booking times
+                val startTime = com.google.firebase.Timestamp.now()
+                val endTimeMillis = System.currentTimeMillis() + (form.durationHours * 3600 * 1000)
+                val endTime = com.google.firebase.Timestamp(endTimeMillis / 1000, 0)
+                
+                // Create booking with all details
                 val booking = ParkingBooking(
                     parkingSpotId = form.parkingSpotId,
                     parkingSpotName = form.parkingSpotName,
@@ -271,20 +285,37 @@ class BookNowViewModel(
                     vehicleNumber = form.vehicleNumber,
                     vehicleType = form.vehicleType,
                     durationHours = form.durationHours,
+                    bookingStartTime = startTime,
+                    bookingEndTime = endTime,
                     status = BookingStatus.CONFIRMED,
+                    paymentStatus = PaymentStatus.COMPLETED,
+                    baseAmount = pricing.baseAmount,
+                    gstAmount = pricing.gst,
+                    totalAmount = pricing.totalAmount,
+                    amount = pricing.totalAmount,
+                    isPaid = true,
+                    paymentMethod = form.paymentMethod.name,
+                    paymentTimestamp = com.google.firebase.Timestamp.now(),
                     notes = form.notes
                 )
                 
+                // Create booking in Firestore
                 val bookingId = bookingRepository.createBooking(booking)
+                
+                // Update booking with generated ID
+                val confirmedBooking = booking.copy(id = bookingId)
+                
+                // Create booking notification
+                notificationRepository.createBookingConfirmedNotification(confirmedBooking)
                 
                 // Update slot availability in real-time
                 updateSlotAvailability(form.parkingSpotId, -1)
                 
-                // Move to confirmation step
-                _dialogState.value = _dialogState.value.copy(currentStep = BookingStep.CONFIRMATION)
+                // Show success dialog
                 _uiState.value = _uiState.value.copy(
                     isLoading = false,
-                    successMessage = bookingId
+                    showSuccessDialog = true,
+                    successBooking = confirmedBooking
                 )
                 
             } catch (e: Exception) {
@@ -326,6 +357,21 @@ class BookNowViewModel(
     fun clearMessages() {
         _uiState.value = _uiState.value.copy(error = null, successMessage = null)
     }
+    
+    /**
+     * Dismiss success dialog
+     */
+    fun dismissSuccessDialog() {
+        _uiState.value = _uiState.value.copy(showSuccessDialog = false, successBooking = null)
+        resetDialog()
+    }
+    
+    /**
+     * Update pricing breakdown when duration changes
+     */
+    fun updatePricing(pricing: PricingBreakdown) {
+        _uiState.value = _uiState.value.copy(pricingBreakdown = pricing)
+    }
 }
 
 /**
@@ -357,7 +403,10 @@ data class BookingFormState(
 data class BookNowUiState(
     val isLoading: Boolean = false,
     val error: String? = null,
-    val successMessage: String? = null
+    val successMessage: String? = null,
+    val pricingBreakdown: PricingBreakdown? = null,
+    val showSuccessDialog: Boolean = false,
+    val successBooking: ParkingBooking? = null
 )
 
 /**
