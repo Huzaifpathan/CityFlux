@@ -8,7 +8,7 @@ import com.example.cityflux.model.LiveUserLocation
 import com.example.cityflux.model.ParkingLive
 import com.example.cityflux.model.ParkingSpot
 import com.example.cityflux.model.Report
-import com.example.cityflux.model.SolapurDummyData
+import com.example.cityflux.model.AurangabadDummyData
 import com.example.cityflux.model.TrafficStatus
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
@@ -49,8 +49,8 @@ class MapViewModel : ViewModel() {
     private val firestore = FirebaseFirestore.getInstance()
     private val currentUserId = FirebaseAuth.getInstance().currentUser?.uid ?: ""
 
-    // ── Dummy Solapur live users (refreshed every 60s to stay "alive") ──
-    private val _dummyLocations = MutableStateFlow(SolapurDummyData.dummy50Users)
+    // ── Dummy Aurangabad live users (refreshed every 60s to stay "alive") ──
+    private val _dummyLocations = MutableStateFlow(AurangabadDummyData.dummyUsers)
 
     init {
         observeTraffic()

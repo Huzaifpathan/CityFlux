@@ -1,13 +1,13 @@
 package com.example.cityflux.model
 
 /**
- * Dummy live user locations on real Solapur city roads.
+ * Dummy live user locations on real Aurangabad (Chhatrapati Sambhajinagar) city roads.
  * Used to demonstrate live citizen tracking on map screens.
- * 50 users spread across major Solapur roads/areas.
+ * 60 users spread across major Aurangabad roads/areas.
  */
-object SolapurDummyData {
+object AurangabadDummyData {
 
-    // Solapur Marathi names for dummy users
+    // Marathi names for dummy users
     private val dummyNames = listOf(
         "Rahul Jadhav", "Priya Kulkarni", "Amit Shinde", "Sunita Patil", "Ravi Deshpande",
         "Meena Gaikwad", "Vijay Chavan", "Kavita More", "Suresh Pawar", "Anjali Bhosle",
@@ -18,89 +18,105 @@ object SolapurDummyData {
         "Tushar Kachare", "Manisha Raut", "Kiran Aher", "Sunanda Inamdar", "Ashok Kakade",
         "Neha Magar", "Vikram Sathe", "Sarika Pol", "Prasad Nalawade", "Shobha Tupe",
         "Manoj Gade", "Poonam Dhamal", "Rakesh Dandge", "Alka Hankare", "Sunil Sanas",
-        "Geeta Bhalerao", "Hemant Ghuge", "Rupali Bhusare", "Dilip Kshirsagar", "Usha Bagi"
+        "Geeta Bhalerao", "Hemant Ghuge", "Rupali Bhusare", "Dilip Kshirsagar", "Usha Bagi",
+        "Rajesh Thombre", "Sneha Wagh", "Vinod Chaudhari", "Anita Khandale", "Prakash Dhage",
+        "Shilpa Pardeshi", "Mohan Shirsat", "Jyoti Navale", "Arun Pande", "Kaveri Joshi"
     )
 
     /**
-     * 50 dummy live users positioned on major Solapur city roads.
-     * Coordinates are on real Solapur roads: Pune-Hyderabad Highway,
-     * Station Road, Hotgi Road, Akkalkot Road, Vijaypur Road, etc.
+     * 60 dummy live users positioned on major Aurangabad (Chhatrapati Sambhajinagar) city roads.
+     * Coordinates are on real Aurangabad roads: Jalna Road, Station Road, 
+     * Kranti Chowk, CIDCO, Waluj, Cambridge Road, etc.
      */
-    val dummy50Users: Map<String, LiveUserLocation> = buildMap {
+    val dummyUsers: Map<String, LiveUserLocation> = buildMap {
 
-        // Data: (lat, lng, speed, heading, nameIndex)
+        // Data: (lat, lng, speed, heading)
         val roadUsers = listOf(
-            // ── Pune-Hyderabad Highway (NH-65) ──
-            Triple(17.7023, 75.9101, 55 to 90.0),   // user_001
-            Triple(17.6980, 75.9150, 48 to 92.0),   // user_002
-            Triple(17.6955, 75.9180, 60 to 88.0),   // user_003
-            Triple(17.6912, 75.9220, 52 to 270.0),  // user_004 (returning)
-            Triple(17.6876, 75.9260, 45 to 270.0),  // user_005
+            // ── Jalna Road (Main Highway) ──
+            Triple(19.8762, 75.3433, 55 to 90.0),   // user_001
+            Triple(19.8780, 75.3510, 48 to 92.0),   // user_002
+            Triple(19.8795, 75.3580, 60 to 88.0),   // user_003
+            Triple(19.8810, 75.3650, 52 to 270.0),  // user_004 (returning)
+            Triple(19.8825, 75.3720, 45 to 270.0),  // user_005
 
-            // ── Station Road / MG Road ──
-            Triple(17.6745, 75.9008, 18 to 180.0),  // user_006
-            Triple(17.6710, 75.9012, 12 to 0.0),    // user_007
-            Triple(17.6680, 75.9018, 20 to 180.0),  // user_008
-            Triple(17.6655, 75.9025, 15 to 180.0),  // user_009
-            Triple(17.6625, 75.9030, 22 to 0.0),    // user_010
+            // ── Station Road / Railway Station Area ──
+            Triple(19.8685, 75.3205, 18 to 180.0),  // user_006
+            Triple(19.8670, 75.3220, 12 to 0.0),    // user_007
+            Triple(19.8655, 75.3235, 20 to 180.0),  // user_008
+            Triple(19.8640, 75.3250, 15 to 180.0),  // user_009
+            Triple(19.8625, 75.3265, 22 to 0.0),    // user_010
 
-            // ── Hotgi Road ──
-            Triple(17.6560, 75.9145, 35 to 315.0),  // user_011
-            Triple(17.6520, 75.9200, 40 to 315.0),  // user_012
-            Triple(17.6490, 75.9250, 30 to 135.0),  // user_013
-            Triple(17.6460, 75.9300, 38 to 135.0),  // user_014
-            Triple(17.6435, 75.9345, 42 to 315.0),  // user_015
+            // ── Kranti Chowk / City Center ──
+            Triple(19.8765, 75.3280, 10 to 90.0),   // user_011
+            Triple(19.8758, 75.3295, 8  to 180.0),  // user_012
+            Triple(19.8750, 75.3310, 12 to 0.0),    // user_013
+            Triple(19.8742, 75.3325, 15 to 270.0),  // user_014
+            Triple(19.8735, 75.3340, 6  to 90.0),   // user_015
 
-            // ── Akkalkot Road ──
-            Triple(17.6620, 75.8950, 28 to 225.0),  // user_016
-            Triple(17.6580, 75.8890, 32 to 225.0),  // user_017
-            Triple(17.6545, 75.8840, 25 to 45.0),   // user_018
-            Triple(17.6510, 75.8790, 36 to 225.0),  // user_019
-            Triple(17.6475, 75.8745, 20 to 45.0),   // user_020
+            // ── CIDCO N1 to N10 ──
+            Triple(19.8450, 75.3100, 35 to 315.0),  // user_016
+            Triple(19.8420, 75.3150, 40 to 315.0),  // user_017
+            Triple(19.8390, 75.3200, 30 to 135.0),  // user_018
+            Triple(19.8360, 75.3250, 38 to 135.0),  // user_019
+            Triple(19.8330, 75.3300, 42 to 315.0),  // user_020
 
-            // ── Vijaypur Road ──
-            Triple(17.6820, 75.8780, 50 to 315.0),  // user_021
-            Triple(17.6780, 75.8730, 45 to 315.0),  // user_022
-            Triple(17.6750, 75.8685, 38 to 135.0),  // user_023
-            Triple(17.6715, 75.8645, 42 to 135.0),  // user_024
-            Triple(17.6685, 75.8610, 30 to 315.0),  // user_025
+            // ── Waluj MIDC Industrial Area ──
+            Triple(19.8200, 75.2800, 50 to 270.0),  // user_021
+            Triple(19.8180, 75.2750, 45 to 270.0),  // user_022
+            Triple(19.8160, 75.2700, 38 to 90.0),   // user_023
+            Triple(19.8140, 75.2650, 42 to 90.0),   // user_024
+            Triple(19.8120, 75.2600, 30 to 270.0),  // user_025
 
-            // ── Solapur Ring Road / Bypass ──
-            Triple(17.7100, 75.8950, 65 to 90.0),   // user_026
-            Triple(17.7095, 75.9050, 70 to 90.0),   // user_027
-            Triple(17.7090, 75.9150, 68 to 270.0),  // user_028
-            Triple(17.7085, 75.9250, 60 to 270.0),  // user_029
-            Triple(17.7080, 75.9350, 72 to 90.0),   // user_030
+            // ── Cambridge Road / Cantonment ──
+            Triple(19.8550, 75.3050, 28 to 225.0),  // user_026
+            Triple(19.8520, 75.3000, 32 to 225.0),  // user_027
+            Triple(19.8490, 75.2950, 25 to 45.0),   // user_028
+            Triple(19.8460, 75.2900, 36 to 225.0),  // user_029
+            Triple(19.8430, 75.2850, 20 to 45.0),   // user_030
 
-            // ── Bijapur Road ──
-            Triple(17.6890, 75.8650, 40 to 270.0),  // user_031
-            Triple(17.6900, 75.8580, 35 to 270.0),  // user_032
-            Triple(17.6910, 75.8510, 45 to 90.0),   // user_033
-            Triple(17.6920, 75.8440, 38 to 90.0),   // user_034
-            Triple(17.6930, 75.8370, 30 to 270.0),  // user_035
+            // ── Paithan Road ──
+            Triple(19.8900, 75.3100, 55 to 180.0),  // user_031
+            Triple(19.8850, 75.3080, 50 to 180.0),  // user_032
+            Triple(19.8800, 75.3060, 45 to 0.0),    // user_033
+            Triple(19.8750, 75.3040, 52 to 0.0),    // user_034
+            Triple(19.8700, 75.3020, 48 to 180.0),  // user_035
 
-            // ── Siddheshwar Temple Road / City Center ──
-            Triple(17.6712, 75.9080, 10 to 90.0),   // user_036
-            Triple(17.6718, 75.9110, 8  to 180.0),  // user_037
-            Triple(17.6725, 75.9140, 12 to 0.0),    // user_038
-            Triple(17.6730, 75.9170, 15 to 270.0),  // user_039
-            Triple(17.6738, 75.9200, 6  to 90.0),   // user_040
+            // ── Beed Bypass Road ──
+            Triple(19.8600, 75.3600, 65 to 90.0),   // user_036
+            Triple(19.8610, 75.3700, 70 to 90.0),   // user_037
+            Triple(19.8620, 75.3800, 68 to 270.0),  // user_038
+            Triple(19.8630, 75.3900, 60 to 270.0),  // user_039
+            Triple(19.8640, 75.4000, 72 to 90.0),   // user_040
 
-            // ── Mangalwedha Road ──
-            Triple(17.6350, 75.9150, 55 to 180.0),  // user_041
-            Triple(17.6300, 75.9130, 50 to 180.0),  // user_042
-            Triple(17.6250, 75.9110, 45 to 0.0),    // user_043
-            Triple(17.6200, 75.9090, 52 to 0.0),    // user_044
+            // ── Adalat Road / Court Area ──
+            Triple(19.8720, 75.3180, 15 to 0.0),    // user_041
+            Triple(19.8730, 75.3195, 12 to 180.0),  // user_042
+            Triple(19.8740, 75.3210, 18 to 0.0),    // user_043
+            Triple(19.8750, 75.3225, 10 to 180.0),  // user_044
+            Triple(19.8760, 75.3240, 8  to 0.0),    // user_045
 
-            // ── Barshi Road ──
-            Triple(17.6800, 75.9600, 40 to 90.0),   // user_045
-            Triple(17.6810, 75.9680, 45 to 90.0),   // user_046
-            Triple(17.6820, 75.9760, 38 to 270.0),  // user_047
+            // ── Satara Parisar / 7 Hills ──
+            Triple(19.9000, 75.3200, 40 to 315.0),  // user_046
+            Triple(19.9050, 75.3150, 35 to 315.0),  // user_047
+            Triple(19.9100, 75.3100, 45 to 135.0),  // user_048
+            Triple(19.9150, 75.3050, 38 to 135.0),  // user_049
+            Triple(19.9200, 75.3000, 30 to 315.0),  // user_050
 
-            // ── Hutatma Chowk / Dayanand College area ──
-            Triple(17.6755, 75.9052, 5  to 0.0),    // user_048 (nearly stopped)
-            Triple(17.6770, 75.9060, 0  to 90.0),   // user_049 (stopped)
-            Triple(17.6740, 75.9045, 8  to 180.0)   // user_050
+            // ── Harsul Road ──
+            Triple(19.8950, 75.3400, 45 to 45.0),   // user_051
+            Triple(19.9000, 75.3450, 50 to 45.0),   // user_052
+            Triple(19.9050, 75.3500, 42 to 225.0),  // user_053
+            Triple(19.9100, 75.3550, 48 to 225.0),  // user_054
+
+            // ── Aurangpura / Samarth Nagar ──
+            Triple(19.8850, 75.3250, 20 to 90.0),   // user_055
+            Triple(19.8860, 75.3300, 18 to 90.0),   // user_056
+            Triple(19.8870, 75.3350, 22 to 270.0),  // user_057
+            Triple(19.8880, 75.3400, 25 to 270.0),  // user_058
+
+            // ── Connaught Place / TV Center ──
+            Triple(19.8680, 75.3380, 5  to 0.0),    // user_059 (nearly stopped)
+            Triple(19.8690, 75.3390, 0  to 90.0)    // user_060 (stopped)
         )
 
         val now = System.currentTimeMillis()
@@ -120,3 +136,12 @@ object SolapurDummyData {
         }
     }
 }
+
+// Backward compatibility alias
+@Deprecated("Use AurangabadDummyData instead", ReplaceWith("AurangabadDummyData"))
+typealias SolapurDummyData = AurangabadDummyData
+
+// Extension to access dummy users with old name
+@Suppress("DEPRECATION")
+val SolapurDummyData.dummy50Users: Map<String, LiveUserLocation>
+    get() = AurangabadDummyData.dummyUsers

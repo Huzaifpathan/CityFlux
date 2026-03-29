@@ -1,6 +1,7 @@
 package com.example.cityflux.ui.dashboard
 
 import android.content.Intent
+import android.location.Location
 import android.net.Uri
 import android.text.format.DateUtils
 import android.widget.Toast
@@ -39,6 +40,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.cityflux.data.RealtimeDbService
 import com.example.cityflux.model.ParkingLive
+import com.example.cityflux.model.ParkingSpot
 import com.example.cityflux.model.Report
 import com.example.cityflux.model.TrafficStatus
 import com.example.cityflux.ui.theme.*
@@ -57,7 +59,7 @@ import java.net.URL
 
 // ═══════════════════════════════════════════════════════════════════
 // Citizen Home Content — Premium Modern Dashboard
-// All data from Firebase — zero hardcoded/dummy data
+// Live-first dashboard with graceful fallback demo traffic when backend is empty
 // ═══════════════════════════════════════════════════════════════════
 
 @Composable
@@ -95,10 +97,17 @@ fun CitizenHomeContent(
     // ── Real-time traffic from RTDB ──
     val trafficMap by RealtimeDbService.observeTraffic()
         .collectAsState(initial = emptyMap())
+    val dummyTrafficMap = remember { citizenTrafficDemoData() }
+    val effectiveTrafficMap = if (trafficMap.isEmpty()) dummyTrafficMap else trafficMap
 
     // ── Real-time parking from RTDB ──
     val parkingMap by RealtimeDbService.observeParkingLive()
         .collectAsState(initial = emptyMap())
+    var parkingSpots by remember { mutableStateOf<List<ParkingSpot>>(emptyList()) }
+
+    // ── User location (default Aurangabad) ──
+    var userLatitude by remember { mutableDoubleStateOf(19.8762) }
+    var userLongitude by remember { mutableDoubleStateOf(75.3433) }
 
     // ── Nearby incidents from Firestore (latest 5) ──
     var recentReports by remember { mutableStateOf<List<Report>>(emptyList()) }
@@ -147,40 +156,70 @@ fun CitizenHomeContent(
     }
 
     // ── Derived: worst congestion level ──
-    val worstLevel = remember(trafficMap) {
+    val worstLevel = remember(effectiveTrafficMap) {
         when {
-            trafficMap.values.any { it.congestionLevel.equals("HIGH", true) } -> "HIGH"
-            trafficMap.values.any { it.congestionLevel.equals("MEDIUM", true) } -> "MEDIUM"
-            trafficMap.isNotEmpty() -> "LOW"
+            effectiveTrafficMap.values.any { it.congestionLevel.equals("HIGH", true) } -> "HIGH"
+            effectiveTrafficMap.values.any { it.congestionLevel.equals("MEDIUM", true) } -> "MEDIUM"
+            effectiveTrafficMap.isNotEmpty() -> "LOW"
             else -> null
         }
     }
 
-    // ── Derived: total available parking slots ──
-    val totalSlots = remember(parkingMap) {
-        parkingMap.values.sumOf { it.availableSlots }
-    }
-    val parkingCount = parkingMap.size
-
-    // ── Derived: top congested roads (sorted by level) ──
-    val congestedRoads = remember(trafficMap) {
-        trafficMap.entries
-            .sortedByDescending { entry ->
-                when (entry.value.congestionLevel.uppercase()) {
-                    "HIGH" -> 3; "MEDIUM" -> 2; else -> 1
-                }
-            }
-            .take(6)
-    }
-
     // ── Derived: congestion breakdown ──
-    val highTrafficZones = remember(trafficMap) {
-        trafficMap.entries.filter { it.value.congestionLevel.equals("HIGH", true) }
+    val highTrafficZones = remember(effectiveTrafficMap) {
+        effectiveTrafficMap.entries.filter { it.value.congestionLevel.equals("HIGH", true) }
     }
-    val mediumTrafficZones = remember(trafficMap) {
-        trafficMap.entries.filter { it.value.congestionLevel.equals("MEDIUM", true) }
+    val mediumTrafficZones = remember(effectiveTrafficMap) {
+        effectiveTrafficMap.entries.filter { it.value.congestionLevel.equals("MEDIUM", true) }
     }
-    val lowTrafficCount = trafficMap.size - highTrafficZones.size - mediumTrafficZones.size
+    val lowTrafficCount = effectiveTrafficMap.size - highTrafficZones.size - mediumTrafficZones.size
+
+    // ── Derived: nearest parking list from Firestore parking spots + live availability ──
+    val nearbyParkingItems = remember(parkingSpots, parkingMap, userLatitude, userLongitude) {
+        parkingSpots.map { spot ->
+            val live = parkingMap[spot.id]
+            val available = live?.availableSlots ?: spot.availableSlots
+            val total = live?.totalSlots ?: spot.totalSlots
+            val distanceMeters = spot.location?.let { geo ->
+                val results = FloatArray(1)
+                Location.distanceBetween(
+                    userLatitude, userLongitude,
+                    geo.latitude, geo.longitude,
+                    results
+                )
+                results[0]
+            }
+            NearbyParkingItem(
+                id = spot.id,
+                address = spot.address.ifBlank { spot.id.replace("_", " ").replaceFirstChar { it.uppercase() } },
+                availableSlots = available,
+                totalSlots = total,
+                distanceMeters = distanceMeters,
+                isLegal = spot.isLegal,
+                rank = 0,
+                totalScore = 0,
+                distanceKmText = ""
+            )
+        }
+            .mapNotNull { item ->
+                val distance = item.distanceMeters ?: return@mapNotNull null
+                val distanceKm = distance / 1000.0
+                if (distanceKm > 5.0) return@mapNotNull null
+                val distanceScore = ((5.0 - distanceKm) * 10).toInt().coerceIn(0, 50)
+                val availabilityScore = if (item.totalSlots > 0 && item.availableSlots > 0) {
+                    ((item.availableSlots.toDouble() / item.totalSlots) * 30).toInt()
+                } else 0
+                val legalBonus = if (item.isLegal) 20 else 0
+                val totalScore = distanceScore + availabilityScore + legalBonus
+                item.copy(
+                    totalScore = totalScore,
+                    distanceKmText = String.format("%.1f", distanceKm)
+                )
+            }
+            .sortedByDescending { it.totalScore }
+            .take(5)
+            .mapIndexed { index, item -> item.copy(rank = index + 1) }
+    }
 
     // ── Derived: my report stats ──
     val myPendingReports = remember(myReports) {
@@ -221,23 +260,24 @@ fun CitizenHomeContent(
 
     LaunchedEffect(Unit) {
         try {
-            // Default to Mumbai coordinates; ideally use device location
             val fusedClient = LocationServices.getFusedLocationProviderClient(context)
-            var lat = 19.076
-            var lon = 72.8777
-            try {
-                fusedClient.lastLocation.addOnSuccessListener { loc ->
-                    if (loc != null) { lat = loc.latitude; lon = loc.longitude }
+            fusedClient.lastLocation.addOnSuccessListener { loc ->
+                if (loc != null) {
+                    userLatitude = loc.latitude
+                    userLongitude = loc.longitude
                 }
-            } catch (_: SecurityException) { }
+            }
+        } catch (_: SecurityException) {
+            // keep Aurangabad fallback
+        }
+    }
 
-            // Small delay to let location resolve
-            kotlinx.coroutines.delay(1500)
-
+    LaunchedEffect(userLatitude, userLongitude) {
+        try {
             withContext(Dispatchers.IO) {
                 val url = URL(
                     "https://api.open-meteo.com/v1/forecast?" +
-                    "latitude=$lat&longitude=$lon&current_weather=true"
+                    "latitude=$userLatitude&longitude=$userLongitude&current_weather=true"
                 )
                 val conn = url.openConnection() as HttpURLConnection
                 conn.connectTimeout = 5000
@@ -254,6 +294,16 @@ fun CitizenHomeContent(
             }
         } catch (_: Exception) { }
         weatherLoading = false
+    }
+
+    DisposableEffect(Unit) {
+        val listener = firestore.collection("parking")
+            .addSnapshotListener { snapshot, _ ->
+                parkingSpots = snapshot?.documents?.mapNotNull { doc ->
+                    doc.toObject(ParkingSpot::class.java)?.copy(id = doc.id)
+                } ?: emptyList()
+            }
+        onDispose { listener.remove() }
     }
 
     // ── My Vehicle Violations from Firestore ──
@@ -400,11 +450,28 @@ fun CitizenHomeContent(
             )
 
             LiveCongestionCard(
-                totalRoads = trafficMap.size,
+                totalRoads = effectiveTrafficMap.size,
                 highCount = highTrafficZones.size,
                 mediumCount = mediumTrafficZones.size,
                 lowCount = lowTrafficCount,
-                isLoading = trafficMap.isEmpty()
+                isLoading = effectiveTrafficMap.isEmpty(),
+                isDemo = trafficMap.isEmpty()
+            )
+
+            // ──────── 🅿️ NEARBY BEST PARKING (Below Congestion) ────────
+            SectionHeader(
+                title = "Nearby Parking",
+                icon = Icons.Outlined.LocalParking,
+                actionLabel = "View All",
+                onAction = {
+                    try { Firebase.analytics.logEvent("find_parking_clicked", null) } catch (_: Exception) {}
+                    onNavigateToTab(CitizenTab.PARKING)
+                }
+            )
+
+            NearbyParkingBlueCard(
+                nearbyParking = nearbyParkingItems,
+                onFindParking = { onNavigateToTab(CitizenTab.PARKING) }
             )
 
             // ──────── HIGH TRAFFIC ZONES GRID ────────
@@ -477,28 +544,6 @@ fun CitizenHomeContent(
                             Text("Register your vehicle number in Profile to get fine & violation alerts",
                                 style = MaterialTheme.typography.bodySmall, color = colors.textTertiary)
                         }
-                    }
-                }
-            }
-
-            // ──────── PARKING AVAILABILITY CARDS ────────
-            if (parkingMap.isNotEmpty()) {
-                SectionHeader(
-                    title = "Parking Availability",
-                    icon = Icons.Outlined.LocalParking,
-                    actionLabel = "View All",
-                    onAction = {
-                        try { Firebase.analytics.logEvent("find_parking_clicked", null) } catch (_: Exception) {}
-                        onNavigateToTab(CitizenTab.PARKING)
-                    }
-                )
-
-                LazyRow(
-                    horizontalArrangement = Arrangement.spacedBy(Spacing.Medium),
-                    contentPadding = PaddingValues(end = Spacing.Medium)
-                ) {
-                    items(parkingMap.entries.toList()) { (id, live) ->
-                        ParkingMiniCard(parkingId = id, live = live)
                     }
                 }
             }
@@ -1135,6 +1180,297 @@ private fun ParkingMiniCard(parkingId: String, live: ParkingLive) {
     }
 }
 
+// ═══════════════════════════════════════════════════════════════════
+// ── NEARBY PARKING BLUE CARD (Top 5 with Blue+White Theme) ──────
+// ═══════════════════════════════════════════════════════════════════
+
+@Composable
+private fun NearbyParkingBlueCard(
+    nearbyParking: List<NearbyParkingItem>,
+    onFindParking: () -> Unit
+) {
+    val colors = MaterialTheme.cityFluxColors
+    
+    // Calculate stats
+    val availableSpots = nearbyParking.sumOf { it.availableSlots }
+    
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .shadow(
+                elevation = 8.dp,
+                shape = RoundedCornerShape(CornerRadius.XLarge),
+                ambientColor = PrimaryBlue.copy(alpha = 0.15f)
+            ),
+        shape = RoundedCornerShape(CornerRadius.XLarge),
+        colors = CardDefaults.cardColors(containerColor = colors.cardBackground)
+    ) {
+        Column {
+            // Top blue accent bar
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(4.dp)
+                    .background(
+                        Brush.horizontalGradient(
+                            listOf(PrimaryBlue, PrimaryBlue.copy(alpha = 0.6f), PrimaryBlue)
+                        )
+                    )
+            )
+            
+            Column(modifier = Modifier.padding(Spacing.Large)) {
+                // Header
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(
+                            modifier = Modifier
+                                .size(44.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(PrimaryBlue.copy(alpha = 0.1f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.LocalParking,
+                                contentDescription = null,
+                                tint = PrimaryBlue,
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column {
+                            Text(
+                                text = "Top 5 parking spots",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = colors.textPrimary
+                            )
+                            Text(
+                                text = "Ranked by distance, availability & legal status",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = colors.textSecondary
+                            )
+                        }
+                    }
+                    
+                    // Live badge
+                    Surface(
+                        shape = RoundedCornerShape(CornerRadius.Round),
+                        color = PrimaryBlue.copy(alpha = 0.1f)
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            PulsingDot(color = PrimaryBlue, size = 6.dp)
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = "LIVE",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = PrimaryBlue,
+                                letterSpacing = 0.5.sp
+                            )
+                        }
+                    }
+                }
+                
+                Spacer(modifier = Modifier.height(Spacing.Medium))
+                
+                // Top 5 parking list
+                if (nearbyParking.isEmpty()) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = Spacing.Large),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "No parking spots found within 5km",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = colors.textTertiary
+                        )
+                    }
+                } else {
+                    nearbyParking.forEachIndexed { index, item ->
+                        NearbyParkingRow(
+                            item = item
+                        )
+                        if (index < nearbyParking.lastIndex) {
+                            Divider(
+                                color = colors.divider,
+                                modifier = Modifier.padding(vertical = 8.dp)
+                            )
+                        }
+                    }
+                }
+                
+                Spacer(modifier = Modifier.height(Spacing.Medium))
+                
+                // Find More Button
+                OutlinedButton(
+                    onClick = onFindParking,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(44.dp),
+                    shape = RoundedCornerShape(CornerRadius.Large),
+                    border = BorderStroke(1.5.dp, PrimaryBlue),
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        contentColor = PrimaryBlue
+                    )
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Search,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Find Best Nearby Parking",
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 14.sp
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun NearbyParkingRow(
+    item: NearbyParkingItem
+) {
+    val colors = MaterialTheme.cityFluxColors
+    val available = item.availableSlots
+    val total = item.totalSlots
+    val occupancyPercent = if (total > 0) ((total - available).toFloat() / total * 100).toInt() else 0
+    
+    val rankColor = when (item.rank) {
+        1 -> Color(0xFFFFD700) // Gold
+        2 -> Color(0xFFC0C0C0) // Silver
+        3 -> Color(0xFFCD7F32) // Bronze
+        else -> PrimaryBlue.copy(alpha = 0.7f)
+    }
+    
+    val statusColor = when {
+        available == 0 -> AccentRed
+        available <= 5 -> AccentOrange
+        else -> AccentGreen
+    }
+    
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        // Rank badge
+        Box(
+            modifier = Modifier
+                .size(28.dp)
+                .clip(CircleShape)
+                .background(
+                    if (item.rank <= 3) rankColor.copy(alpha = 0.15f) 
+                    else PrimaryBlue.copy(alpha = 0.08f)
+                ),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = "#${item.rank}",
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.Bold,
+                color = if (item.rank <= 3) rankColor else PrimaryBlue
+            )
+        }
+        
+        Spacer(modifier = Modifier.width(12.dp))
+        
+        // Parking info
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = item.address,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = colors.textPrimary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    text = "${item.distanceKmText} km away",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = colors.textSecondary
+                )
+                Text(
+                    text = "•",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = colors.textTertiary
+                )
+                // Availability
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier
+                            .size(6.dp)
+                            .clip(CircleShape)
+                            .background(statusColor)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = "$available free",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = statusColor,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+                Text(
+                    text = "•",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = colors.textTertiary
+                )
+                Text(
+                    text = "$total total",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = colors.textTertiary
+                )
+                Text(
+                    text = if (item.isLegal) "✅ Legal" else "⚠️ Unofficial",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (item.isLegal) AccentParking else AccentAlerts
+                )
+            }
+        }
+        
+        // Progress indicator
+        Box(
+            modifier = Modifier
+                .width(50.dp)
+                .height(6.dp)
+                .clip(RoundedCornerShape(3.dp))
+                .background(colors.surfaceVariant)
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth(occupancyPercent / 100f)
+                    .fillMaxHeight()
+                    .clip(RoundedCornerShape(3.dp))
+                    .background(
+                        when {
+                            occupancyPercent > 80 -> AccentRed
+                            occupancyPercent > 50 -> AccentOrange
+                            else -> PrimaryBlue
+                        }
+                    )
+            )
+        }
+    }
+}
+
 @Composable
 private fun IncidentCard(report: Report) {
     val colors = MaterialTheme.cityFluxColors
@@ -1323,9 +1659,29 @@ private fun CitizenShimmerBox(width: androidx.compose.ui.unit.Dp, height: androi
 // ═══════════════════════════════════════════════════════════════════
 
 private data class ChartItem(val label: String, val value: Int, val color: Color)
+private data class NearbyParkingItem(
+    val id: String,
+    val address: String,
+    val availableSlots: Int,
+    val totalSlots: Int,
+    val distanceMeters: Float?,
+    val isLegal: Boolean,
+    val rank: Int,
+    val totalScore: Int,
+    val distanceKmText: String
+)
+
+private fun citizenTrafficDemoData(now: Long = System.currentTimeMillis()): Map<String, TrafficStatus> = mapOf(
+    "jalna_road" to TrafficStatus("HIGH", now),
+    "station_road" to TrafficStatus("MEDIUM", now),
+    "kranti_chowk" to TrafficStatus("HIGH", now),
+    "beed_bypass" to TrafficStatus("LOW", now),
+    "cidco_n5" to TrafficStatus("MEDIUM", now),
+    "adalat_road" to TrafficStatus("LOW", now)
+)
 
 // ═══════════════════════════════════════════════════════════════════
-// ── LIVE CONGESTION STATS CARD ──────────────────────────────────
+// ── LIVE CONGESTION STATS CARD (Blue+White Theme) ───────────────
 // ═══════════════════════════════════════════════════════════════════
 
 @Composable
@@ -1334,7 +1690,8 @@ private fun LiveCongestionCard(
     highCount: Int,
     mediumCount: Int,
     lowCount: Int,
-    isLoading: Boolean
+    isLoading: Boolean,
+    isDemo: Boolean
 ) {
     val colors = MaterialTheme.cityFluxColors
 
@@ -1344,100 +1701,153 @@ private fun LiveCongestionCard(
             .shadow(
                 elevation = 8.dp,
                 shape = RoundedCornerShape(CornerRadius.XLarge),
-                ambientColor = PrimaryBlue.copy(alpha = 0.12f)
+                ambientColor = PrimaryBlue.copy(alpha = 0.15f)
             ),
         shape = RoundedCornerShape(CornerRadius.XLarge),
         colors = CardDefaults.cardColors(containerColor = colors.cardBackground)
     ) {
-        Column(modifier = Modifier.padding(Spacing.Large)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    PulsingDot(color = AccentGreen, size = 8.dp)
-                    Text(
-                        text = "LIVE",
-                        style = MaterialTheme.typography.labelSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = AccentGreen,
-                        letterSpacing = 1.sp
+        Column {
+            // Top blue accent bar
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(4.dp)
+                    .background(
+                        Brush.horizontalGradient(
+                            listOf(PrimaryBlue, PrimaryBlue.copy(alpha = 0.5f), PrimaryBlue)
+                        )
                     )
-                }
-                Surface(
-                    shape = RoundedCornerShape(CornerRadius.Round),
-                    color = PrimaryBlue.copy(alpha = 0.08f)
-                ) {
-                    Text(
-                        text = if (isLoading) "..." else "$totalRoads Roads",
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
-                        style = MaterialTheme.typography.labelSmall,
-                        fontWeight = FontWeight.SemiBold,
-                        color = PrimaryBlue
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(Spacing.Large))
-
-            if (isLoading) {
+            )
+            
+            Column(modifier = Modifier.padding(Spacing.Large)) {
+                // Header
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceEvenly
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    repeat(3) { ShimmerBox(width = 80.dp, height = 56.dp) }
-                }
-            } else {
-                if (totalRoads > 0) {
                     Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(10.dp)
-                            .clip(RoundedCornerShape(5.dp))
-                            .background(colors.surfaceVariant)
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        if (highCount > 0) {
-                            Box(
-                                modifier = Modifier
-                                    .weight(highCount.toFloat().coerceAtLeast(0.1f))
-                                    .fillMaxHeight()
-                                    .background(AccentRed)
+                        Box(
+                            modifier = Modifier
+                                .size(44.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(PrimaryBlue.copy(alpha = 0.1f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Outlined.Traffic,
+                                contentDescription = null,
+                                tint = PrimaryBlue,
+                                modifier = Modifier.size(24.dp)
                             )
                         }
-                        if (mediumCount > 0) {
-                            Box(
-                                modifier = Modifier
-                                    .weight(mediumCount.toFloat().coerceAtLeast(0.1f))
-                                    .fillMaxHeight()
-                                    .background(AccentOrange)
+                        Column {
+                            Text(
+                                text = "Traffic Status",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = colors.textPrimary
                             )
+                            Text(
+                                text = if (isLoading) "Loading..." else "$totalRoads roads monitored",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = colors.textSecondary
+                            )
+                            if (isDemo) {
+                                Text(
+                                    text = "Demo data",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = AccentOrange,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
                         }
-                        if (lowCount > 0) {
-                            Box(
-                                modifier = Modifier
-                                    .weight(lowCount.toFloat().coerceAtLeast(0.1f))
-                                    .fillMaxHeight()
-                                    .background(AccentGreen)
+                    }
+                    
+                    // Live badge
+                    Surface(
+                        shape = RoundedCornerShape(CornerRadius.Round),
+                        color = PrimaryBlue.copy(alpha = 0.1f)
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            PulsingDot(color = PrimaryBlue, size = 6.dp)
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = "LIVE",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = PrimaryBlue,
+                                letterSpacing = 0.5.sp
                             )
                         }
                     }
-
-                    Spacer(modifier = Modifier.height(Spacing.Large))
                 }
 
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceEvenly
-                ) {
-                    CongestionMiniStat(label = "Critical", count = highCount, color = AccentRed, icon = Icons.Filled.Warning)
-                    Box(modifier = Modifier.width(1.dp).height(52.dp).background(colors.divider))
-                    CongestionMiniStat(label = "Moderate", count = mediumCount, color = AccentOrange, icon = Icons.Filled.RemoveCircle)
-                    Box(modifier = Modifier.width(1.dp).height(52.dp).background(colors.divider))
-                    CongestionMiniStat(label = "Clear", count = lowCount, color = AccentGreen, icon = Icons.Filled.CheckCircle)
+                Spacer(modifier = Modifier.height(Spacing.Large))
+
+                if (isLoading) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceEvenly
+                    ) {
+                        repeat(3) { ShimmerBox(width = 80.dp, height = 56.dp) }
+                    }
+                } else {
+                    // Traffic Distribution Bar
+                    if (totalRoads > 0) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(10.dp)
+                                .clip(RoundedCornerShape(5.dp))
+                                .background(colors.surfaceVariant)
+                        ) {
+                            if (highCount > 0) {
+                                Box(
+                                    modifier = Modifier
+                                        .weight(highCount.toFloat().coerceAtLeast(0.1f))
+                                        .fillMaxHeight()
+                                        .background(AccentRed)
+                                )
+                            }
+                            if (mediumCount > 0) {
+                                Box(
+                                    modifier = Modifier
+                                        .weight(mediumCount.toFloat().coerceAtLeast(0.1f))
+                                        .fillMaxHeight()
+                                        .background(AccentOrange)
+                                )
+                            }
+                            if (lowCount > 0) {
+                                Box(
+                                    modifier = Modifier
+                                        .weight(lowCount.toFloat().coerceAtLeast(0.1f))
+                                        .fillMaxHeight()
+                                        .background(AccentGreen)
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(Spacing.Large))
+                    }
+
+                    // Stats Row
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceEvenly
+                    ) {
+                        CongestionMiniStat(label = "Critical", count = highCount, color = AccentRed, icon = Icons.Filled.Warning)
+                        Box(modifier = Modifier.width(1.dp).height(52.dp).background(colors.divider))
+                        CongestionMiniStat(label = "Moderate", count = mediumCount, color = AccentOrange, icon = Icons.Filled.RemoveCircle)
+                        Box(modifier = Modifier.width(1.dp).height(52.dp).background(colors.divider))
+                        CongestionMiniStat(label = "Clear", count = lowCount, color = AccentGreen, icon = Icons.Filled.CheckCircle)
+                    }
                 }
             }
         }
@@ -1592,7 +2002,7 @@ private fun CitizenTrafficZonesGrid(
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// ── PIE CHART STATISTICS CARD ───────────────────────────────────
+// ── PIE CHART STATISTICS CARD (Blue+White Professional) ─────────
 // ═══════════════════════════════════════════════════════════════════
 
 @Composable
@@ -1611,7 +2021,7 @@ private fun CitizenPieChartCard(
     var animationPlayed by remember { mutableStateOf(false) }
     val animateProgress = animateFloatAsState(
         targetValue = if (animationPlayed) 1f else 0f,
-        animationSpec = tween(durationMillis = 1000, easing = FastOutSlowInEasing),
+        animationSpec = tween(durationMillis = 1200, easing = FastOutSlowInEasing),
         label = "pieAnim"
     )
     LaunchedEffect(Unit) { animationPlayed = true }
@@ -1622,167 +2032,240 @@ private fun CitizenPieChartCard(
             .shadow(
                 elevation = 8.dp,
                 shape = RoundedCornerShape(CornerRadius.XLarge),
-                ambientColor = accentColor.copy(alpha = 0.12f)
+                ambientColor = PrimaryBlue.copy(alpha = 0.15f)
             ),
         shape = RoundedCornerShape(CornerRadius.XLarge),
         colors = CardDefaults.cardColors(containerColor = colors.cardBackground)
     ) {
-        Column(modifier = Modifier.padding(Spacing.Large)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
+        Column {
+            // Top blue accent bar
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(4.dp)
+                    .background(
+                        Brush.horizontalGradient(
+                            listOf(PrimaryBlue, PrimaryBlue.copy(alpha = 0.5f), PrimaryBlue)
+                        )
+                    )
+            )
+            
+            Column(modifier = Modifier.padding(Spacing.Large)) {
+                // Header
                 Row(
+                    modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(Spacing.Small)
+                    horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .size(36.dp)
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(
-                                Brush.linearGradient(
-                                    listOf(accentColor.copy(alpha = 0.15f), accentColor.copy(alpha = 0.05f))
-                                )
-                            ),
-                        contentAlignment = Alignment.Center
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        Icon(
-                            imageVector = icon,
-                            contentDescription = null,
-                            tint = accentColor,
-                            modifier = Modifier.size(20.dp)
+                        Box(
+                            modifier = Modifier
+                                .size(44.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(PrimaryBlue.copy(alpha = 0.1f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = icon,
+                                contentDescription = null,
+                                tint = PrimaryBlue,
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
+                        Column {
+                            Text(
+                                text = title,
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = colors.textPrimary
+                            )
+                            Text(
+                                text = "$total total submitted",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = colors.textSecondary
+                            )
+                        }
+                    }
+                    
+                    // Total badge
+                    Surface(
+                        shape = RoundedCornerShape(CornerRadius.Round),
+                        color = PrimaryBlue.copy(alpha = 0.1f)
+                    ) {
+                        Text(
+                            text = "$total",
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = PrimaryBlue
                         )
                     }
-                    Text(
-                        text = title,
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = colors.textPrimary
-                    )
                 }
-            }
 
-            Spacer(modifier = Modifier.height(Spacing.XLarge))
+                Spacer(modifier = Modifier.height(Spacing.Large))
 
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Box(
-                    modifier = Modifier.size(130.dp),
-                    contentAlignment = Alignment.Center
+                // Chart and Legend Row
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Canvas(modifier = Modifier.size(130.dp)) {
-                        val strokeWidth = 22.dp.toPx()
-                        val radius = (size.minDimension - strokeWidth) / 2f
-                        val topLeft = Offset(
-                            (size.width - 2 * radius) / 2f,
-                            (size.height - 2 * radius) / 2f
-                        )
-                        val arcSize = Size(radius * 2, radius * 2)
-                        val gapAngle = if (nonZeroItems.size > 1) 4f else 0f
-                        val totalGap = gapAngle * nonZeroItems.size
-                        val availableSweep = (360f - totalGap) * animateProgress.value
-
-                        if (nonZeroItems.isEmpty()) {
-                            drawArc(
-                                color = Color.LightGray.copy(alpha = 0.3f),
-                                startAngle = -90f,
-                                sweepAngle = 360f,
-                                useCenter = false,
-                                topLeft = topLeft,
-                                size = arcSize,
-                                style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
+                    // Pie Chart
+                    Box(
+                        modifier = Modifier.size(120.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Canvas(modifier = Modifier.size(120.dp)) {
+                            val strokeWidth = 18.dp.toPx()
+                            val radius = (size.minDimension - strokeWidth) / 2f
+                            val topLeft = Offset(
+                                (size.width - 2 * radius) / 2f,
+                                (size.height - 2 * radius) / 2f
                             )
-                        } else {
-                            var startAngle = -90f
-                            nonZeroItems.forEach { item ->
-                                val sweep = (item.value.toFloat() / sweepTotal) * availableSweep
+                            val arcSize = Size(radius * 2, radius * 2)
+                            val gapAngle = if (nonZeroItems.size > 1) 6f else 0f
+                            val totalGap = gapAngle * nonZeroItems.size
+                            val availableSweep = (360f - totalGap) * animateProgress.value
+
+                            if (nonZeroItems.isEmpty()) {
                                 drawArc(
-                                    color = item.color,
-                                    startAngle = startAngle,
-                                    sweepAngle = sweep,
+                                    color = PrimaryBlue.copy(alpha = 0.15f),
+                                    startAngle = -90f,
+                                    sweepAngle = 360f,
                                     useCenter = false,
                                     topLeft = topLeft,
                                     size = arcSize,
                                     style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
                                 )
-                                startAngle += sweep + gapAngle
+                            } else {
+                                var startAngle = -90f
+                                nonZeroItems.forEach { item ->
+                                    val sweep = (item.value.toFloat() / sweepTotal) * availableSweep
+                                    drawArc(
+                                        color = item.color,
+                                        startAngle = startAngle,
+                                        sweepAngle = sweep,
+                                        useCenter = false,
+                                        topLeft = topLeft,
+                                        size = arcSize,
+                                        style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
+                                    )
+                                    startAngle += sweep + gapAngle
+                                }
                             }
+                        }
+
+                        // Center icon
+                        Box(
+                            modifier = Modifier
+                                .size(48.dp)
+                                .clip(CircleShape)
+                                .background(PrimaryBlue.copy(alpha = 0.08f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Outlined.Assignment,
+                                contentDescription = null,
+                                tint = PrimaryBlue,
+                                modifier = Modifier.size(24.dp)
+                            )
                         }
                     }
 
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(
-                            text = "$total",
-                            style = MaterialTheme.typography.headlineSmall,
-                            fontWeight = FontWeight.Bold,
-                            color = colors.textPrimary
-                        )
-                        Text(
-                            text = centerLabel,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = colors.textTertiary,
-                            fontSize = 10.sp
-                        )
-                    }
-                }
+                    Spacer(modifier = Modifier.width(Spacing.Large))
 
-                Spacer(modifier = Modifier.width(Spacing.XLarge))
-
-                Column(
-                    modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(Spacing.Medium)
-                ) {
-                    items.forEach { item ->
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(10.dp)
-                                        .clip(RoundedCornerShape(3.dp))
-                                        .background(item.color)
-                                )
-                                Text(
-                                    text = item.label,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = colors.textSecondary,
-                                    fontWeight = FontWeight.Medium
-                                )
-                            }
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(4.dp)
-                            ) {
-                                Text(
-                                    text = "${item.value}",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    fontWeight = FontWeight.Bold,
-                                    color = colors.textPrimary
-                                )
-                                if (total > 0) {
-                                    val pct = (item.value * 100f / total).toInt()
-                                    Text(
-                                        text = "${pct}%",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = item.color,
-                                        fontWeight = FontWeight.SemiBold
-                                    )
-                                }
-                            }
+                    // Legend items
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        items.forEach { item ->
+                            ReportLegendItem(
+                                item = item,
+                                total = total
+                            )
                         }
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun ReportLegendItem(
+    item: ChartItem,
+    total: Int
+) {
+    val colors = MaterialTheme.cityFluxColors
+    val pct = if (total > 0) (item.value * 100f / total).toInt() else 0
+    
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        // Color indicator with icon
+        Box(
+            modifier = Modifier
+                .size(32.dp)
+                .clip(RoundedCornerShape(8.dp))
+                .background(item.color.copy(alpha = 0.15f)),
+            contentAlignment = Alignment.Center
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(12.dp)
+                    .clip(CircleShape)
+                    .background(item.color)
+            )
+        }
+        
+        Spacer(modifier = Modifier.width(10.dp))
+        
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = item.label,
+                style = MaterialTheme.typography.bodySmall,
+                fontWeight = FontWeight.SemiBold,
+                color = colors.textPrimary
+            )
+            
+            // Progress bar
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(4.dp)
+                    .clip(RoundedCornerShape(2.dp))
+                    .background(colors.surfaceVariant)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth(pct / 100f)
+                        .fillMaxHeight()
+                        .clip(RoundedCornerShape(2.dp))
+                        .background(item.color)
+                )
+            }
+        }
+        
+        Spacer(modifier = Modifier.width(10.dp))
+        
+        // Count and percentage
+        Column(horizontalAlignment = Alignment.End) {
+            Text(
+                text = "${item.value}",
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.Bold,
+                color = colors.textPrimary
+            )
+            Text(
+                text = "$pct%",
+                style = MaterialTheme.typography.labelSmall,
+                color = item.color,
+                fontWeight = FontWeight.SemiBold
+            )
         }
     }
 }
