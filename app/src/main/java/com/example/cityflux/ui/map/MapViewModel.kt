@@ -7,6 +7,7 @@ import com.example.cityflux.data.RealtimeDbService
 import com.example.cityflux.model.LiveUserLocation
 import com.example.cityflux.model.ParkingLive
 import com.example.cityflux.model.ParkingSpot
+import com.example.cityflux.model.toParkingSpot
 import com.example.cityflux.model.Report
 import com.example.cityflux.model.AurangabadDummyData
 import com.example.cityflux.model.TrafficStatus
@@ -143,7 +144,7 @@ class MapViewModel : ViewModel() {
                     return@addSnapshotListener
                 }
                 val spots = snapshot?.documents?.mapNotNull { doc ->
-                    doc.toObject(ParkingSpot::class.java)?.copy(id = doc.id)
+                    doc.toParkingSpot()
                 } ?: emptyList()
 
                 _uiState.update {

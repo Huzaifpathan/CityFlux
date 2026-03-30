@@ -59,6 +59,7 @@ import coil.request.ImageRequest
 import com.example.cityflux.data.RealtimeDbService
 import com.example.cityflux.model.ParkingLive
 import com.example.cityflux.model.ParkingSpot
+import com.example.cityflux.model.toParkingSpot
 import com.example.cityflux.ui.theme.*
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.maps.CameraUpdateFactory
@@ -246,7 +247,7 @@ class ParkingControlViewModel : ViewModel() {
             .addSnapshotListener { snap, err ->
                 if (err != null) return@addSnapshotListener
                 val spots = snap?.documents?.mapNotNull { doc ->
-                    doc.toObject(ParkingSpot::class.java)?.copy(id = doc.id)
+                    doc.toParkingSpot()
                 } ?: emptyList()
                 _uiState.update { it.copy(parkingSpots = spots) }
             }
@@ -1164,28 +1165,44 @@ private fun ParkingStatCard(
     modifier: Modifier
 ) {
     val tc = MaterialTheme.cityFluxColors
+    // More compact horizontal layout
     Surface(
         modifier = modifier,
-        shape = RoundedCornerShape(CornerRadius.Large),
+        shape = RoundedCornerShape(CornerRadius.Small),
         color = color.copy(alpha = 0.08f),
-        border = BorderStroke(1.dp, color.copy(alpha = 0.15f))
+        border = BorderStroke(0.5.dp, color.copy(alpha = 0.15f))
     ) {
-        Column(
-            modifier = Modifier.padding(vertical = 10.dp, horizontal = 8.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(2.dp)
+        Row(
+            modifier = Modifier.padding(vertical = 8.dp, horizontal = 10.dp),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically
         ) {
             Box(
                 Modifier
-                    .size(28.dp)
+                    .size(24.dp)
                     .clip(CircleShape)
                     .background(color.copy(alpha = 0.12f)),
                 contentAlignment = Alignment.Center
             ) {
-                Icon(icon, null, tint = color, modifier = Modifier.size(15.dp))
+                Icon(icon, null, tint = color, modifier = Modifier.size(14.dp))
             }
-            Text(value, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.ExtraBold, color = color)
-            Text(label, fontSize = 10.sp, color = tc.textTertiary, fontWeight = FontWeight.SemiBold, letterSpacing = 0.3.sp)
+            Spacer(Modifier.width(6.dp))
+            Column(horizontalAlignment = Alignment.Start) {
+                Text(
+                    value,
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.ExtraBold,
+                    color = color,
+                    lineHeight = 16.sp
+                )
+                Text(
+                    label,
+                    fontSize = 9.sp,
+                    color = tc.textTertiary,
+                    fontWeight = FontWeight.SemiBold,
+                    lineHeight = 11.sp
+                )
+            }
         }
     }
 }
@@ -1289,110 +1306,80 @@ private fun EnforcementSummaryCard(state: ParkingControlViewModel.ParkingControl
         Brush.horizontalGradient(listOf(Color(0xFF0C2461), Color(0xFF1E3A8A), Color(0xFF1E40AF)))
     }
 
+    // Compact card with horizontal stats layout
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .shadow(8.dp, RoundedCornerShape(CornerRadius.XLarge)),
-        shape = RoundedCornerShape(CornerRadius.XLarge),
+            .shadow(4.dp, RoundedCornerShape(CornerRadius.Large)),
+        shape = RoundedCornerShape(CornerRadius.Large),
         colors = CardDefaults.cardColors(containerColor = Color.Transparent)
     ) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .background(gradient)
-                .padding(Spacing.Large)
+                .padding(horizontal = Spacing.Large, vertical = Spacing.Medium)
         ) {
-            Column {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Title section
                 Row(
-                    Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Icon(Icons.Filled.Assessment, null, tint = Color.White.copy(alpha = 0.9f), modifier = Modifier.size(18.dp))
+                    Icon(Icons.Filled.Assessment, null, tint = Color.White.copy(alpha = 0.9f), modifier = Modifier.size(16.dp))
+                    Column {
                         Text(
                             "Shift Summary",
-                            style = MaterialTheme.typography.titleSmall,
+                            style = MaterialTheme.typography.labelLarge,
                             fontWeight = FontWeight.Bold,
-                            color = Color.White
+                            color = Color.White,
+                            fontSize = 13.sp
                         )
-                    }
-                    Surface(
-                        shape = RoundedCornerShape(4.dp),
-                        color = Color.White.copy(alpha = 0.15f)
-                    ) {
                         Text(
                             "TODAY",
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
                             fontSize = 9.sp,
-                            fontWeight = FontWeight.ExtraBold,
-                            color = Color.White.copy(alpha = 0.8f),
-                            letterSpacing = 1.sp
+                            fontWeight = FontWeight.SemiBold,
+                            color = Color.White.copy(alpha = 0.6f),
+                            letterSpacing = 0.5.sp
                         )
                     }
                 }
-
-                Spacer(Modifier.height(Spacing.Medium))
-
+                
+                // Compact horizontal stats
                 Row(
-                    Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceEvenly
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    SummaryMetric("Total", state.violations.size.toString(), Color.White)
-                    Box(
-                        Modifier
-                            .width(1.dp)
-                            .height(36.dp)
-                            .background(Color.White.copy(alpha = 0.15f))
-                    )
-                    SummaryMetric("Active", state.activeCount.toString(), Color(0xFFFCA5A5))
-                    Box(
-                        Modifier
-                            .width(1.dp)
-                            .height(36.dp)
-                            .background(Color.White.copy(alpha = 0.15f))
-                    )
-                    SummaryMetric("Resolved", state.clearedCount.toString(), Color(0xFF6EE7B7))
-                    Box(
-                        Modifier
-                            .width(1.dp)
-                            .height(36.dp)
-                            .background(Color.White.copy(alpha = 0.15f))
-                    )
-                    SummaryMetric("Zones", state.illegalSpots.toString(), Color(0xFFFCD34D))
-                }
-
-                // Enforcement progress bar
-                if (state.violations.isNotEmpty()) {
-                    Spacer(Modifier.height(Spacing.Medium))
-                    val resolvedRatio = if (state.violations.isNotEmpty())
-                        state.clearedCount.toFloat() / state.violations.size.toFloat()
-                    else 0f
-                    Column {
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Text("Resolution Rate", fontSize = 10.sp, color = Color.White.copy(alpha = 0.6f))
-                            Text("${(resolvedRatio * 100).toInt()}%", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.White.copy(alpha = 0.9f))
-                        }
-                        Spacer(Modifier.height(4.dp))
-                        Box(
-                            Modifier
-                                .fillMaxWidth()
-                                .height(4.dp)
-                                .clip(RoundedCornerShape(2.dp))
-                                .background(Color.White.copy(alpha = 0.15f))
-                        ) {
-                            Box(
-                                Modifier
-                                    .fillMaxWidth(resolvedRatio)
-                                    .height(4.dp)
-                                    .clip(RoundedCornerShape(2.dp))
-                                    .background(Brush.horizontalGradient(listOf(AccentGreen, Color(0xFF34D399))))
-                            )
-                        }
-                    }
+                    CompactSummaryMetric("Total", state.violations.size.toString(), Color.White)
+                    Box(Modifier.width(1.dp).height(24.dp).background(Color.White.copy(alpha = 0.15f)))
+                    CompactSummaryMetric("Active", state.activeCount.toString(), Color(0xFFFCA5A5))
+                    Box(Modifier.width(1.dp).height(24.dp).background(Color.White.copy(alpha = 0.15f)))
+                    CompactSummaryMetric("Done", state.clearedCount.toString(), Color(0xFF6EE7B7))
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun CompactSummaryMetric(label: String, value: String, valueColor: Color) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(
+            value,
+            fontSize = 18.sp,
+            fontWeight = FontWeight.ExtraBold,
+            color = valueColor
+        )
+        Text(
+            label,
+            fontSize = 9.sp,
+            color = Color.White.copy(alpha = 0.6f),
+            fontWeight = FontWeight.Medium
+        )
     }
 }
 
@@ -2394,64 +2381,82 @@ private fun NearbyBookingsSummaryCard(
     parkingAreas: Int,
     colors: CityFluxColors
 ) {
-    val gradient = Brush.horizontalGradient(
-        listOf(PrimaryBlue.copy(alpha = 0.15f), AccentGreen.copy(alpha = 0.1f))
-    )
-    
+    // More compact horizontal card
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(CornerRadius.XLarge),
-        color = Color.Transparent,
-        border = BorderStroke(1.dp, PrimaryBlue.copy(alpha = 0.2f))
+        shape = RoundedCornerShape(CornerRadius.Large),
+        color = colors.cardBackground,
+        border = BorderStroke(1.dp, PrimaryBlue.copy(alpha = 0.15f)),
+        shadowElevation = 2.dp
     ) {
-        Box(Modifier.background(gradient)) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = Spacing.Large, vertical = Spacing.Medium),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
             Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(Spacing.Large),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
+                Box(
+                    modifier = Modifier
+                        .size(36.dp)
+                        .clip(CircleShape)
+                        .background(PrimaryBlue.copy(alpha = 0.1f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        Icons.Filled.ConfirmationNumber,
+                        null,
+                        tint = PrimaryBlue,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
                 Column {
                     Text(
                         "Nearby Bookings",
-                        style = MaterialTheme.typography.titleMedium,
+                        style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.Bold,
                         color = colors.textPrimary
                     )
                     Text(
-                        "Within 4km of your working area",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = colors.textSecondary
+                        "Within 4km radius",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = colors.textSecondary,
+                        fontSize = 10.sp
                     )
                 }
-                Row(horizontalArrangement = Arrangement.spacedBy(Spacing.Large)) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(
-                            "$totalBookings",
-                            style = MaterialTheme.typography.headlineSmall,
-                            fontWeight = FontWeight.Bold,
-                            color = PrimaryBlue
-                        )
-                        Text(
-                            "Bookings",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = colors.textSecondary
-                        )
-                    }
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(
-                            "$parkingAreas",
-                            style = MaterialTheme.typography.headlineSmall,
-                            fontWeight = FontWeight.Bold,
-                            color = AccentGreen
-                        )
-                        Text(
-                            "Areas",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = colors.textSecondary
-                        )
-                    }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(Spacing.Medium)) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        "$totalBookings",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = PrimaryBlue
+                    )
+                    Text(
+                        "Bookings",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = colors.textSecondary,
+                        fontSize = 9.sp
+                    )
+                }
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        "$parkingAreas",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = AccentGreen
+                    )
+                    Text(
+                        "Areas",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = colors.textSecondary,
+                        fontSize = 9.sp
+                    )
                 }
             }
         }
@@ -2790,17 +2795,18 @@ private fun AllParkingSummaryCard(
 ) {
     val occupancyPercent = if (totalSlots > 0) ((totalSlots - availableSlots).toFloat() / totalSlots * 100).toInt() else 0
     
+    // Compact header + horizontal stats
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(CornerRadius.Large),
         color = colors.cardBackground,
         border = BorderStroke(1.dp, AccentParking.copy(alpha = 0.2f)),
-        shadowElevation = 4.dp
+        shadowElevation = 2.dp
     ) {
         Column(
-            modifier = Modifier.padding(Spacing.Large)
+            modifier = Modifier.padding(Spacing.Medium)
         ) {
-            // Header
+            // Compact header
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
@@ -2808,37 +2814,34 @@ private fun AllParkingSummaryCard(
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Box(
                         modifier = Modifier
-                            .size(44.dp)
+                            .size(36.dp)
                             .clip(CircleShape)
-                            .background(
-                                Brush.radialGradient(
-                                    listOf(AccentParking.copy(alpha = 0.2f), AccentParking.copy(alpha = 0.05f))
-                                )
-                            ),
+                            .background(AccentParking.copy(alpha = 0.12f)),
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
                             Icons.Filled.LocalParking,
                             null,
                             tint = AccentParking,
-                            modifier = Modifier.size(24.dp)
+                            modifier = Modifier.size(18.dp)
                         )
                     }
                     Column {
                         Text(
-                            "Assigned Parking Areas",
-                            style = MaterialTheme.typography.titleMedium,
+                            "Assigned Areas",
+                            style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.Bold,
                             color = colors.textPrimary
                         )
                         Text(
-                            "Within 4km of your working area",
+                            "Within 4km radius",
                             style = MaterialTheme.typography.labelSmall,
-                            color = colors.textSecondary
+                            color = colors.textSecondary,
+                            fontSize = 10.sp
                         )
                     }
                 }
@@ -2849,13 +2852,13 @@ private fun AllParkingSummaryCard(
                     color = AccentParking.copy(alpha = 0.1f)
                 ) {
                     Row(
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        horizontalArrangement = Arrangement.spacedBy(3.dp)
                     ) {
                         Box(
                             modifier = Modifier
-                                .size(6.dp)
+                                .size(5.dp)
                                 .clip(CircleShape)
                                 .background(AccentParking)
                         )
@@ -2870,64 +2873,72 @@ private fun AllParkingSummaryCard(
                 }
             }
             
-            Spacer(Modifier.height(Spacing.Medium))
+            Spacer(Modifier.height(Spacing.Small))
             
-            // Stats row
+            // Compact horizontal stats
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceEvenly
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                ParkingStatColumn(
+                CompactParkingStatColumn(
                     value = totalAreas.toString(),
-                    label = "Total Areas",
-                    color = AccentParking
+                    label = "Areas",
+                    color = AccentParking,
+                    modifier = Modifier.weight(1f)
                 )
-                ParkingStatColumn(
+                CompactParkingStatColumn(
                     value = totalSlots.toString(),
-                    label = "Total Slots",
-                    color = PrimaryBlue
+                    label = "Total",
+                    color = PrimaryBlue,
+                    modifier = Modifier.weight(1f)
                 )
-                ParkingStatColumn(
+                CompactParkingStatColumn(
                     value = availableSlots.toString(),
                     label = "Available",
-                    color = AccentGreen
+                    color = AccentGreen,
+                    modifier = Modifier.weight(1f)
                 )
-                ParkingStatColumn(
+                CompactParkingStatColumn(
                     value = "$occupancyPercent%",
-                    label = "Occupancy",
-                    color = if (occupancyPercent > 80) AccentRed else AccentOrange
+                    label = "Occupied",
+                    color = AccentOrange,
+                    modifier = Modifier.weight(1f)
                 )
             }
-            
-            // Illegal areas warning if any
-            if (illegalAreas > 0) {
-                Spacer(Modifier.height(Spacing.Medium))
-                Surface(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(CornerRadius.Medium),
-                    color = AccentAlerts.copy(alpha = 0.1f),
-                    border = BorderStroke(1.dp, AccentAlerts.copy(alpha = 0.2f))
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Icon(
-                            Icons.Filled.Warning,
-                            null,
-                            tint = AccentAlerts,
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Text(
-                            "$illegalAreas illegal parking zone${if (illegalAreas > 1) "s" else ""} flagged",
-                            style = MaterialTheme.typography.labelMedium,
-                            fontWeight = FontWeight.SemiBold,
-                            color = AccentAlerts
-                        )
-                    }
-                }
-            }
+        }
+    }
+}
+
+@Composable
+private fun CompactParkingStatColumn(
+    value: String,
+    label: String,
+    color: Color,
+    modifier: Modifier = Modifier
+) {
+    val colors = MaterialTheme.cityFluxColors
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(CornerRadius.Small),
+        color = color.copy(alpha = 0.08f)
+    ) {
+        Column(
+            modifier = Modifier.padding(vertical = 8.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(
+                value,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = color,
+                lineHeight = 18.sp
+            )
+            Text(
+                label,
+                fontSize = 9.sp,
+                color = colors.textTertiary,
+                fontWeight = FontWeight.Medium
+            )
         }
     }
 }

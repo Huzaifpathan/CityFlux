@@ -33,6 +33,7 @@ import android.location.Location
 import com.example.cityflux.data.RealtimeDbService
 import com.example.cityflux.model.ParkingLive
 import com.example.cityflux.model.ParkingSpot
+import com.example.cityflux.model.toParkingSpot
 import com.example.cityflux.model.Report
 import com.example.cityflux.model.TrafficStatus
 import com.example.cityflux.model.LocationUtils
@@ -80,9 +81,26 @@ fun PoliceHomeScreen(
             }
     }
 
-    // ── Real-time traffic from RTDB ──
-    val trafficMap by RealtimeDbService.observeTraffic()
+    // ── Real-time traffic from RTDB with dummy data fallback ──
+    val trafficMapRaw by RealtimeDbService.observeTraffic()
         .collectAsState(initial = emptyMap())
+    
+    // Add dummy data if empty for demonstration
+    val trafficMap = remember(trafficMapRaw) {
+        if (trafficMapRaw.isEmpty()) {
+            // Dummy traffic data for demo
+            mapOf(
+                "MG_Road_Zone1" to TrafficStatus("HIGH", System.currentTimeMillis()),
+                "Brigade_Road" to TrafficStatus("HIGH", System.currentTimeMillis()),
+                "Residency_Road" to TrafficStatus("MEDIUM", System.currentTimeMillis()),
+                "JC_Road" to TrafficStatus("MEDIUM", System.currentTimeMillis()),
+                "Commercial_St" to TrafficStatus("MEDIUM", System.currentTimeMillis()),
+                "Malleshwaram_Main" to TrafficStatus("LOW", System.currentTimeMillis()),
+                "Koramangala_4th" to TrafficStatus("LOW", System.currentTimeMillis()),
+                "Indiranagar_100ft" to TrafficStatus("LOW", System.currentTimeMillis())
+            )
+        } else trafficMapRaw
+    }
 
     // ── Real-time parking from RTDB ──
     val parkingMap by RealtimeDbService.observeParkingLive()
@@ -94,9 +112,13 @@ fun PoliceHomeScreen(
     
     LaunchedEffect(Unit) {
         firestore.collection("parking")
-            .addSnapshotListener { snapshot, _ ->
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    parkingSpotsLoading = false
+                    return@addSnapshotListener
+                }
                 parkingSpots = snapshot?.documents?.mapNotNull { doc ->
-                    doc.toObject(ParkingSpot::class.java)?.copy(id = doc.id)
+                    doc.toParkingSpot()
                 } ?: emptyList()
                 parkingSpotsLoading = false
             }
@@ -514,85 +536,198 @@ private fun PoliceHomeTopBar(
     onProfileClick: () -> Unit
 ) {
     val colors = MaterialTheme.cityFluxColors
+    val infiniteTransition = rememberInfiniteTransition(label = "header_glow")
+    val glowAlpha by infiniteTransition.animateFloat(
+        initialValue = 0.3f,
+        targetValue = 0.6f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(2000, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "glow"
+    )
 
-    Row(
+    // Premium gradient header card
+    Card(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = Spacing.XLarge, vertical = Spacing.Large),
-        verticalAlignment = Alignment.CenterVertically
+            .padding(horizontal = Spacing.Large, vertical = Spacing.Medium),
+        shape = RoundedCornerShape(CornerRadius.XLarge),
+        colors = CardDefaults.cardColors(containerColor = Color.Transparent)
     ) {
-        // Shield badge icon
         Box(
             modifier = Modifier
-                .size(44.dp)
-                .clip(CircleShape)
+                .fillMaxWidth()
                 .background(
                     Brush.linearGradient(
-                        listOf(PrimaryBlue, GradientBright)
+                        colors = listOf(
+                            PrimaryBlue,
+                            Color(0xFF3B82F6),
+                            Color(0xFF60A5FA)
+                        ),
+                        start = Offset(0f, 0f),
+                        end = Offset(1000f, 500f)
                     )
-                ),
-            contentAlignment = Alignment.Center
+                )
+                .padding(Spacing.Large)
         ) {
-            Icon(
-                imageVector = Icons.Filled.Shield,
-                contentDescription = null,
-                tint = Color.White,
-                modifier = Modifier.size(24.dp)
+            // Animated background accent
+            Box(
+                modifier = Modifier
+                    .size(120.dp)
+                    .offset(x = 200.dp, y = (-20).dp)
+                    .background(
+                        color = Color.White.copy(alpha = glowAlpha * 0.2f),
+                        shape = CircleShape
+                    )
             )
-        }
+            
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Officer shield badge with animation
+                Box(
+                    modifier = Modifier
+                        .size(56.dp)
+                        .clip(CircleShape)
+                        .background(Color.White.copy(alpha = 0.2f))
+                        .border(2.dp, Color.White.copy(alpha = 0.3f), CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Shield,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(32.dp)
+                    )
+                }
 
-        Spacer(modifier = Modifier.width(Spacing.Medium))
+                Spacer(modifier = Modifier.width(Spacing.Large))
 
-        Column(modifier = Modifier.weight(1f)) {
-            if (userLoading) {
-                PoliceShimmerBox(width = 140.dp, height = 16.dp)
-                Spacer(modifier = Modifier.height(4.dp))
-                PoliceShimmerBox(width = 100.dp, height = 12.dp)
-            } else {
-                Text(
-                    text = "Officer ${userName ?: "On Duty"}",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = colors.textPrimary
-                )
-                Text(
-                    text = if (areaName.isNotBlank()) "$areaName · Live Operations"
-                           else "City Traffic Control · Live Operations",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = colors.textSecondary
-                )
-            }
-        }
-
-        // Notification bell
-        BadgedBox(
-            badge = {
-                if (unreadCount > 0) {
-                    Badge(containerColor = AccentRed, contentColor = Color.White) {
-                        Text(
-                            if (unreadCount > 9) "9+" else "$unreadCount",
-                            style = MaterialTheme.typography.labelSmall
+                Column(modifier = Modifier.weight(1f)) {
+                    if (userLoading) {
+                        Box(
+                            modifier = Modifier
+                                .width(180.dp)
+                                .height(20.dp)
+                                .clip(RoundedCornerShape(4.dp))
+                                .background(Color.White.copy(alpha = 0.3f))
                         )
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Box(
+                            modifier = Modifier
+                                .width(140.dp)
+                                .height(14.dp)
+                                .clip(RoundedCornerShape(4.dp))
+                                .background(Color.White.copy(alpha = 0.2f))
+                        )
+                    } else {
+                        Text(
+                            text = "Welcome, Officer",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Medium,
+                            color = Color.White.copy(alpha = 0.9f),
+                            letterSpacing = 0.5.sp
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = userName ?: "On Duty",
+                            style = MaterialTheme.typography.headlineSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Outlined.LocationOn,
+                                contentDescription = null,
+                                tint = Color.White.copy(alpha = 0.8f),
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Text(
+                                text = if (areaName.isNotBlank()) areaName else "City Patrol",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Color.White.copy(alpha = 0.85f)
+                            )
+                            Box(
+                                modifier = Modifier
+                                    .size(4.dp)
+                                    .background(Color.White.copy(alpha = 0.6f), CircleShape)
+                            )
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                PulsingDot(color = AccentGreen, size = 6.dp)
+                                Text(
+                                    text = "On Duty",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = Color.White.copy(alpha = 0.9f)
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // Action buttons
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    // Notification bell with glass effect
+                    BadgedBox(
+                        badge = {
+                            if (unreadCount > 0) {
+                                Badge(
+                                    containerColor = AccentRed,
+                                    contentColor = Color.White
+                                ) {
+                                    Text(
+                                        if (unreadCount > 9) "9+" else "$unreadCount",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+                        }
+                    ) {
+                        Surface(
+                            onClick = onNotificationClick,
+                            shape = CircleShape,
+                            color = Color.White.copy(alpha = 0.2f),
+                            modifier = Modifier.size(44.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = Icons.Filled.Notifications,
+                                    contentDescription = "Notifications",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(22.dp)
+                                )
+                            }
+                        }
+                    }
+
+                    // Profile with glass effect
+                    Surface(
+                        onClick = onProfileClick,
+                        shape = CircleShape,
+                        color = Color.White.copy(alpha = 0.2f),
+                        modifier = Modifier.size(44.dp)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = Icons.Filled.Person,
+                                contentDescription = "Profile",
+                                tint = Color.White,
+                                modifier = Modifier.size(22.dp)
+                            )
+                        }
                     }
                 }
             }
-        ) {
-            IconButton(onClick = onNotificationClick) {
-                Icon(
-                    imageVector = Icons.Filled.Notifications,
-                    contentDescription = "Notifications",
-                    tint = colors.textSecondary
-                )
-            }
-        }
-
-        // Profile
-        IconButton(onClick = onProfileClick) {
-            Icon(
-                imageVector = Icons.Outlined.AccountCircle,
-                contentDescription = "Profile",
-                tint = colors.textSecondary
-            )
         }
     }
 }
