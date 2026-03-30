@@ -41,6 +41,7 @@ import androidx.compose.ui.unit.sp
 import com.example.cityflux.data.RealtimeDbService
 import com.example.cityflux.model.ParkingLive
 import com.example.cityflux.model.ParkingSpot
+import com.example.cityflux.model.toParkingSpot
 import com.example.cityflux.model.Report
 import com.example.cityflux.model.TrafficStatus
 import com.example.cityflux.ui.theme.*
@@ -300,7 +301,7 @@ fun CitizenHomeContent(
         val listener = firestore.collection("parking")
             .addSnapshotListener { snapshot, _ ->
                 parkingSpots = snapshot?.documents?.mapNotNull { doc ->
-                    doc.toObject(ParkingSpot::class.java)?.copy(id = doc.id)
+                    doc.toParkingSpot()
                 } ?: emptyList()
             }
         onDispose { listener.remove() }

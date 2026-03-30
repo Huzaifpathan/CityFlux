@@ -49,6 +49,7 @@ import com.example.cityflux.model.LiveUserLocation
 import com.example.cityflux.model.LocationUtils
 import com.example.cityflux.model.ParkingLive
 import com.example.cityflux.model.ParkingSpot
+import com.example.cityflux.model.toParkingSpot
 import com.example.cityflux.model.Report
 import com.example.cityflux.model.AurangabadDummyData
 import com.example.cityflux.model.TrafficStatus
@@ -173,7 +174,7 @@ class CongestionMapViewModel : ViewModel() {
             .addSnapshotListener { snap, err ->
                 if (err != null) { Log.e(TAG, "Parking error", err); return@addSnapshotListener }
                 val spots = snap?.documents?.mapNotNull { doc ->
-                    doc.toObject(ParkingSpot::class.java)?.copy(id = doc.id)
+                    doc.toParkingSpot()
                 } ?: emptyList()
                 _uiState.update { it.copy(parkingSpots = spots, isLoading = false) }
             }

@@ -7,6 +7,7 @@ import androidx.lifecycle.viewModelScope
 import com.example.cityflux.data.RealtimeDbService
 import com.example.cityflux.model.ParkingLive
 import com.example.cityflux.model.ParkingSpot
+import com.example.cityflux.model.toParkingSpot
 import com.google.firebase.firestore.FirebaseFirestore
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -63,7 +64,7 @@ class ParkingViewModel : ViewModel() {
                     return@addSnapshotListener
                 }
                 val spots = snapshot?.documents?.mapNotNull { doc ->
-                    doc.toObject(ParkingSpot::class.java)?.copy(id = doc.id)
+                    doc.toParkingSpot()
                 } ?: emptyList()
 
                 _uiState.update { it.copy(parkingSpots = spots, isLoading = false, error = null) }

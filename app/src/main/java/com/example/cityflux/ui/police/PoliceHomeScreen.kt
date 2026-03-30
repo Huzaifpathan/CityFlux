@@ -29,8 +29,11 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import android.location.Location
 import com.example.cityflux.data.RealtimeDbService
 import com.example.cityflux.model.ParkingLive
+import com.example.cityflux.model.ParkingSpot
+import com.example.cityflux.model.toParkingSpot
 import com.example.cityflux.model.Report
 import com.example.cityflux.model.TrafficStatus
 import com.example.cityflux.model.LocationUtils
@@ -47,7 +50,8 @@ import com.google.firebase.Timestamp
 
 @Composable
 fun PoliceHomeScreen(
-    onNavigateToTab: (PoliceTab) -> Unit
+    onNavigateToTab: (PoliceTab) -> Unit,
+    onNavigateToParkingWithFilter: (String) -> Unit = {}
 ) {
     val colors = MaterialTheme.cityFluxColors
     val auth = FirebaseAuth.getInstance()
@@ -77,13 +81,73 @@ fun PoliceHomeScreen(
             }
     }
 
-    // ── Real-time traffic from RTDB ──
-    val trafficMap by RealtimeDbService.observeTraffic()
+    // ── Real-time traffic from RTDB with dummy data fallback ──
+    val trafficMapRaw by RealtimeDbService.observeTraffic()
         .collectAsState(initial = emptyMap())
+    
+    // Add dummy data if empty for demonstration
+    val trafficMap = remember(trafficMapRaw) {
+        if (trafficMapRaw.isEmpty()) {
+            // Dummy traffic data for demo
+            mapOf(
+                "MG_Road_Zone1" to TrafficStatus("HIGH", System.currentTimeMillis()),
+                "Brigade_Road" to TrafficStatus("HIGH", System.currentTimeMillis()),
+                "Residency_Road" to TrafficStatus("MEDIUM", System.currentTimeMillis()),
+                "JC_Road" to TrafficStatus("MEDIUM", System.currentTimeMillis()),
+                "Commercial_St" to TrafficStatus("MEDIUM", System.currentTimeMillis()),
+                "Malleshwaram_Main" to TrafficStatus("LOW", System.currentTimeMillis()),
+                "Koramangala_4th" to TrafficStatus("LOW", System.currentTimeMillis()),
+                "Indiranagar_100ft" to TrafficStatus("LOW", System.currentTimeMillis())
+            )
+        } else trafficMapRaw
+    }
 
     // ── Real-time parking from RTDB ──
     val parkingMap by RealtimeDbService.observeParkingLive()
         .collectAsState(initial = emptyMap())
+        
+    // ── Parking spots from Firestore ──
+    var parkingSpots by remember { mutableStateOf<List<ParkingSpot>>(emptyList()) }
+    var parkingSpotsLoading by remember { mutableStateOf(true) }
+    
+    LaunchedEffect(Unit) {
+        firestore.collection("parking")
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    parkingSpotsLoading = false
+                    return@addSnapshotListener
+                }
+                parkingSpots = snapshot?.documents?.mapNotNull { doc ->
+                    doc.toParkingSpot()
+                } ?: emptyList()
+                parkingSpotsLoading = false
+            }
+    }
+    
+    // ── Bookings from Firestore (for assigned areas) ──
+    var allBookings by remember { mutableStateOf<List<PoliceBookingData>>(emptyList()) }
+    var bookingsLoading by remember { mutableStateOf(true) }
+    
+    LaunchedEffect(Unit) {
+        firestore.collection("bookings")
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) { bookingsLoading = false; return@addSnapshotListener }
+                allBookings = snapshot?.documents?.mapNotNull { doc ->
+                    try {
+                        PoliceBookingData(
+                            id = doc.id,
+                            parkingSpotId = doc.getString("parkingSpotId") ?: "",
+                            parkingSpotName = doc.getString("parkingSpotName") ?: "",
+                            userName = doc.getString("userName") ?: "",
+                            vehicleNumber = doc.getString("vehicleNumber") ?: "",
+                            vehicleType = doc.getString("vehicleType") ?: "CAR",
+                            status = doc.getString("status") ?: "PENDING"
+                        )
+                    } catch (_: Exception) { null }
+                } ?: emptyList()
+                bookingsLoading = false
+            }
+    }
 
     // ── All reports from Firestore (real-time) ──
     var allReports by remember { mutableStateOf<List<Report>>(emptyList()) }
@@ -202,6 +266,57 @@ fun PoliceHomeScreen(
 
     // Recent 5 reports (from nearby area)
     val recentReports = remember(nearbyReports) { nearbyReports.take(5) }
+    
+    // ── Nearby parking areas (within 4km of police working location) ──
+    val nearbyParkingAreas = remember(parkingSpots, parkingMap, policeLat, policeLon) {
+        if (policeLat == 0.0 && policeLon == 0.0) {
+            // Show all if location not set
+            parkingSpots.map { spot ->
+                val live = parkingMap[spot.id]
+                NearbyParkingAreaItem(
+                    id = spot.id,
+                    name = spot.address.ifBlank { spot.id.replace("_", " ").replaceFirstChar { c -> c.uppercase() } },
+                    availableSlots = live?.availableSlots ?: spot.availableSlots,
+                    totalSlots = live?.totalSlots ?: spot.totalSlots,
+                    isLegal = spot.isLegal,
+                    distanceKm = 0f,
+                    latitude = spot.location?.latitude ?: 0.0,
+                    longitude = spot.location?.longitude ?: 0.0
+                )
+            }.take(5)
+        } else {
+            parkingSpots.mapNotNull { spot ->
+                val loc = spot.location ?: return@mapNotNull null
+                val results = FloatArray(1)
+                Location.distanceBetween(policeLat, policeLon, loc.latitude, loc.longitude, results)
+                val distanceKm = results[0] / 1000f
+                if (distanceKm > 4f) return@mapNotNull null
+                
+                val live = parkingMap[spot.id]
+                NearbyParkingAreaItem(
+                    id = spot.id,
+                    name = spot.address.ifBlank { spot.id.replace("_", " ").replaceFirstChar { c -> c.uppercase() } },
+                    availableSlots = live?.availableSlots ?: spot.availableSlots,
+                    totalSlots = live?.totalSlots ?: spot.totalSlots,
+                    isLegal = spot.isLegal,
+                    distanceKm = distanceKm,
+                    latitude = loc.latitude,
+                    longitude = loc.longitude
+                )
+            }.sortedBy { it.distanceKm }
+        }
+    }
+    
+    // ── Bookings in nearby areas ──
+    val nearbyBookings = remember(allBookings, nearbyParkingAreas) {
+        val nearbyIds = nearbyParkingAreas.map { it.id }.toSet()
+        allBookings.filter { nearbyIds.contains(it.parkingSpotId) }
+    }
+    
+    // ── Bookings grouped by parking area ──
+    val bookingsByArea = remember(nearbyBookings) {
+        nearbyBookings.groupBy { it.parkingSpotId }
+    }
 
     // ── UI ──
     Column(
@@ -246,6 +361,23 @@ fun PoliceHomeScreen(
                 mediumCount = mediumTrafficZones.size,
                 lowCount = trafficMap.size - highTrafficZones.size - mediumTrafficZones.size,
                 isLoading = trafficMap.isEmpty()
+            )
+            
+            // ──────── ASSIGNED PARKING AREAS (within 4km) ────────
+            PoliceSectionHeader(
+                title = "Assigned Parking Areas",
+                icon = Icons.Outlined.LocalParking,
+                actionLabel = "View All",
+                onAction = { onNavigateToParkingWithFilter("All Parking") }
+            )
+            
+            AssignedParkingAreasCard(
+                parkingAreas = nearbyParkingAreas,
+                bookingsByArea = bookingsByArea,
+                totalBookings = nearbyBookings.size,
+                isLoading = parkingSpotsLoading,
+                onViewDetails = { onNavigateToParkingWithFilter("All Parking") },
+                onViewBookings = { onNavigateToParkingWithFilter("Parking Bookings") }
             )
 
             // ──────── HIGH-TRAFFIC ZONES (premium grid) ────────
@@ -404,85 +536,198 @@ private fun PoliceHomeTopBar(
     onProfileClick: () -> Unit
 ) {
     val colors = MaterialTheme.cityFluxColors
+    val infiniteTransition = rememberInfiniteTransition(label = "header_glow")
+    val glowAlpha by infiniteTransition.animateFloat(
+        initialValue = 0.3f,
+        targetValue = 0.6f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(2000, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "glow"
+    )
 
-    Row(
+    // Premium gradient header card
+    Card(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = Spacing.XLarge, vertical = Spacing.Large),
-        verticalAlignment = Alignment.CenterVertically
+            .padding(horizontal = Spacing.Large, vertical = Spacing.Medium),
+        shape = RoundedCornerShape(CornerRadius.XLarge),
+        colors = CardDefaults.cardColors(containerColor = Color.Transparent)
     ) {
-        // Shield badge icon
         Box(
             modifier = Modifier
-                .size(44.dp)
-                .clip(CircleShape)
+                .fillMaxWidth()
                 .background(
                     Brush.linearGradient(
-                        listOf(PrimaryBlue, GradientBright)
+                        colors = listOf(
+                            PrimaryBlue,
+                            Color(0xFF3B82F6),
+                            Color(0xFF60A5FA)
+                        ),
+                        start = Offset(0f, 0f),
+                        end = Offset(1000f, 500f)
                     )
-                ),
-            contentAlignment = Alignment.Center
+                )
+                .padding(Spacing.Large)
         ) {
-            Icon(
-                imageVector = Icons.Filled.Shield,
-                contentDescription = null,
-                tint = Color.White,
-                modifier = Modifier.size(24.dp)
+            // Animated background accent
+            Box(
+                modifier = Modifier
+                    .size(120.dp)
+                    .offset(x = 200.dp, y = (-20).dp)
+                    .background(
+                        color = Color.White.copy(alpha = glowAlpha * 0.2f),
+                        shape = CircleShape
+                    )
             )
-        }
+            
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Officer shield badge with animation
+                Box(
+                    modifier = Modifier
+                        .size(56.dp)
+                        .clip(CircleShape)
+                        .background(Color.White.copy(alpha = 0.2f))
+                        .border(2.dp, Color.White.copy(alpha = 0.3f), CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Shield,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(32.dp)
+                    )
+                }
 
-        Spacer(modifier = Modifier.width(Spacing.Medium))
+                Spacer(modifier = Modifier.width(Spacing.Large))
 
-        Column(modifier = Modifier.weight(1f)) {
-            if (userLoading) {
-                PoliceShimmerBox(width = 140.dp, height = 16.dp)
-                Spacer(modifier = Modifier.height(4.dp))
-                PoliceShimmerBox(width = 100.dp, height = 12.dp)
-            } else {
-                Text(
-                    text = "Officer ${userName ?: "On Duty"}",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = colors.textPrimary
-                )
-                Text(
-                    text = if (areaName.isNotBlank()) "$areaName · Live Operations"
-                           else "City Traffic Control · Live Operations",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = colors.textSecondary
-                )
-            }
-        }
-
-        // Notification bell
-        BadgedBox(
-            badge = {
-                if (unreadCount > 0) {
-                    Badge(containerColor = AccentRed, contentColor = Color.White) {
-                        Text(
-                            if (unreadCount > 9) "9+" else "$unreadCount",
-                            style = MaterialTheme.typography.labelSmall
+                Column(modifier = Modifier.weight(1f)) {
+                    if (userLoading) {
+                        Box(
+                            modifier = Modifier
+                                .width(180.dp)
+                                .height(20.dp)
+                                .clip(RoundedCornerShape(4.dp))
+                                .background(Color.White.copy(alpha = 0.3f))
                         )
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Box(
+                            modifier = Modifier
+                                .width(140.dp)
+                                .height(14.dp)
+                                .clip(RoundedCornerShape(4.dp))
+                                .background(Color.White.copy(alpha = 0.2f))
+                        )
+                    } else {
+                        Text(
+                            text = "Welcome, Officer",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Medium,
+                            color = Color.White.copy(alpha = 0.9f),
+                            letterSpacing = 0.5.sp
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = userName ?: "On Duty",
+                            style = MaterialTheme.typography.headlineSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Outlined.LocationOn,
+                                contentDescription = null,
+                                tint = Color.White.copy(alpha = 0.8f),
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Text(
+                                text = if (areaName.isNotBlank()) areaName else "City Patrol",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Color.White.copy(alpha = 0.85f)
+                            )
+                            Box(
+                                modifier = Modifier
+                                    .size(4.dp)
+                                    .background(Color.White.copy(alpha = 0.6f), CircleShape)
+                            )
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                PulsingDot(color = AccentGreen, size = 6.dp)
+                                Text(
+                                    text = "On Duty",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = Color.White.copy(alpha = 0.9f)
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // Action buttons
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    // Notification bell with glass effect
+                    BadgedBox(
+                        badge = {
+                            if (unreadCount > 0) {
+                                Badge(
+                                    containerColor = AccentRed,
+                                    contentColor = Color.White
+                                ) {
+                                    Text(
+                                        if (unreadCount > 9) "9+" else "$unreadCount",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+                        }
+                    ) {
+                        Surface(
+                            onClick = onNotificationClick,
+                            shape = CircleShape,
+                            color = Color.White.copy(alpha = 0.2f),
+                            modifier = Modifier.size(44.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = Icons.Filled.Notifications,
+                                    contentDescription = "Notifications",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(22.dp)
+                                )
+                            }
+                        }
+                    }
+
+                    // Profile with glass effect
+                    Surface(
+                        onClick = onProfileClick,
+                        shape = CircleShape,
+                        color = Color.White.copy(alpha = 0.2f),
+                        modifier = Modifier.size(44.dp)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = Icons.Filled.Person,
+                                contentDescription = "Profile",
+                                tint = Color.White,
+                                modifier = Modifier.size(22.dp)
+                            )
+                        }
                     }
                 }
             }
-        ) {
-            IconButton(onClick = onNotificationClick) {
-                Icon(
-                    imageVector = Icons.Filled.Notifications,
-                    contentDescription = "Notifications",
-                    tint = colors.textSecondary
-                )
-            }
-        }
-
-        // Profile
-        IconButton(onClick = onProfileClick) {
-            Icon(
-                imageVector = Icons.Outlined.AccountCircle,
-                contentDescription = "Profile",
-                tint = colors.textSecondary
-            )
         }
     }
 }
@@ -1733,4 +1978,436 @@ private fun PoliceShimmerBox(width: Dp, height: Dp) {
             .clip(RoundedCornerShape(4.dp))
             .background(brush)
     )
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// ── DATA CLASSES ────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════
+
+private data class NearbyParkingAreaItem(
+    val id: String,
+    val name: String,
+    val availableSlots: Int,
+    val totalSlots: Int,
+    val isLegal: Boolean,
+    val distanceKm: Float,
+    val latitude: Double,
+    val longitude: Double
+)
+
+private data class PoliceBookingData(
+    val id: String = "",
+    val parkingSpotId: String = "",
+    val parkingSpotName: String = "",
+    val userName: String = "",
+    val vehicleNumber: String = "",
+    val vehicleType: String = "",
+    val status: String = ""
+)
+
+// ═══════════════════════════════════════════════════════════════════
+// ── ASSIGNED PARKING AREAS CARD ─────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════
+
+@Composable
+private fun AssignedParkingAreasCard(
+    parkingAreas: List<NearbyParkingAreaItem>,
+    bookingsByArea: Map<String, List<PoliceBookingData>>,
+    totalBookings: Int,
+    isLoading: Boolean,
+    onViewDetails: () -> Unit,
+    onViewBookings: () -> Unit = {}
+) {
+    val colors = MaterialTheme.cityFluxColors
+    
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .shadow(
+                elevation = 8.dp,
+                shape = RoundedCornerShape(CornerRadius.XLarge),
+                ambientColor = AccentParking.copy(alpha = 0.15f)
+            ),
+        shape = RoundedCornerShape(CornerRadius.XLarge),
+        colors = CardDefaults.cardColors(containerColor = colors.cardBackground)
+    ) {
+        Column {
+            // Top accent bar
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(4.dp)
+                    .background(
+                        Brush.horizontalGradient(
+                            listOf(AccentParking, AccentParking.copy(alpha = 0.6f), AccentParking)
+                        )
+                    )
+            )
+            
+            Column(modifier = Modifier.padding(Spacing.Large)) {
+                // Header
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(
+                            modifier = Modifier
+                                .size(44.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(AccentParking.copy(alpha = 0.1f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.LocalParking,
+                                contentDescription = null,
+                                tint = AccentParking,
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column {
+                            Text(
+                                text = "Nearby Parking Areas",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = colors.textPrimary
+                            )
+                            Text(
+                                text = "Within 4km of your working area",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = colors.textSecondary
+                            )
+                        }
+                    }
+                    
+                    // Live badge with count
+                    Surface(
+                        shape = RoundedCornerShape(CornerRadius.Round),
+                        color = AccentParking.copy(alpha = 0.1f)
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            PulsingDot(color = AccentParking, size = 6.dp)
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = "${parkingAreas.size} AREAS",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = AccentParking,
+                                letterSpacing = 0.5.sp
+                            )
+                        }
+                    }
+                }
+                
+                Spacer(modifier = Modifier.height(Spacing.Medium))
+                
+                // Stats Row
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceEvenly
+                ) {
+                    ParkingStatMini(
+                        label = "Total Areas",
+                        value = parkingAreas.size.toString(),
+                        color = AccentParking
+                    )
+                    Box(
+                        modifier = Modifier
+                            .width(1.dp)
+                            .height(40.dp)
+                            .background(colors.divider)
+                    )
+                    ParkingStatMini(
+                        label = "Available",
+                        value = parkingAreas.sumOf { it.availableSlots }.toString(),
+                        color = AccentGreen
+                    )
+                    Box(
+                        modifier = Modifier
+                            .width(1.dp)
+                            .height(40.dp)
+                            .background(colors.divider)
+                    )
+                    ParkingStatMini(
+                        label = "Bookings",
+                        value = totalBookings.toString(),
+                        color = PrimaryBlue
+                    )
+                }
+                
+                Spacer(modifier = Modifier.height(Spacing.Medium))
+                
+                // Parking areas list
+                if (isLoading) {
+                    repeat(3) {
+                        PoliceShimmerBox(width = 300.dp, height = 48.dp)
+                        Spacer(modifier = Modifier.height(8.dp))
+                    }
+                } else if (parkingAreas.isEmpty()) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = Spacing.Large),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Icon(
+                                Icons.Outlined.LocationOff,
+                                null,
+                                tint = colors.textTertiary,
+                                modifier = Modifier.size(32.dp)
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                text = "No parking areas found nearby",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = colors.textTertiary
+                            )
+                        }
+                    }
+                } else {
+                    parkingAreas.take(5).forEachIndexed { index, area ->
+                        val bookingsCount = bookingsByArea[area.id]?.size ?: 0
+                        ParkingAreaRow(
+                            area = area,
+                            bookingsCount = bookingsCount,
+                            rank = index + 1
+                        )
+                        if (index < parkingAreas.lastIndex && index < 4) {
+                            HorizontalDivider(
+                                color = colors.divider,
+                                modifier = Modifier.padding(vertical = 8.dp)
+                            )
+                        }
+                    }
+                }
+                
+                Spacer(modifier = Modifier.height(Spacing.Medium))
+                
+                // Action buttons row
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    // View All Parking Button
+                    OutlinedButton(
+                        onClick = onViewDetails,
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(44.dp),
+                        shape = RoundedCornerShape(CornerRadius.Large),
+                        border = BorderStroke(1.5.dp, AccentParking),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = AccentParking)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.LocalParking,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = "All Parking",
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 12.sp
+                        )
+                    }
+                    
+                    // View Bookings Button
+                    Button(
+                        onClick = onViewBookings,
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(44.dp),
+                        shape = RoundedCornerShape(CornerRadius.Large),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = PrimaryBlue,
+                            contentColor = Color.White
+                        )
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.ConfirmationNumber,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = "Bookings",
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 12.sp
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ParkingStatMini(
+    label: String,
+    value: String,
+    color: Color
+) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(
+            text = value,
+            style = MaterialTheme.typography.headlineSmall,
+            fontWeight = FontWeight.Bold,
+            color = color
+        )
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.cityFluxColors.textSecondary
+        )
+    }
+}
+
+@Composable
+private fun ParkingAreaRow(
+    area: NearbyParkingAreaItem,
+    bookingsCount: Int,
+    rank: Int
+) {
+    val colors = MaterialTheme.cityFluxColors
+    val available = area.availableSlots
+    val total = area.totalSlots
+    val occupancyPercent = if (total > 0) ((total - available).toFloat() / total * 100).toInt() else 0
+    
+    val statusColor = when {
+        available == 0 -> AccentRed
+        available <= 5 -> AccentOrange
+        else -> AccentGreen
+    }
+    
+    val rankColor = when (rank) {
+        1 -> Color(0xFFFFD700) // Gold
+        2 -> Color(0xFFC0C0C0) // Silver
+        3 -> Color(0xFFCD7F32) // Bronze
+        else -> AccentParking.copy(alpha = 0.7f)
+    }
+    
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        // Rank badge
+        Box(
+            modifier = Modifier
+                .size(28.dp)
+                .clip(CircleShape)
+                .background(
+                    if (rank <= 3) rankColor.copy(alpha = 0.15f)
+                    else AccentParking.copy(alpha = 0.08f)
+                ),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = "#$rank",
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.Bold,
+                color = if (rank <= 3) rankColor else AccentParking
+            )
+        }
+        
+        Spacer(modifier = Modifier.width(12.dp))
+        
+        // Parking info
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = area.name,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = colors.textPrimary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                // Distance
+                if (area.distanceKm > 0) {
+                    Text(
+                        text = String.format("%.1f km", area.distanceKm),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = colors.textSecondary
+                    )
+                    Text("•", style = MaterialTheme.typography.labelSmall, color = colors.textTertiary)
+                }
+                
+                // Availability
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier
+                            .size(6.dp)
+                            .clip(CircleShape)
+                            .background(statusColor)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = "$available/$total free",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = statusColor,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+                
+                // Legal status
+                Text(
+                    text = if (area.isLegal) "✅" else "⚠️",
+                    style = MaterialTheme.typography.labelSmall
+                )
+            }
+        }
+        
+        // Bookings count badge
+        if (bookingsCount > 0) {
+            Surface(
+                shape = RoundedCornerShape(CornerRadius.Round),
+                color = PrimaryBlue.copy(alpha = 0.1f)
+            ) {
+                Text(
+                    text = "$bookingsCount booked",
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = PrimaryBlue,
+                    fontSize = 10.sp
+                )
+            }
+        }
+        
+        Spacer(modifier = Modifier.width(8.dp))
+        
+        // Progress indicator
+        Box(
+            modifier = Modifier
+                .width(40.dp)
+                .height(6.dp)
+                .clip(RoundedCornerShape(3.dp))
+                .background(colors.surfaceVariant)
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxHeight()
+                    .fillMaxWidth(occupancyPercent / 100f)
+                    .clip(RoundedCornerShape(3.dp))
+                    .background(
+                        when {
+                            occupancyPercent >= 90 -> AccentRed
+                            occupancyPercent >= 70 -> AccentOrange
+                            else -> AccentGreen
+                        }
+                    )
+            )
+        }
+    }
 }
