@@ -852,95 +852,23 @@ private fun ReportsStatsStrip(
     resolved: Int,
     colors: CityFluxColors
 ) {
-    Column(
+    // Compact single-row stats with inline progress indicator
+    Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = Spacing.Large, vertical = Spacing.Small)
+            .padding(horizontal = Spacing.Large, vertical = Spacing.Small),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        // Stats cards row
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            StatsChipMini("Total", total.toString(), PrimaryBlue, Icons.Outlined.Assignment, Modifier.weight(1f))
-            StatsChipMini("Pending", pending.toString(), AccentRed, Icons.Outlined.Schedule, Modifier.weight(1f))
-            StatsChipMini("Active", inProgress.toString(), AccentOrange, Icons.Outlined.Autorenew, Modifier.weight(1f))
-            StatsChipMini("Done", resolved.toString(), AccentGreen, Icons.Outlined.CheckCircle, Modifier.weight(1f))
-        }
-
-        // Resolution progress bar
-        if (total > 0) {
-            Spacer(Modifier.height(10.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Text(
-                    "Resolution",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = colors.textTertiary,
-                    fontWeight = FontWeight.Medium,
-                    fontSize = 10.sp
-                )
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(6.dp)
-                        .clip(RoundedCornerShape(3.dp))
-                        .background(colors.surfaceVariant)
-                ) {
-                    val resolvedFraction = resolved.toFloat() / total.toFloat()
-                    val inProgressFraction = inProgress.toFloat() / total.toFloat()
-                    // Resolved portion
-                    Row(modifier = Modifier.fillMaxHeight()) {
-                        if (resolved > 0) {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxHeight()
-                                    .fillMaxWidth(resolvedFraction)
-                                    .background(
-                                        Brush.horizontalGradient(
-                                            listOf(AccentGreen, AccentGreen.copy(alpha = 0.7f))
-                                        )
-                                    )
-                            )
-                        }
-                    }
-                    // In-progress overlay
-                    Row(modifier = Modifier.fillMaxHeight()) {
-                        if (resolved > 0) {
-                            Spacer(Modifier.fillMaxWidth(resolvedFraction))
-                        }
-                        if (inProgress > 0) {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxHeight()
-                                    .fillMaxWidth(
-                                        if (resolvedFraction < 1f)
-                                            (inProgressFraction / (1f - resolvedFraction)).coerceAtMost(1f)
-                                        else 0f
-                                    )
-                                    .background(AccentOrange.copy(alpha = 0.7f))
-                            )
-                        }
-                    }
-                }
-                val pct = ((resolved * 100f) / total).toInt()
-                Text(
-                    "$pct%",
-                    style = MaterialTheme.typography.labelSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = if (pct >= 70) AccentGreen else if (pct >= 40) AccentOrange else AccentRed,
-                    fontSize = 11.sp
-                )
-            }
-        }
+        StatsChipCompact("Total", total.toString(), PrimaryBlue, Icons.Outlined.Assignment, Modifier.weight(1f))
+        StatsChipCompact("Pending", pending.toString(), AccentRed, Icons.Outlined.Schedule, Modifier.weight(1f))
+        StatsChipCompact("Active", inProgress.toString(), AccentOrange, Icons.Outlined.Autorenew, Modifier.weight(1f))
+        StatsChipCompact("Done", resolved.toString(), AccentGreen, Icons.Outlined.CheckCircle, Modifier.weight(1f))
     }
 }
 
 @Composable
-private fun StatsChipMini(
+private fun StatsChipCompact(
     label: String,
     value: String,
     color: Color,
@@ -950,32 +878,37 @@ private fun StatsChipMini(
     val themeColors = MaterialTheme.cityFluxColors
     Surface(
         modifier = modifier,
-        shape = RoundedCornerShape(CornerRadius.Medium),
+        shape = RoundedCornerShape(CornerRadius.Small),
         color = color.copy(alpha = 0.08f),
-        border = BorderStroke(0.5.dp, color.copy(alpha = 0.12f))
+        border = BorderStroke(0.5.dp, color.copy(alpha = 0.15f))
     ) {
-        Column(
-            modifier = Modifier.padding(vertical = 10.dp, horizontal = 6.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
+        Row(
+            modifier = Modifier.padding(vertical = 6.dp, horizontal = 8.dp),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically
         ) {
             Icon(
                 icon, null,
-                tint = color.copy(alpha = 0.6f),
-                modifier = Modifier.size(14.dp)
+                tint = color,
+                modifier = Modifier.size(16.dp)
             )
-            Spacer(Modifier.height(4.dp))
-            Text(
-                value,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                color = color
-            )
-            Text(
-                label,
-                fontSize = 10.sp,
-                color = themeColors.textTertiary,
-                fontWeight = FontWeight.Medium
-            )
+            Spacer(Modifier.width(4.dp))
+            Column(horizontalAlignment = Alignment.Start) {
+                Text(
+                    value,
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = color,
+                    lineHeight = 14.sp
+                )
+                Text(
+                    label,
+                    fontSize = 9.sp,
+                    color = themeColors.textTertiary,
+                    fontWeight = FontWeight.Medium,
+                    lineHeight = 10.sp
+                )
+            }
         }
     }
 }
@@ -1097,113 +1030,225 @@ private fun PoliceCompactReportCard(
         ).toString()
     } ?: "Unknown"
 
+    // Citizen-style report card with enhanced complaint aesthetic
     Card(
         onClick = onClick,
         modifier = Modifier
             .fillMaxWidth()
-            .shadow(4.dp, RoundedCornerShape(CornerRadius.Large), ambientColor = colors.cardShadow),
+            .shadow(3.dp, RoundedCornerShape(CornerRadius.Large), ambientColor = accentColor.copy(alpha = 0.2f)),
         shape = RoundedCornerShape(CornerRadius.Large),
-        colors = CardDefaults.cardColors(containerColor = colors.cardBackground)
+        colors = CardDefaults.cardColors(containerColor = colors.cardBackground),
+        border = BorderStroke(1.dp, accentColor.copy(alpha = 0.12f))
     ) {
-        Row(modifier = Modifier.height(IntrinsicSize.Min)) {
-            // Accent bar
-            Box(
+        Column(modifier = Modifier.fillMaxWidth()) {
+            // Header row with reporter info and status
+            Row(
                 modifier = Modifier
-                    .width(4.dp)
-                    .fillMaxHeight()
-                    .clip(RoundedCornerShape(topStart = CornerRadius.Large, bottomStart = CornerRadius.Large))
-                    .background(Brush.verticalGradient(listOf(accentColor, accentColor.copy(alpha = 0.4f))))
-            )
+                    .fillMaxWidth()
+                    .background(
+                        Brush.horizontalGradient(
+                            listOf(
+                                accentColor.copy(alpha = 0.08f),
+                                accentColor.copy(alpha = 0.03f)
+                            )
+                        )
+                    )
+                    .padding(horizontal = Spacing.Medium, vertical = Spacing.Small),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    // Citizen reporter icon
+                    Box(
+                        modifier = Modifier
+                            .size(28.dp)
+                            .clip(CircleShape)
+                            .background(accentColor.copy(alpha = 0.15f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            Icons.Outlined.Person,
+                            contentDescription = null,
+                            tint = accentColor,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                    Column {
+                        Text(
+                            "Citizen Report",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.SemiBold,
+                            color = colors.textPrimary,
+                            fontSize = 11.sp
+                        )
+                        Text(
+                            timeAgo,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = colors.textTertiary,
+                            fontSize = 9.sp
+                        )
+                    }
+                }
+                StatusChip(status = report.status)
+            }
 
+            HorizontalDivider(thickness = 0.5.dp, color = accentColor.copy(alpha = 0.1f))
+
+            // Main content with photo and details
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(Spacing.Medium),
-                verticalAlignment = Alignment.CenterVertically
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                // Thumbnail or type icon
-                if (report.imageUrl.isNotBlank()) {
-                    AsyncImage(
-                        model = ImageRequest.Builder(LocalContext.current)
-                            .data(report.imageUrl).crossfade(true).build(),
-                        contentDescription = null,
-                        modifier = Modifier
-                            .size(48.dp)
-                            .clip(RoundedCornerShape(12.dp)),
-                        contentScale = ContentScale.Crop
-                    )
-                } else {
-                    Box(
-                        modifier = Modifier
-                            .size(48.dp)
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(accentColor.copy(alpha = 0.1f)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(typeIcon, null, tint = accentColor, modifier = Modifier.size(24.dp))
+                // Photo thumbnail with type overlay
+                Box(modifier = Modifier.size(72.dp)) {
+                    if (report.imageUrl.isNotBlank()) {
+                        AsyncImage(
+                            model = ImageRequest.Builder(LocalContext.current)
+                                .data(report.imageUrl).crossfade(true).build(),
+                            contentDescription = null,
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .clip(RoundedCornerShape(CornerRadius.Medium)),
+                            contentScale = ContentScale.Crop
+                        )
+                        // Type badge overlay
+                        Box(
+                            modifier = Modifier
+                                .align(Alignment.BottomStart)
+                                .padding(4.dp)
+                        ) {
+                            Surface(
+                                shape = RoundedCornerShape(4.dp),
+                                color = Color.Black.copy(alpha = 0.7f)
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(2.dp)
+                                ) {
+                                    Icon(
+                                        typeIcon, null,
+                                        tint = Color.White,
+                                        modifier = Modifier.size(10.dp)
+                                    )
+                                    Text(
+                                        typeLabel,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = Color.White,
+                                        fontSize = 9.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+                        }
+                    } else {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .clip(RoundedCornerShape(CornerRadius.Medium))
+                                .background(
+                                    Brush.radialGradient(
+                                        listOf(
+                                            accentColor.copy(alpha = 0.15f),
+                                            accentColor.copy(alpha = 0.08f)
+                                        )
+                                    )
+                                ),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Icon(typeIcon, null, tint = accentColor, modifier = Modifier.size(28.dp))
+                                Spacer(Modifier.height(2.dp))
+                                Text(
+                                    typeLabel,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = accentColor,
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    textAlign = TextAlign.Center
+                                )
+                            }
+                        }
                     }
                 }
 
-                Spacer(Modifier.width(12.dp))
-
-                // Title + description + badges
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        report.title.ifBlank { typeLabel },
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = colors.textPrimary,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
+                // Report details
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    // Title with urgency indicator
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        if (report.status.equals("pending", true) || report.status.equals("submitted", true)) {
+                            Box(
+                                modifier = Modifier
+                                    .size(6.dp)
+                                    .clip(CircleShape)
+                                    .background(AccentRed)
+                            )
+                        }
+                        Text(
+                            report.title.ifBlank { "Complaint: $typeLabel" },
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = colors.textPrimary,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                            lineHeight = 18.sp
+                        )
+                    }
+                    
+                    // Description
                     if (report.description.isNotBlank()) {
                         Text(
                             report.description,
                             style = MaterialTheme.typography.bodySmall,
                             color = colors.textSecondary,
-                            maxLines = 1,
+                            maxLines = 2,
                             overflow = TextOverflow.Ellipsis,
                             lineHeight = 16.sp
                         )
                     }
-                    Spacer(Modifier.height(4.dp))
+
+                    // Location indicator
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
-                        Surface(
-                            shape = RoundedCornerShape(4.dp),
-                            color = accentColor.copy(alpha = 0.1f)
-                        ) {
-                            Text(
-                                typeLabel,
-                                style = MaterialTheme.typography.labelSmall,
-                                color = accentColor,
-                                fontWeight = FontWeight.SemiBold,
-                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                            )
-                        }
+                        Icon(
+                            Icons.Outlined.LocationOn,
+                            contentDescription = null,
+                            tint = colors.textTertiary,
+                            modifier = Modifier.size(12.dp)
+                        )
                         Text(
-                            "· $timeAgo",
+                            if (report.latitude != 0.0 && report.longitude != 0.0) 
+                                "Location: ${String.format("%.4f, %.4f", report.latitude, report.longitude)}"
+                            else "Location unavailable",
                             style = MaterialTheme.typography.labelSmall,
-                            color = colors.textTertiary
+                            color = colors.textTertiary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            fontSize = 10.sp
                         )
                     }
                 }
 
-                Spacer(Modifier.width(8.dp))
-
-                // Status + chevron
-                Column(horizontalAlignment = Alignment.End) {
-                    StatusChip(status = report.status)
-                    Spacer(Modifier.height(6.dp))
-                    Icon(
-                        Icons.Outlined.ChevronRight,
-                        contentDescription = "View details",
-                        tint = colors.textTertiary.copy(alpha = 0.5f),
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
+                // Action indicator
+                Icon(
+                    Icons.Outlined.ChevronRight,
+                    contentDescription = "View details",
+                    tint = accentColor.copy(alpha = 0.4f),
+                    modifier = Modifier.size(24.dp)
+                )
             }
         }
     }

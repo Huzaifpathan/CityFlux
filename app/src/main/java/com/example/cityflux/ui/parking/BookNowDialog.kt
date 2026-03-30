@@ -159,6 +159,7 @@ fun BookNowDialog(
                     BookingStep.DURATION_AND_PRICING -> {
                         DurationPricingStep(
                             bookingForm = bookingForm,
+                            parkingSpot = parkingSpot,
                             onDurationSelected = { viewModel.updateDuration(it) },
                             onBookingTypeChanged = { viewModel.updateBookingType(it) },
                             onBack = { viewModel.moveToPreviousStep() },
@@ -427,12 +428,17 @@ private fun SlotSelectionStep(
 @Composable
 private fun DurationPricingStep(
     bookingForm: BookingFormState,
+    parkingSpot: ParkingSpot,
     onDurationSelected: (Int) -> Unit,
     onBookingTypeChanged: (BookingType) -> Unit,
     onBack: () -> Unit,
     onContinue: () -> Unit,
     colors: CityFluxColors
 ) {
+    // Calculate available duration options based on parking spot limits
+    val minHours = (parkingSpot.minDuration / 60f).coerceAtLeast(1f).toInt()
+    val maxHours = (parkingSpot.maxDuration / 60f).coerceAtLeast(1f).toInt()
+    
     Column {
         Text(
             text = "Parking Duration",
@@ -441,7 +447,60 @@ private fun DurationPricingStep(
             fontWeight = FontWeight.Bold
         )
         
-        Spacer(Modifier.height(12.dp))
+        // Show parking type info
+        if (parkingSpot.isFree) {
+            Surface(
+                modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                shape = RoundedCornerShape(8.dp),
+                color = AccentGreen.copy(alpha = 0.1f)
+            ) {
+                Row(
+                    modifier = Modifier.padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        Icons.Default.CheckCircle,
+                        contentDescription = null,
+                        tint = AccentGreen,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        "🎉 FREE Parking Zone - No charges!",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = AccentGreen,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+        } else {
+            Surface(
+                modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                shape = RoundedCornerShape(8.dp),
+                color = AccentBlue.copy(alpha = 0.1f)
+            ) {
+                Row(
+                    modifier = Modifier.padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        Icons.Default.LocalOffer,
+                        contentDescription = null,
+                        tint = AccentBlue,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        "Paid Parking • ${parkingSpot.rateDisplayString}",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = AccentBlue,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+        }
+        
+        Spacer(Modifier.height(8.dp))
         
         // Booking type selector (Now/Later/Recurring)
         BookingTypeSelector(
@@ -452,18 +511,20 @@ private fun DurationPricingStep(
         
         Spacer(Modifier.height(16.dp))
         
-        // Duration selection with smart pricing
+        // Duration selection with smart pricing - uses parking spot limits
         SmartDurationSelector(
             selectedHours = bookingForm.durationHours,
             vehicleType = bookingForm.vehicleType,
+            parkingSpot = parkingSpot,
             onDurationSelected = onDurationSelected,
             colors = colors
         )
         
         Spacer(Modifier.height(16.dp))
         
-        // Enhanced price breakdown
+        // Enhanced price breakdown - uses parking spot rate
         EnhancedPriceBreakdown(
+            parkingSpot = parkingSpot,
             vehicleType = bookingForm.vehicleType,
             hours = bookingForm.durationHours,
             bookingType = bookingForm.bookingType,
@@ -657,7 +718,8 @@ private fun PaymentStep(
     onUpdatePricing: (PricingBreakdown) -> Unit,
     colors: CityFluxColors
 ) {
-    val pricing = PricingService.calculateParkingFee(bookingForm.vehicleType, bookingForm.durationHours)
+    // Use parking spot's rate for pricing
+    val pricing = PricingService.calculateParkingFee(parkingSpot, bookingForm.vehicleType, bookingForm.durationHours)
     
     // Update pricing in ViewModel when entering this step
     LaunchedEffect(pricing) {
@@ -1223,10 +1285,18 @@ private fun BookingTypeChip(
 private fun SmartDurationSelector(
     selectedHours: Int,
     vehicleType: VehicleType,
+    parkingSpot: ParkingSpot,
     onDurationSelected: (Int) -> Unit,
     colors: CityFluxColors
 ) {
-    val durations = listOf(1, 2, 4, 8, 12, 24)
+    // Filter durations based on parking spot min/max limits
+    val minHours = (parkingSpot.minDuration / 60f).coerceAtLeast(0.5f)
+    val maxHours = (parkingSpot.maxDuration / 60f).coerceAtLeast(1f)
+    
+    val allDurations = listOf(1, 2, 4, 8, 12, 24)
+    val durations = allDurations.filter { 
+        it >= minHours && it <= maxHours 
+    }.ifEmpty { listOf(1, 2, 4) } // Default fallback
     
     LazyRow(
         horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -1236,6 +1306,7 @@ private fun SmartDurationSelector(
                 hours = hours,
                 isSelected = hours == selectedHours,
                 vehicleType = vehicleType,
+                parkingSpot = parkingSpot,
                 onClick = { onDurationSelected(hours) },
                 colors = colors
             )
@@ -1248,10 +1319,12 @@ private fun SmartDurationChip(
     hours: Int,
     isSelected: Boolean,
     vehicleType: VehicleType,
+    parkingSpot: ParkingSpot,
     onClick: () -> Unit,
     colors: CityFluxColors
 ) {
-    val pricing = PricingService.calculateParkingFee(vehicleType, hours)
+    // Use parking spot's rate for pricing
+    val pricing = PricingService.calculateParkingFee(parkingSpot, vehicleType, hours)
     val hasDiscount = pricing.discount > 0
     
     Surface(
@@ -1280,13 +1353,17 @@ private fun SmartDurationChip(
             
             Spacer(Modifier.height(4.dp))
             
+            // Show FREE or price
             Text(
-                text = "₹${pricing.totalAmount.toInt()}",
+                text = pricing.getTotalDisplayString(),
                 style = MaterialTheme.typography.bodySmall,
-                color = if (isSelected) PrimaryBlue else colors.textSecondary
+                color = if (pricing.isFreeParking) AccentGreen 
+                       else if (isSelected) PrimaryBlue 
+                       else colors.textSecondary,
+                fontWeight = if (pricing.isFreeParking) FontWeight.Bold else FontWeight.Normal
             )
             
-            if (hasDiscount) {
+            if (hasDiscount && !pricing.isFreeParking) {
                 Text(
                     text = "${pricing.getDiscountLabel()}",
                     style = MaterialTheme.typography.labelSmall,
@@ -1300,87 +1377,126 @@ private fun SmartDurationChip(
 
 @Composable
 private fun EnhancedPriceBreakdown(
+    parkingSpot: ParkingSpot,
     vehicleType: VehicleType,
     hours: Int,
     bookingType: BookingType,
     colors: CityFluxColors
 ) {
-    val pricing = PricingService.calculateParkingFee(vehicleType, hours)
+    // Use parking spot's rate for pricing
+    val pricing = PricingService.calculateParkingFee(parkingSpot, vehicleType, hours)
     
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(12.dp),
-        color = AccentParking.copy(alpha = 0.05f),
-        border = BorderStroke(1.dp, AccentParking.copy(alpha = 0.2f))
-    ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+    // Different UI for FREE vs PAID parking
+    if (pricing.isFreeParking) {
+        // FREE parking breakdown
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(12.dp),
+            color = AccentGreen.copy(alpha = 0.1f),
+            border = BorderStroke(1.dp, AccentGreen.copy(alpha = 0.3f))
+        ) {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
             ) {
+                Icon(
+                    Icons.Default.CheckCircle,
+                    contentDescription = null,
+                    tint = AccentGreen,
+                    modifier = Modifier.size(48.dp)
+                )
+                Spacer(Modifier.height(8.dp))
                 Text(
-                    text = "Price Breakdown",
-                    style = MaterialTheme.typography.titleSmall,
-                    color = colors.textPrimary,
+                    text = "FREE PARKING",
+                    style = MaterialTheme.typography.titleLarge,
+                    color = AccentGreen,
                     fontWeight = FontWeight.Bold
                 )
-                
-                if (bookingType == BookingType.BOOK_LATER) {
-                    Surface(
-                        shape = RoundedCornerShape(6.dp),
-                        color = AccentOrange.copy(alpha = 0.1f)
-                    ) {
-                        Text(
-                            text = "Advance Booking",
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = AccentOrange,
-                            fontWeight = FontWeight.Bold
-                        )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = "${hours} hour${if (hours > 1) "s" else ""} • No charges applicable",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = colors.textSecondary
+                )
+            }
+        }
+    } else {
+        // PAID parking breakdown
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(12.dp),
+            color = AccentParking.copy(alpha = 0.05f),
+            border = BorderStroke(1.dp, AccentParking.copy(alpha = 0.2f))
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Price Breakdown",
+                        style = MaterialTheme.typography.titleSmall,
+                        color = colors.textPrimary,
+                        fontWeight = FontWeight.Bold
+                    )
+                    
+                    if (bookingType == BookingType.BOOK_LATER) {
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            color = AccentOrange.copy(alpha = 0.1f)
+                        ) {
+                            Text(
+                                text = "Advance Booking",
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = AccentOrange,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
                     }
                 }
-            }
-            
-            Spacer(Modifier.height(12.dp))
-            
-            PriceRow("Base (${hours}h × ₹${pricing.baseRate.toInt()})", pricing.baseAmount, colors.textSecondary)
-            
-            if (pricing.discount > 0) {
-                PriceRow(
-                    "Discount ${pricing.getDiscountLabel()}",
-                    -pricing.discount,
-                    AccentGreen
-                )
-            }
-            
-            PriceRow("GST (18%)", pricing.gst, colors.textSecondary)
-            
-            if (bookingType == BookingType.RECURRING) {
-                PriceRow("Weekly Discount (5%)", -pricing.totalAmount * 0.05, AccentGreen)
-            }
-            
-            Spacer(Modifier.height(8.dp))
-            Divider(color = colors.divider)
-            Spacer(Modifier.height(8.dp))
-            
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "Total Amount",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = colors.textPrimary,
-                    fontWeight = FontWeight.Bold
-                )
-                Text(
-                    text = "₹${pricing.totalAmount.toInt()}",
-                    style = MaterialTheme.typography.titleLarge,
-                    color = AccentParking,
-                    fontWeight = FontWeight.Bold
-                )
+                
+                Spacer(Modifier.height(12.dp))
+                
+                PriceRow("Base (${hours}h × ₹${pricing.baseRate.toInt()})", pricing.baseAmount, colors.textSecondary)
+                
+                if (pricing.discount > 0) {
+                    PriceRow(
+                        "Discount ${pricing.getDiscountLabel()}",
+                        -pricing.discount,
+                        AccentGreen
+                    )
+                }
+                
+                PriceRow("GST (18%)", pricing.gst, colors.textSecondary)
+                
+                if (bookingType == BookingType.RECURRING) {
+                    PriceRow("Weekly Discount (5%)", -pricing.totalAmount * 0.05, AccentGreen)
+                }
+                
+                Spacer(Modifier.height(8.dp))
+                Divider(color = colors.divider)
+                Spacer(Modifier.height(8.dp))
+                
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Total Amount",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = colors.textPrimary,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = "₹${pricing.totalAmount.toInt()}",
+                        style = MaterialTheme.typography.titleLarge,
+                        color = AccentParking,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
             }
         }
     }

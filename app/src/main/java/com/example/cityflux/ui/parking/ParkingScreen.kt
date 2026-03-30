@@ -1287,6 +1287,20 @@ private fun ParkingCard(
                                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
                             )
                         }
+                        // Parking Type Badge (FREE / PAID)
+                        val parkingTypeColor = if (spot.isFree) AccentGreen else AccentBlue
+                        Surface(
+                            shape = RoundedCornerShape(4.dp),
+                            color = parkingTypeColor.copy(alpha = 0.12f)
+                        ) {
+                            Text(
+                                spot.rateDisplayString,
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = parkingTypeColor,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                            )
+                        }
                         // Legal / Illegal tag
                         Surface(
                             shape = RoundedCornerShape(4.dp),
@@ -1552,30 +1566,35 @@ private fun ParkingDetailCard(
 
             Spacer(Modifier.height(Spacing.Medium))
 
-            // Stats row
+            // Stats row - now includes pricing info
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(Spacing.Medium)
             ) {
                 StatChip("Available", available.toString(), statusColor, Modifier.weight(1f))
                 StatChip("Total", spot.totalSlots.toString(), PrimaryBlue, Modifier.weight(1f))
-                StatChip("Type", if (spot.isLegal) "Legal" else "Illegal",
-                    if (spot.isLegal) AccentParking else AccentAlerts, Modifier.weight(1f))
+                // Pricing badge
+                val priceColor = if (spot.isFree) AccentGreen else AccentBlue
+                StatChip("Rate", spot.rateDisplayString, priceColor, Modifier.weight(1f))
             }
 
-            if (distance != null) {
-                Spacer(Modifier.height(Spacing.Small))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(Spacing.Medium)
-                ) {
-                    StatChip(
-                        "Distance",
-                        formatDistance(distance),
-                        AccentTraffic,
-                        Modifier.weight(1f)
-                    )
-                    Box(Modifier.weight(2f)) // spacer
+            Spacer(Modifier.height(Spacing.Small))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(Spacing.Medium)
+            ) {
+                StatChip("Type", if (spot.isLegal) "Legal" else "Illegal",
+                    if (spot.isLegal) AccentParking else AccentAlerts, Modifier.weight(1f))
+                // Duration limits
+                if (spot.minDuration > 0 || spot.maxDuration > 0) {
+                    val minHrs = (spot.minDuration / 60f)
+                    val maxHrs = (spot.maxDuration / 60f)
+                    val durationText = if (maxHrs >= 8) "Min ${if (minHrs < 1) "${spot.minDuration}min" else "${minHrs.toInt()}hr"}"
+                        else "${if (minHrs < 1) "${spot.minDuration}min" else "${minHrs.toInt()}hr"}-${maxHrs.toInt()}hr"
+                    StatChip("Duration", durationText, AccentTraffic, Modifier.weight(1f))
+                }
+                if (distance != null) {
+                    StatChip("Distance", formatDistance(distance), AccentOrange, Modifier.weight(1f))
                 }
             }
 

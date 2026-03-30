@@ -48,6 +48,8 @@ fun PoliceMainScreen(
     var selectedTab by rememberSaveable { mutableStateOf(PoliceTab.HOME) }
     // Report ID to pass to ActionStatusScreen when navigating from Reports
     var pendingActionReportId by remember { mutableStateOf<String?>(null) }
+    // Parking filter to pass to ParkingControlScreen when navigating from Home
+    var pendingParkingFilter by remember { mutableStateOf<String?>(null) }
 
     // ── Police working-area setup check ──
     var showLocationSetup by remember { mutableStateOf(false) }
@@ -166,7 +168,11 @@ fun PoliceMainScreen(
         ) { tab ->
             when (tab) {
                 PoliceTab.HOME -> PoliceHomeScreen(
-                    onNavigateToTab = { targetTab -> selectedTab = targetTab }
+                    onNavigateToTab = { targetTab -> selectedTab = targetTab },
+                    onNavigateToParkingWithFilter = { filter ->
+                        pendingParkingFilter = filter
+                        selectedTab = PoliceTab.PARKING
+                    }
                 )
                 PoliceTab.CONGESTION -> CongestionMapScreen(
                     onBack = { selectedTab = PoliceTab.HOME }
@@ -190,9 +196,20 @@ fun PoliceMainScreen(
                         selectedTab = PoliceTab.ACTIONS
                     }
                 )
-                PoliceTab.PARKING -> ParkingControlScreen(
-                    onBack = { selectedTab = PoliceTab.HOME }
-                )
+                PoliceTab.PARKING -> {
+                    val initialFilter = pendingParkingFilter ?: "All Violations"
+                    ParkingControlScreen(
+                        onBack = { 
+                            pendingParkingFilter = null
+                            selectedTab = PoliceTab.HOME 
+                        },
+                        initialFilter = initialFilter
+                    )
+                    // Clear pending filter after using it
+                    LaunchedEffect(Unit) {
+                        pendingParkingFilter = null
+                    }
+                }
                 PoliceTab.ACTIONS -> ActionStatusScreen(
                     onBack = { selectedTab = PoliceTab.HOME },
                     initialReportId = pendingActionReportId,
