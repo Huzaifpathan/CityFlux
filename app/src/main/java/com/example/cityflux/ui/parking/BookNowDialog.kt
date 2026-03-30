@@ -547,12 +547,31 @@ private fun VehicleDetailsStep(
             Spacer(Modifier.height(16.dp))
         }
         
-        // Vehicle number input
+        // Vehicle number input with validation
+        val vehicleNumberError = remember(bookingForm.vehicleNumber) {
+            if (bookingForm.vehicleNumber.isEmpty()) null
+            else if (!isValidVehicleNumber(bookingForm.vehicleNumber)) "Invalid format. Use: MH12AB1234"
+            else null
+        }
+        
         OutlinedTextField(
             value = bookingForm.vehicleNumber,
-            onValueChange = { onVehicleNumberChanged(it.uppercase()) },
+            onValueChange = { 
+                val formatted = it.uppercase().replace(" ", "").replace("-", "")
+                if (formatted.length <= 13) {
+                    onVehicleNumberChanged(formatted)
+                }
+            },
             label = { Text("Vehicle Number") },
-            placeholder = { Text("MH-12-AB-1234") },
+            placeholder = { Text("MH12AB1234") },
+            supportingText = {
+                if (vehicleNumberError != null) {
+                    Text(vehicleNumberError, color = AccentRed)
+                } else {
+                    Text("Format: StateCode + Number + Letters + Number", fontSize = 11.sp)
+                }
+            },
+            isError = vehicleNumberError != null,
             modifier = Modifier.fillMaxWidth(),
             singleLine = true,
             leadingIcon = {
@@ -563,12 +582,18 @@ private fun VehicleDetailsStep(
                         else -> Icons.Default.LocalShipping
                     },
                     contentDescription = null,
-                    tint = PrimaryBlue
+                    tint = if (vehicleNumberError != null) AccentRed else PrimaryBlue
                 )
+            },
+            trailingIcon = {
+                if (bookingForm.vehicleNumber.isNotEmpty() && vehicleNumberError == null) {
+                    Icon(Icons.Default.CheckCircle, null, tint = AccentGreen)
+                }
             },
             colors = OutlinedTextFieldDefaults.colors(
                 focusedBorderColor = PrimaryBlue,
-                unfocusedBorderColor = colors.inputBorder
+                unfocusedBorderColor = colors.inputBorder,
+                errorBorderColor = AccentRed
             )
         )
         
@@ -1688,4 +1713,26 @@ private fun StepProgressIndicator(
             }
         }
     }
+}
+
+/**
+ * Validates Indian vehicle number format
+ * Formats: MH12AB1234, DL01CAB1234, etc.
+ * Pattern: StateCode(2-3 letters) + Number(2 digits) + Letters(1-3) + Number(4 digits)
+ */
+private fun isValidVehicleNumber(number: String): Boolean {
+    if (number.isBlank()) return false
+    
+    // Indian vehicle number regex patterns
+    val patterns = listOf(
+        // Standard: MH12AB1234 (State + 2digit + 2letter + 4digit)
+        Regex("^[A-Z]{2}\\d{2}[A-Z]{2}\\d{4}$"),
+        // Old format: MH01A1234 (State + 2digit + 1letter + 4digit)
+        Regex("^[A-Z]{2}\\d{2}[A-Z]\\d{4}$"),
+        // New BH series: BH01AB1234 or 22BH1234AB
+        Regex("^[A-Z]{2}\\d{2}[A-Z]{2}\\d{4}$"),
+        Regex("^\\d{2}BH\\d{4}[A-Z]{2}$")
+    )
+    
+    return patterns.any { it.matches(number) }
 }

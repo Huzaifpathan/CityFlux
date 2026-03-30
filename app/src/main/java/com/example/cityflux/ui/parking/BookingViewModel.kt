@@ -11,8 +11,11 @@ import com.example.cityflux.model.isActive
 import com.example.cityflux.service.PricingService
 import com.google.firebase.Timestamp
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.ktx.firestore
+import com.google.firebase.ktx.Firebase
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.tasks.await
 import java.util.*
 
 /**
@@ -23,6 +26,7 @@ class BookingViewModel : ViewModel() {
     
     private val repository = BookingRepository()
     private val auth = FirebaseAuth.getInstance()
+    private val firestore = Firebase.firestore
     
     companion object {
         private const val TAG = "BookingViewModel"

@@ -691,7 +691,8 @@ fun ParkingScreen(
             Crossfade(
                 targetState = selectedTab,
                 animationSpec = tween(300),
-                label = "parking_view_toggle"
+                label = "parking_view_toggle",
+                modifier = Modifier.fillMaxSize()
             ) { currentTab ->
                 when (currentTab) {
                     1 -> {

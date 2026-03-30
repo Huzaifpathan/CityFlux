@@ -73,13 +73,12 @@ fun MyBookingsContentEnhanced(
     
     var selectedBookingsTab by remember { mutableIntStateOf(0) }
     var searchQuery by remember { mutableStateOf("") }
-    var showFilterSheet by remember { mutableStateOf(false) }
-    var selectedFilter by remember { mutableStateOf("All") }
     
     // Dialog states
     var showQrDialog by remember { mutableStateOf<ParkingBooking?>(null) }
     var showDetailsDialog by remember { mutableStateOf<ParkingBooking?>(null) }
     var showRatingDialog by remember { mutableStateOf<ParkingBooking?>(null) }
+    var showExtendDialog by remember { mutableStateOf<ParkingBooking?>(null) }
     
     // Pull to refresh
     val pullToRefreshState = rememberPullToRefreshState()
@@ -120,8 +119,6 @@ fun MyBookingsContentEnhanced(
         SearchFilterBar(
             searchQuery = searchQuery,
             onSearchChange = { searchQuery = it },
-            selectedFilter = selectedFilter,
-            onFilterClick = { showFilterSheet = true },
             colors = colors
         )
         
@@ -196,7 +193,7 @@ fun MyBookingsContentEnhanced(
                     onBookingClick = { showDetailsDialog = it },
                     onShowQR = { showQrDialog = it },
                     onNavigate = { navigateToParking(context, it) },
-                    onExtend = { viewModel.extendBooking(it.id, 1) },
+                    onExtend = { showExtendDialog = it },
                     onCancel = { viewModel.cancelBooking(it.id, "User cancelled") },
                     colors = colors
                 )
@@ -262,15 +259,16 @@ fun MyBookingsContentEnhanced(
         )
     }
     
-    // ═══════════════ Filter Bottom Sheet ═══════════════
-    if (showFilterSheet) {
-        FilterBottomSheet(
-            selectedFilter = selectedFilter,
-            onFilterSelected = { 
-                selectedFilter = it
-                showFilterSheet = false
-            },
-            onDismiss = { showFilterSheet = false }
+    // ═══════════════ Extend Booking Dialog ═══════════════
+    showExtendDialog?.let { booking ->
+        ExtendBookingDialog(
+            booking = booking,
+            onDismiss = { showExtendDialog = null },
+            onExtend = { hours ->
+                viewModel.extendBooking(booking.id, hours)
+                showExtendDialog = null
+                Toast.makeText(context, "Booking extended by $hours hour(s)!", Toast.LENGTH_SHORT).show()
+            }
         )
     }
 }
@@ -371,53 +369,39 @@ private fun StatCard(
 }
 
 // ═══════════════════════════════════════════════════════════════
-// SEARCH & FILTER BAR
+// SEARCH BAR (No Filter Button)
 // ═══════════════════════════════════════════════════════════════
 @Composable
 private fun SearchFilterBar(
     searchQuery: String,
     onSearchChange: (String) -> Unit,
-    selectedFilter: String,
-    onFilterClick: () -> Unit,
     colors: CityFluxColors
 ) {
-    Row(
+    OutlinedTextField(
+        value = searchQuery,
+        onValueChange = onSearchChange,
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        // Search field
-        OutlinedTextField(
-            value = searchQuery,
-            onValueChange = onSearchChange,
-            modifier = Modifier.weight(1f),
-            placeholder = { Text("Search bookings...", fontSize = 14.sp) },
-            leadingIcon = {
-                Icon(Icons.Default.Search, null, Modifier.size(20.dp))
-            },
-            trailingIcon = {
-                if (searchQuery.isNotEmpty()) {
-                    IconButton(onClick = { onSearchChange("") }) {
-                        Icon(Icons.Default.Close, null, Modifier.size(18.dp))
-                    }
+        placeholder = { Text("Search by parking, vehicle, booking ID...", fontSize = 14.sp) },
+        leadingIcon = {
+            Icon(Icons.Default.Search, null, Modifier.size(20.dp))
+        },
+        trailingIcon = {
+            if (searchQuery.isNotEmpty()) {
+                IconButton(onClick = { onSearchChange("") }) {
+                    Icon(Icons.Default.Close, null, Modifier.size(18.dp))
                 }
-            },
-            singleLine = true,
-            shape = RoundedCornerShape(12.dp),
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedBorderColor = PremiumBlue,
-                unfocusedBorderColor = colors.cardBorder
-            )
+            }
+        },
+        singleLine = true,
+        shape = RoundedCornerShape(12.dp),
+        colors = OutlinedTextFieldDefaults.colors(
+            focusedBorderColor = PremiumBlue,
+            unfocusedBorderColor = colors.cardBorder
         )
-        
-        // Filter button
-        FilledIconButton(
-            onClick = onFilterClick,
-            colors = IconButtonDefaults.filledIconButtonColors(
-                containerColor = colors.surfaceVariant
-            )
+    )
+}
         ) {
             Icon(Icons.Default.FilterList, "Filter", Modifier.size(22.dp))
         }
@@ -1494,64 +1478,151 @@ private fun RatingDialog(
 }
 
 // ═══════════════════════════════════════════════════════════════
-// FILTER BOTTOM SHEET
+// EXTEND BOOKING DIALOG
 // ═══════════════════════════════════════════════════════════════
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun FilterBottomSheet(
-    selectedFilter: String,
-    onFilterSelected: (String) -> Unit,
-    onDismiss: () -> Unit
+private fun ExtendBookingDialog(
+    booking: ParkingBooking,
+    onDismiss: () -> Unit,
+    onExtend: (Int) -> Unit
 ) {
-    val filters = listOf("All", "This Week", "This Month", "Completed", "Cancelled")
+    var selectedHours by remember { mutableIntStateOf(1) }
+    val colors = MaterialTheme.cityFluxColors
     
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
-    ) {
-        Column(
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(24.dp)
+                .padding(16.dp),
+            shape = RoundedCornerShape(24.dp),
+            colors = CardDefaults.cardColors(containerColor = Color.White)
         ) {
-            Text(
-                text = "Filter Bookings",
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold
-            )
-            
-            Spacer(Modifier.height(16.dp))
-            
-            filters.forEach { filter ->
-                Surface(
-                    onClick = { onFilterSelected(filter) },
+            Column(
+                modifier = Modifier.padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Icon(
+                    Icons.Default.Update,
+                    null,
+                    tint = PremiumBlue,
+                    modifier = Modifier.size(48.dp)
+                )
+                
+                Spacer(Modifier.height(16.dp))
+                
+                Text(
+                    text = "Extend Parking",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold
+                )
+                
+                Spacer(Modifier.height(8.dp))
+                
+                Text(
+                    text = booking.parkingSpotName,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = SoftGray
+                )
+                
+                Spacer(Modifier.height(24.dp))
+                
+                Text(
+                    text = "Extend by:",
+                    style = MaterialTheme.typography.titleSmall,
+                    color = colors.textPrimary
+                )
+                
+                Spacer(Modifier.height(12.dp))
+                
+                // Hour selection buttons
+                Row(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp),
-                    color = if (filter == selectedFilter) PremiumBlue.copy(alpha = 0.1f) else Color.Transparent
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Row(
-                        modifier = Modifier.padding(16.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = filter,
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = if (filter == selectedFilter) PremiumBlue else Color.Black,
-                            fontWeight = if (filter == selectedFilter) FontWeight.SemiBold else FontWeight.Normal
-                        )
-                        Spacer(Modifier.weight(1f))
-                        if (filter == selectedFilter) {
-                            Icon(
-                                Icons.Default.Check,
-                                null,
-                                tint = PremiumBlue
-                            )
+                    listOf(1, 2, 3, 4).forEach { hours ->
+                        Surface(
+                            onClick = { selectedHours = hours },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(12.dp),
+                            color = if (selectedHours == hours) PremiumBlue else colors.surfaceVariant
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(12.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Text(
+                                    text = "$hours",
+                                    style = MaterialTheme.typography.titleLarge,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (selectedHours == hours) Color.White else colors.textPrimary
+                                )
+                                Text(
+                                    text = if (hours == 1) "hour" else "hours",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = if (selectedHours == hours) Color.White.copy(alpha = 0.8f) else colors.textSecondary
+                                )
+                            }
                         }
                     }
                 }
+                
+                Spacer(Modifier.height(16.dp))
+                
+                // Price preview
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    color = SuccessGreen.copy(alpha = 0.1f)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(16.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column {
+                            Text(
+                                text = "Additional Cost",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = colors.textSecondary
+                            )
+                            Text(
+                                text = "₹${booking.totalAmount.toInt() / booking.durationHours * selectedHours}",
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.Bold,
+                                color = SuccessGreen
+                            )
+                        }
+                        Icon(Icons.Default.Info, null, tint = SuccessGreen)
+                    }
+                }
+                
+                Spacer(Modifier.height(24.dp))
+                
+                // Action buttons
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    OutlinedButton(
+                        onClick = onDismiss,
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Text("Cancel")
+                    }
+                    
+                    Button(
+                        onClick = { onExtend(selectedHours) },
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = PremiumBlue)
+                    ) {
+                        Icon(Icons.Default.Check, null, Modifier.size(18.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("Extend")
+                    }
+                }
             }
-            
-            Spacer(Modifier.height(32.dp))
         }
     }
 }
