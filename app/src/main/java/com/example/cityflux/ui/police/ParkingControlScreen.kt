@@ -131,7 +131,9 @@ data class NearbyParkingArea(
     val availableSlots: Int,
     val totalSlots: Int,
     val isLegal: Boolean,
-    val distanceMeters: Float
+    val distanceMeters: Float,
+    val parkingType: String = "free", // "free" or "paid"
+    val ratePerHour: Int = 0
 )
 
 
@@ -419,7 +421,9 @@ fun ParkingControlScreen(
                     availableSlots = live?.availableSlots ?: spot.availableSlots,
                     totalSlots = live?.totalSlots ?: spot.totalSlots,
                     isLegal = spot.isLegal,
-                    distanceMeters = 0f
+                    distanceMeters = 0f,
+                    parkingType = spot.parkingType,
+                    ratePerHour = spot.ratePerHour
                 )
             }
         } else {
@@ -438,7 +442,9 @@ fun ParkingControlScreen(
                             availableSlots = live?.availableSlots ?: spot.availableSlots,
                             totalSlots = live?.totalSlots ?: spot.totalSlots,
                             isLegal = spot.isLegal,
-                            distanceMeters = distance
+                            distanceMeters = distance,
+                            parkingType = spot.parkingType,
+                            ratePerHour = spot.ratePerHour
                         )
                     } else null
                 }
@@ -1146,8 +1152,8 @@ private fun ParkingStatsStrip(state: ParkingControlViewModel.ParkingControlState
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = Spacing.Large, vertical = Spacing.Small),
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
+            .padding(horizontal = Spacing.Medium, vertical = Spacing.Small),
+        horizontalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         ParkingStatCard("Active", state.activeCount.toString(), AccentRed, Icons.Filled.ErrorOutline, Modifier.weight(1f))
         ParkingStatCard("Cleared", state.clearedCount.toString(), AccentGreen, Icons.Filled.CheckCircle, Modifier.weight(1f))
@@ -1165,44 +1171,45 @@ private fun ParkingStatCard(
     modifier: Modifier
 ) {
     val tc = MaterialTheme.cityFluxColors
-    // More compact horizontal layout
+    // More compact horizontal layout with fixed aspect ratio
     Surface(
-        modifier = modifier,
-        shape = RoundedCornerShape(CornerRadius.Small),
+        modifier = modifier.aspectRatio(1f), // Make them square/uniform
+        shape = RoundedCornerShape(CornerRadius.Medium),
         color = color.copy(alpha = 0.08f),
         border = BorderStroke(0.5.dp, color.copy(alpha = 0.15f))
     ) {
-        Row(
-            modifier = Modifier.padding(vertical = 8.dp, horizontal = 10.dp),
-            horizontalArrangement = Arrangement.Center,
-            verticalAlignment = Alignment.CenterVertically
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(10.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
         ) {
             Box(
                 Modifier
-                    .size(24.dp)
+                    .size(28.dp)
                     .clip(CircleShape)
                     .background(color.copy(alpha = 0.12f)),
                 contentAlignment = Alignment.Center
             ) {
-                Icon(icon, null, tint = color, modifier = Modifier.size(14.dp))
+                Icon(icon, null, tint = color, modifier = Modifier.size(16.dp))
             }
-            Spacer(Modifier.width(6.dp))
-            Column(horizontalAlignment = Alignment.Start) {
-                Text(
-                    value,
-                    style = MaterialTheme.typography.labelLarge,
-                    fontWeight = FontWeight.ExtraBold,
-                    color = color,
-                    lineHeight = 16.sp
-                )
-                Text(
-                    label,
-                    fontSize = 9.sp,
-                    color = tc.textTertiary,
-                    fontWeight = FontWeight.SemiBold,
-                    lineHeight = 11.sp
-                )
-            }
+            Spacer(Modifier.height(6.dp))
+            Text(
+                value,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.ExtraBold,
+                color = color,
+                lineHeight = 20.sp
+            )
+            Text(
+                label,
+                fontSize = 10.sp,
+                color = tc.textTertiary,
+                fontWeight = FontWeight.SemiBold,
+                lineHeight = 12.sp,
+                maxLines = 1
+            )
         }
     }
 }
@@ -3043,6 +3050,35 @@ private fun ParkingAreaDetailCard(
                             overflow = TextOverflow.Ellipsis,
                             modifier = Modifier.weight(1f, fill = false)
                         )
+                        
+                        // Free/Paid badge
+                        Surface(
+                            shape = RoundedCornerShape(CornerRadius.Small),
+                            color = if (area.parkingType == "paid") AccentOrange.copy(alpha = 0.15f) else AccentGreen.copy(alpha = 0.15f)
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(2.dp)
+                            ) {
+                                Text(
+                                    if (area.parkingType == "paid") "PAID" else "FREE",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (area.parkingType == "paid") AccentOrange else AccentGreen,
+                                    fontSize = 8.sp
+                                )
+                                if (area.parkingType == "paid" && area.ratePerHour > 0) {
+                                    Text(
+                                        "₹${area.ratePerHour}/hr",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = AccentOrange,
+                                        fontSize = 8.sp
+                                    )
+                                }
+                            }
+                        }
                         
                         // Illegal badge
                         if (!area.isLegal) {

@@ -1,5 +1,6 @@
 package com.example.cityflux.model
 
+import com.google.firebase.Timestamp
 import com.google.firebase.firestore.GeoPoint
 import com.google.firebase.firestore.DocumentSnapshot
 
@@ -13,7 +14,14 @@ data class ParkingSpot(
     val address: String = "",
     val totalSlots: Int = 0,
     val availableSlots: Int = 0,
-    val isLegal: Boolean = true
+    val isLegal: Boolean = true,
+    val parkingType: String = "free", // "free" or "paid"
+    val ratePerHour: Int = 0,
+    val minDuration: Int = 0,
+    val maxDuration: Int = 0,
+    val vehicleTypes: List<String> = emptyList(), // ["car", "bike", "truck"]
+    val createdAt: Timestamp? = null,
+    val updatedAt: Timestamp? = null
 )
 
 /**
@@ -27,6 +35,13 @@ fun DocumentSnapshot.toParkingSpot(): ParkingSpot? {
         val totalSlots = getLong("totalSlots")?.toInt() ?: 0
         val availableSlots = getLong("availableSlots")?.toInt() ?: 0
         val isLegal = getBoolean("isLegal") ?: true
+        val parkingType = getString("parkingType") ?: "free"
+        val ratePerHour = getLong("ratePerHour")?.toInt() ?: 0
+        val minDuration = getLong("minDuration")?.toInt() ?: 0
+        val maxDuration = getLong("maxDuration")?.toInt() ?: 0
+        val vehicleTypes = get("vehicleTypes") as? List<String> ?: emptyList()
+        val createdAt = getTimestamp("createdAt")
+        val updatedAt = getTimestamp("updatedAt")
         
         // Handle location field - can be GeoPoint or Array
         val location = try {
@@ -49,7 +64,14 @@ fun DocumentSnapshot.toParkingSpot(): ParkingSpot? {
             address = address,
             totalSlots = totalSlots,
             availableSlots = availableSlots,
-            isLegal = isLegal
+            isLegal = isLegal,
+            parkingType = parkingType,
+            ratePerHour = ratePerHour,
+            minDuration = minDuration,
+            maxDuration = maxDuration,
+            vehicleTypes = vehicleTypes,
+            createdAt = createdAt,
+            updatedAt = updatedAt
         )
     } catch (e: Exception) {
         null
