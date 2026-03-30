@@ -1,7 +1,14 @@
 /**
- * Seed script to add demo parking zones in Solapur
+ * Seed script to add demo parking zones in Aurangabad (Chhatrapati Sambhajinagar)
  * Run: node seedParking.js
  * Delete later: node seedParking.js --delete
+ * 
+ * New format includes:
+ * - parkingType: "free" or "paid"
+ * - ratePerHour: price per hour in ₹
+ * - minDuration: minimum parking time in minutes
+ * - maxDuration: maximum parking time in minutes
+ * - vehicleTypes: array of supported vehicle types
  */
 
 const admin = require("firebase-admin");
@@ -17,102 +24,149 @@ admin.initializeApp({
 const firestore = admin.firestore();
 const database = admin.database();
 
-// Demo parking zones in Solapur
+// Demo parking zones in Aurangabad - NEW FORMAT
 const demoParkingSpots = [
   {
     id: "demo_parking_01",
-    address: "Solapur Railway Station Parking",
-    location: new admin.firestore.GeoPoint(17.6599, 75.9064),
+    address: "Railway Station Parking",
+    location: new admin.firestore.GeoPoint(19.8606, 75.3105),
     totalSlots: 50,
     availableSlots: 35,
-    isLegal: true
+    isLegal: true,
+    parkingType: "paid",
+    ratePerHour: 15,
+    minDuration: 30,
+    maxDuration: 480,
+    vehicleTypes: ["car", "bike", "ev"]
   },
   {
     id: "demo_parking_02", 
-    address: "Siddheshwar Temple Parking",
-    location: new admin.firestore.GeoPoint(17.6720, 75.9100),
+    address: "Bus Stand Parking Zone",
+    location: new admin.firestore.GeoPoint(19.8720, 75.3200),
     totalSlots: 30,
     availableSlots: 12,
-    isLegal: true
+    isLegal: true,
+    parkingType: "paid",
+    ratePerHour: 11,
+    minDuration: 15,
+    maxDuration: 60,
+    vehicleTypes: ["car", "bike"]
   },
   {
     id: "demo_parking_03",
-    address: "Hutatma Chowk Market Parking",
-    location: new admin.firestore.GeoPoint(17.6550, 75.9050),
+    address: "Kranti Chowk Market Parking",
+    location: new admin.firestore.GeoPoint(19.8765, 75.3280),
     totalSlots: 40,
     availableSlots: 8,
-    isLegal: true
+    isLegal: true,
+    parkingType: "paid",
+    ratePerHour: 20,
+    minDuration: 30,
+    maxDuration: 240,
+    vehicleTypes: ["car", "bike", "ev", "suv"]
   },
   {
     id: "demo_parking_04",
-    address: "City Mall Solapur Parking",
-    location: new admin.firestore.GeoPoint(17.6780, 75.9200),
+    address: "Prozone Mall Parking",
+    location: new admin.firestore.GeoPoint(19.8780, 75.3433),
     totalSlots: 100,
     availableSlots: 45,
-    isLegal: true
+    isLegal: true,
+    parkingType: "free",
+    ratePerHour: 0,
+    minDuration: 30,
+    maxDuration: 180,
+    vehicleTypes: ["car", "bike", "ev", "suv"]
   },
   {
     id: "demo_parking_05",
-    address: "Bus Stand Parking Zone",
-    location: new admin.firestore.GeoPoint(17.6620, 75.9120),
-    totalSlots: 25,
-    availableSlots: 0,
-    isLegal: true
+    address: "CIDCO N-1 Free Parking",
+    location: new admin.firestore.GeoPoint(19.8450, 75.3100),
+    totalSlots: 60,
+    availableSlots: 38,
+    isLegal: true,
+    parkingType: "free",
+    ratePerHour: 0,
+    minDuration: 15,
+    maxDuration: 120,
+    vehicleTypes: ["car", "bike"]
   },
   {
     id: "demo_parking_06",
-    address: "Akkalkot Road Side Parking",
-    location: new admin.firestore.GeoPoint(17.6480, 75.9180),
+    address: "Jalna Road Side Parking",
+    location: new admin.firestore.GeoPoint(19.8810, 75.3650),
     totalSlots: 15,
     availableSlots: 5,
-    isLegal: false  // Illegal parking zone
+    isLegal: false,
+    parkingType: "paid",
+    ratePerHour: 10,
+    minDuration: 15,
+    maxDuration: 60,
+    vehicleTypes: ["bike"]
   },
   {
     id: "demo_parking_07",
-    address: "Vijapur Road Commercial Area",
-    location: new admin.firestore.GeoPoint(17.6700, 75.8950),
-    totalSlots: 60,
-    availableSlots: 22,
-    isLegal: true
+    address: "Cambridge Road Commercial",
+    location: new admin.firestore.GeoPoint(19.8550, 75.3050),
+    totalSlots: 80,
+    availableSlots: 32,
+    isLegal: true,
+    parkingType: "paid",
+    ratePerHour: 25,
+    minDuration: 60,
+    maxDuration: 480,
+    vehicleTypes: ["car", "ev", "suv", "truck"]
   }
 ];
 
 async function seedParkingData() {
-  console.log("🅿️  Adding demo parking zones to Firebase...\n");
+  console.log("🅿️  Adding demo parking zones to Firebase (NEW FORMAT)...\n");
 
   const batch = firestore.batch();
   const liveUpdates = {};
+  const now = admin.firestore.FieldValue.serverTimestamp();
 
   for (const spot of demoParkingSpots) {
     const docRef = firestore.collection("parking").doc(spot.id);
     
-    // Firestore data (static parking info)
+    // Firestore data (static parking info with new format)
     batch.set(docRef, {
       address: spot.address,
       location: spot.location,
       totalSlots: spot.totalSlots,
       availableSlots: spot.availableSlots,
-      isLegal: spot.isLegal
+      isLegal: spot.isLegal,
+      // New fields
+      parkingType: spot.parkingType,
+      ratePerHour: spot.ratePerHour,
+      minDuration: spot.minDuration,
+      maxDuration: spot.maxDuration,
+      vehicleTypes: spot.vehicleTypes,
+      createdAt: now,
+      updatedAt: now
     });
 
     // Realtime DB data (live availability)
     liveUpdates[spot.id] = {
-      availableSlots: spot.availableSlots
+      availableSlots: spot.availableSlots,
+      totalSlots: spot.totalSlots,
+      lastUpdated: Date.now()
     };
 
-    console.log(`  ✓ ${spot.address} (${spot.availableSlots}/${spot.totalSlots} slots)`);
+    const typeLabel = spot.parkingType === "free" ? "🆓 FREE" : `💰 ₹${spot.ratePerHour}/hr`;
+    console.log(`  ✓ ${spot.address} (${spot.availableSlots}/${spot.totalSlots} slots) ${typeLabel}`);
   }
 
   // Commit Firestore batch
   await batch.commit();
-  console.log("\n✅ Firestore: parking collection updated");
+  console.log("\n✅ Firestore: parking collection updated with new format");
 
   // Update Realtime Database
   await database.ref("parking_live").update(liveUpdates);
   console.log("✅ Realtime DB: parking_live updated");
 
   console.log("\n🎉 Done! Added " + demoParkingSpots.length + " demo parking zones.");
-  console.log("📍 Location: Solapur, Maharashtra\n");
+  console.log("📍 Location: Aurangabad (Chhatrapati Sambhajinagar), Maharashtra\n");
 }
 
 async function deleteParkingData() {

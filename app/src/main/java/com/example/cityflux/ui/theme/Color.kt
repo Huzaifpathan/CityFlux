@@ -93,6 +93,7 @@ val AccentGreen = Color(0xFF10B981)
 val AccentOrange = Color(0xFFF59E0B)
 val AccentRed = Color(0xFFEF4444)
 val AccentYellow = Color(0xFFFBBF24)
+val AccentBlue = Color(0xFF3B82F6)
 
 // Traffic map overlay
 val TrafficClear = Color(0xFF10B981)

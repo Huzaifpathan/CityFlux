@@ -77,6 +77,27 @@ fun BookNowDialog(
             viewModel.clearMessages()
         }
     }
+    
+    // Show Premium Success Dialog
+    if (uiState.showSuccessDialog && uiState.successBooking != null) {
+        BookingSuccessDialog(
+            booking = uiState.successBooking!!,
+            onDismiss = {
+                viewModel.dismissSuccessDialog()
+                onDismiss()
+            },
+            onViewBooking = {
+                viewModel.dismissSuccessDialog()
+                onBookingCreated(uiState.successBooking!!.id)
+            },
+            onNavigate = {
+                viewModel.dismissSuccessDialog()
+                onNavigateToParking()
+            },
+            onShare = { /* Share handled inside dialog */ }
+        )
+        return // Don't show main dialog when success dialog is showing
+    }
 
     Dialog(
         onDismissRequest = onDismiss,
@@ -138,6 +159,7 @@ fun BookNowDialog(
                     BookingStep.DURATION_AND_PRICING -> {
                         DurationPricingStep(
                             bookingForm = bookingForm,
+                            parkingSpot = parkingSpot,
                             onDurationSelected = { viewModel.updateDuration(it) },
                             onBookingTypeChanged = { viewModel.updateBookingType(it) },
                             onBack = { viewModel.moveToPreviousStep() },
@@ -406,12 +428,17 @@ private fun SlotSelectionStep(
 @Composable
 private fun DurationPricingStep(
     bookingForm: BookingFormState,
+    parkingSpot: ParkingSpot,
     onDurationSelected: (Int) -> Unit,
     onBookingTypeChanged: (BookingType) -> Unit,
     onBack: () -> Unit,
     onContinue: () -> Unit,
     colors: CityFluxColors
 ) {
+    // Calculate available duration options based on parking spot limits
+    val minHours = (parkingSpot.minDuration / 60f).coerceAtLeast(1f).toInt()
+    val maxHours = (parkingSpot.maxDuration / 60f).coerceAtLeast(1f).toInt()
+    
     Column {
         Text(
             text = "Parking Duration",
@@ -420,7 +447,60 @@ private fun DurationPricingStep(
             fontWeight = FontWeight.Bold
         )
         
-        Spacer(Modifier.height(12.dp))
+        // Show parking type info
+        if (parkingSpot.isFree) {
+            Surface(
+                modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                shape = RoundedCornerShape(8.dp),
+                color = AccentGreen.copy(alpha = 0.1f)
+            ) {
+                Row(
+                    modifier = Modifier.padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        Icons.Default.CheckCircle,
+                        contentDescription = null,
+                        tint = AccentGreen,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        "🎉 FREE Parking Zone - No charges!",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = AccentGreen,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+        } else {
+            Surface(
+                modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                shape = RoundedCornerShape(8.dp),
+                color = AccentBlue.copy(alpha = 0.1f)
+            ) {
+                Row(
+                    modifier = Modifier.padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        Icons.Default.LocalOffer,
+                        contentDescription = null,
+                        tint = AccentBlue,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        "Paid Parking • ${parkingSpot.rateDisplayString}",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = AccentBlue,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+        }
+        
+        Spacer(Modifier.height(8.dp))
         
         // Booking type selector (Now/Later/Recurring)
         BookingTypeSelector(
@@ -431,18 +511,20 @@ private fun DurationPricingStep(
         
         Spacer(Modifier.height(16.dp))
         
-        // Duration selection with smart pricing
+        // Duration selection with smart pricing - uses parking spot limits
         SmartDurationSelector(
             selectedHours = bookingForm.durationHours,
             vehicleType = bookingForm.vehicleType,
+            parkingSpot = parkingSpot,
             onDurationSelected = onDurationSelected,
             colors = colors
         )
         
         Spacer(Modifier.height(16.dp))
         
-        // Enhanced price breakdown
+        // Enhanced price breakdown - uses parking spot rate
         EnhancedPriceBreakdown(
+            parkingSpot = parkingSpot,
             vehicleType = bookingForm.vehicleType,
             hours = bookingForm.durationHours,
             bookingType = bookingForm.bookingType,
@@ -526,12 +608,31 @@ private fun VehicleDetailsStep(
             Spacer(Modifier.height(16.dp))
         }
         
-        // Vehicle number input
+        // Vehicle number input with validation
+        val vehicleNumberError = remember(bookingForm.vehicleNumber) {
+            if (bookingForm.vehicleNumber.isEmpty()) null
+            else if (!isValidVehicleNumber(bookingForm.vehicleNumber)) "Invalid format. Use: MH12AB1234"
+            else null
+        }
+        
         OutlinedTextField(
             value = bookingForm.vehicleNumber,
-            onValueChange = { onVehicleNumberChanged(it.uppercase()) },
+            onValueChange = { 
+                val formatted = it.uppercase().replace(" ", "").replace("-", "")
+                if (formatted.length <= 13) {
+                    onVehicleNumberChanged(formatted)
+                }
+            },
             label = { Text("Vehicle Number") },
-            placeholder = { Text("MH-12-AB-1234") },
+            placeholder = { Text("MH12AB1234") },
+            supportingText = {
+                if (vehicleNumberError != null) {
+                    Text(vehicleNumberError, color = AccentRed)
+                } else {
+                    Text("Format: StateCode + Number + Letters + Number", fontSize = 11.sp)
+                }
+            },
+            isError = vehicleNumberError != null,
             modifier = Modifier.fillMaxWidth(),
             singleLine = true,
             leadingIcon = {
@@ -542,12 +643,18 @@ private fun VehicleDetailsStep(
                         else -> Icons.Default.LocalShipping
                     },
                     contentDescription = null,
-                    tint = PrimaryBlue
+                    tint = if (vehicleNumberError != null) AccentRed else PrimaryBlue
                 )
+            },
+            trailingIcon = {
+                if (bookingForm.vehicleNumber.isNotEmpty() && vehicleNumberError == null) {
+                    Icon(Icons.Default.CheckCircle, null, tint = AccentGreen)
+                }
             },
             colors = OutlinedTextFieldDefaults.colors(
                 focusedBorderColor = PrimaryBlue,
-                unfocusedBorderColor = colors.inputBorder
+                unfocusedBorderColor = colors.inputBorder,
+                errorBorderColor = AccentRed
             )
         )
         
@@ -611,9 +718,8 @@ private fun PaymentStep(
     onUpdatePricing: (PricingBreakdown) -> Unit,
     colors: CityFluxColors
 ) {
-    val context = LocalContext.current
-    val pricing = PricingService.calculateParkingFee(bookingForm.vehicleType, bookingForm.durationHours)
-    var showPaymentConfirmation by remember { mutableStateOf(false) }
+    // Use parking spot's rate for pricing
+    val pricing = PricingService.calculateParkingFee(parkingSpot, bookingForm.vehicleType, bookingForm.durationHours)
     
     // Update pricing in ViewModel when entering this step
     LaunchedEffect(pricing) {
@@ -622,7 +728,7 @@ private fun PaymentStep(
     
     Column {
         Text(
-            text = "Payment & Confirmation",
+            text = "Confirm Booking",
             style = MaterialTheme.typography.titleLarge,
             color = colors.textPrimary,
             fontWeight = FontWeight.Bold
@@ -670,34 +776,34 @@ private fun PaymentStep(
             }
         }
         
-        Spacer(Modifier.height(20.dp))
+        Spacer(Modifier.height(16.dp))
         
-        // UPI Payment Info
+        // Payment method info (coming soon)
         Surface(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(12.dp),
-            color = colors.surfaceVariant
+            color = AccentOrange.copy(alpha = 0.1f)
         ) {
             Row(
                 modifier = Modifier.padding(16.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Icon(
-                    imageVector = Icons.Default.QrCode,
+                    imageVector = Icons.Default.Info,
                     contentDescription = null,
-                    tint = PrimaryBlue,
-                    modifier = Modifier.size(32.dp)
+                    tint = AccentOrange,
+                    modifier = Modifier.size(24.dp)
                 )
                 Spacer(Modifier.width(12.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "Pay via UPI",
+                        text = "Payment Coming Soon",
                         style = MaterialTheme.typography.titleSmall,
                         color = colors.textPrimary,
                         fontWeight = FontWeight.SemiBold
                     )
                     Text(
-                        text = "Google Pay, PhonePe, Paytm & more",
+                        text = "UPI payment will be enabled shortly. For now, bookings are free!",
                         style = MaterialTheme.typography.bodySmall,
                         color = colors.textSecondary
                     )
@@ -705,9 +811,9 @@ private fun PaymentStep(
             }
         }
         
-        Spacer(Modifier.height(20.dp))
+        Spacer(Modifier.height(24.dp))
         
-        // Navigation buttons
+        // Action buttons
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(12.dp)
@@ -724,84 +830,24 @@ private fun PaymentStep(
             }
             
             Button(
-                onClick = {
-                    // Launch UPI payment app chooser
-                    val launched = com.example.cityflux.service.UpiPaymentService.launchPayment(
-                        context = context,
-                        amount = pricing.totalAmount,
-                        parkingName = parkingSpot.address,
-                        bookingId = "PENDING", // Will be replaced after booking creation
-                        vehicleNumber = bookingForm.vehicleNumber
-                    )
-                    if (launched) {
-                        showPaymentConfirmation = true
-                    }
-                },
+                onClick = onConfirmBooking,
                 modifier = Modifier.weight(2f).height(56.dp),
                 enabled = !uiState.isLoading && bookingForm.vehicleNumber.isNotBlank(),
-                colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue)
+                colors = ButtonDefaults.buttonColors(containerColor = AccentGreen)
             ) {
-                Icon(Icons.Default.OpenInNew, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    text = "Open Payment App",
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Bold
-                )
-            }
-        }
-        
-        // Payment confirmation dialog
-        if (showPaymentConfirmation) {
-            Spacer(Modifier.height(16.dp))
-            
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp),
-                color = AccentOrange.copy(alpha = 0.1f)
-            ) {
-                Column(
-                    modifier = Modifier.padding(16.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Info,
-                        contentDescription = null,
-                        tint = AccentOrange,
-                        modifier = Modifier.size(24.dp)
+                if (uiState.isLoading) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(20.dp),
+                        color = Color.White
                     )
-                    Spacer(Modifier.height(8.dp))
+                } else {
+                    Icon(Icons.Default.CheckCircle, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
                     Text(
-                        text = "Payment Completed?",
-                        style = MaterialTheme.typography.titleSmall,
-                        color = colors.textPrimary,
-                        fontWeight = FontWeight.SemiBold
+                        text = "Confirm Booking",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold
                     )
-                    Text(
-                        text = "Click below after completing payment in your UPI app",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = colors.textSecondary,
-                        textAlign = TextAlign.Center
-                    )
-                    Spacer(Modifier.height(12.dp))
-                    
-                    Button(
-                        onClick = onConfirmBooking,
-                        modifier = Modifier.fillMaxWidth().height(48.dp),
-                        enabled = !uiState.isLoading,
-                        colors = ButtonDefaults.buttonColors(containerColor = AccentGreen)
-                    ) {
-                        if (uiState.isLoading) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(20.dp),
-                                color = Color.White
-                            )
-                        } else {
-                            Icon(Icons.Default.CheckCircle, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(8.dp))
-                            Text("Confirm Booking", fontWeight = FontWeight.Bold)
-                        }
-                    }
                 }
             }
         }
@@ -1239,10 +1285,18 @@ private fun BookingTypeChip(
 private fun SmartDurationSelector(
     selectedHours: Int,
     vehicleType: VehicleType,
+    parkingSpot: ParkingSpot,
     onDurationSelected: (Int) -> Unit,
     colors: CityFluxColors
 ) {
-    val durations = listOf(1, 2, 4, 8, 12, 24)
+    // Filter durations based on parking spot min/max limits
+    val minHours = (parkingSpot.minDuration / 60f).coerceAtLeast(0.5f)
+    val maxHours = (parkingSpot.maxDuration / 60f).coerceAtLeast(1f)
+    
+    val allDurations = listOf(1, 2, 4, 8, 12, 24)
+    val durations = allDurations.filter { 
+        it >= minHours && it <= maxHours 
+    }.ifEmpty { listOf(1, 2, 4) } // Default fallback
     
     LazyRow(
         horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -1252,6 +1306,7 @@ private fun SmartDurationSelector(
                 hours = hours,
                 isSelected = hours == selectedHours,
                 vehicleType = vehicleType,
+                parkingSpot = parkingSpot,
                 onClick = { onDurationSelected(hours) },
                 colors = colors
             )
@@ -1264,10 +1319,12 @@ private fun SmartDurationChip(
     hours: Int,
     isSelected: Boolean,
     vehicleType: VehicleType,
+    parkingSpot: ParkingSpot,
     onClick: () -> Unit,
     colors: CityFluxColors
 ) {
-    val pricing = PricingService.calculateParkingFee(vehicleType, hours)
+    // Use parking spot's rate for pricing
+    val pricing = PricingService.calculateParkingFee(parkingSpot, vehicleType, hours)
     val hasDiscount = pricing.discount > 0
     
     Surface(
@@ -1296,13 +1353,17 @@ private fun SmartDurationChip(
             
             Spacer(Modifier.height(4.dp))
             
+            // Show FREE or price
             Text(
-                text = "₹${pricing.totalAmount.toInt()}",
+                text = pricing.getTotalDisplayString(),
                 style = MaterialTheme.typography.bodySmall,
-                color = if (isSelected) PrimaryBlue else colors.textSecondary
+                color = if (pricing.isFreeParking) AccentGreen 
+                       else if (isSelected) PrimaryBlue 
+                       else colors.textSecondary,
+                fontWeight = if (pricing.isFreeParking) FontWeight.Bold else FontWeight.Normal
             )
             
-            if (hasDiscount) {
+            if (hasDiscount && !pricing.isFreeParking) {
                 Text(
                     text = "${pricing.getDiscountLabel()}",
                     style = MaterialTheme.typography.labelSmall,
@@ -1316,87 +1377,126 @@ private fun SmartDurationChip(
 
 @Composable
 private fun EnhancedPriceBreakdown(
+    parkingSpot: ParkingSpot,
     vehicleType: VehicleType,
     hours: Int,
     bookingType: BookingType,
     colors: CityFluxColors
 ) {
-    val pricing = PricingService.calculateParkingFee(vehicleType, hours)
+    // Use parking spot's rate for pricing
+    val pricing = PricingService.calculateParkingFee(parkingSpot, vehicleType, hours)
     
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(12.dp),
-        color = AccentParking.copy(alpha = 0.05f),
-        border = BorderStroke(1.dp, AccentParking.copy(alpha = 0.2f))
-    ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+    // Different UI for FREE vs PAID parking
+    if (pricing.isFreeParking) {
+        // FREE parking breakdown
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(12.dp),
+            color = AccentGreen.copy(alpha = 0.1f),
+            border = BorderStroke(1.dp, AccentGreen.copy(alpha = 0.3f))
+        ) {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
             ) {
+                Icon(
+                    Icons.Default.CheckCircle,
+                    contentDescription = null,
+                    tint = AccentGreen,
+                    modifier = Modifier.size(48.dp)
+                )
+                Spacer(Modifier.height(8.dp))
                 Text(
-                    text = "Price Breakdown",
-                    style = MaterialTheme.typography.titleSmall,
-                    color = colors.textPrimary,
+                    text = "FREE PARKING",
+                    style = MaterialTheme.typography.titleLarge,
+                    color = AccentGreen,
                     fontWeight = FontWeight.Bold
                 )
-                
-                if (bookingType == BookingType.BOOK_LATER) {
-                    Surface(
-                        shape = RoundedCornerShape(6.dp),
-                        color = AccentOrange.copy(alpha = 0.1f)
-                    ) {
-                        Text(
-                            text = "Advance Booking",
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = AccentOrange,
-                            fontWeight = FontWeight.Bold
-                        )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = "${hours} hour${if (hours > 1) "s" else ""} • No charges applicable",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = colors.textSecondary
+                )
+            }
+        }
+    } else {
+        // PAID parking breakdown
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(12.dp),
+            color = AccentParking.copy(alpha = 0.05f),
+            border = BorderStroke(1.dp, AccentParking.copy(alpha = 0.2f))
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Price Breakdown",
+                        style = MaterialTheme.typography.titleSmall,
+                        color = colors.textPrimary,
+                        fontWeight = FontWeight.Bold
+                    )
+                    
+                    if (bookingType == BookingType.BOOK_LATER) {
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            color = AccentOrange.copy(alpha = 0.1f)
+                        ) {
+                            Text(
+                                text = "Advance Booking",
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = AccentOrange,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
                     }
                 }
-            }
-            
-            Spacer(Modifier.height(12.dp))
-            
-            PriceRow("Base (${hours}h × ₹${pricing.baseRate.toInt()})", pricing.baseAmount, colors.textSecondary)
-            
-            if (pricing.discount > 0) {
-                PriceRow(
-                    "Discount ${pricing.getDiscountLabel()}",
-                    -pricing.discount,
-                    AccentGreen
-                )
-            }
-            
-            PriceRow("GST (18%)", pricing.gst, colors.textSecondary)
-            
-            if (bookingType == BookingType.RECURRING) {
-                PriceRow("Weekly Discount (5%)", -pricing.totalAmount * 0.05, AccentGreen)
-            }
-            
-            Spacer(Modifier.height(8.dp))
-            Divider(color = colors.divider)
-            Spacer(Modifier.height(8.dp))
-            
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "Total Amount",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = colors.textPrimary,
-                    fontWeight = FontWeight.Bold
-                )
-                Text(
-                    text = "₹${pricing.totalAmount.toInt()}",
-                    style = MaterialTheme.typography.titleLarge,
-                    color = AccentParking,
-                    fontWeight = FontWeight.Bold
-                )
+                
+                Spacer(Modifier.height(12.dp))
+                
+                PriceRow("Base (${hours}h × ₹${pricing.baseRate.toInt()})", pricing.baseAmount, colors.textSecondary)
+                
+                if (pricing.discount > 0) {
+                    PriceRow(
+                        "Discount ${pricing.getDiscountLabel()}",
+                        -pricing.discount,
+                        AccentGreen
+                    )
+                }
+                
+                PriceRow("GST (18%)", pricing.gst, colors.textSecondary)
+                
+                if (bookingType == BookingType.RECURRING) {
+                    PriceRow("Weekly Discount (5%)", -pricing.totalAmount * 0.05, AccentGreen)
+                }
+                
+                Spacer(Modifier.height(8.dp))
+                Divider(color = colors.divider)
+                Spacer(Modifier.height(8.dp))
+                
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Total Amount",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = colors.textPrimary,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = "₹${pricing.totalAmount.toInt()}",
+                        style = MaterialTheme.typography.titleLarge,
+                        color = AccentParking,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
             }
         }
     }
@@ -1729,4 +1829,26 @@ private fun StepProgressIndicator(
             }
         }
     }
+}
+
+/**
+ * Validates Indian vehicle number format
+ * Formats: MH12AB1234, DL01CAB1234, etc.
+ * Pattern: StateCode(2-3 letters) + Number(2 digits) + Letters(1-3) + Number(4 digits)
+ */
+private fun isValidVehicleNumber(number: String): Boolean {
+    if (number.isBlank()) return false
+    
+    // Indian vehicle number regex patterns
+    val patterns = listOf(
+        // Standard: MH12AB1234 (State + 2digit + 2letter + 4digit)
+        Regex("^[A-Z]{2}\\d{2}[A-Z]{2}\\d{4}$"),
+        // Old format: MH01A1234 (State + 2digit + 1letter + 4digit)
+        Regex("^[A-Z]{2}\\d{2}[A-Z]\\d{4}$"),
+        // New BH series: BH01AB1234 or 22BH1234AB
+        Regex("^[A-Z]{2}\\d{2}[A-Z]{2}\\d{4}$"),
+        Regex("^\\d{2}BH\\d{4}[A-Z]{2}$")
+    )
+    
+    return patterns.any { it.matches(number) }
 }

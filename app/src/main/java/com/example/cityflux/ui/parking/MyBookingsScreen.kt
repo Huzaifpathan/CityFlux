@@ -1,5 +1,6 @@
 package com.example.cityflux.ui.parking
 
+import android.graphics.Bitmap
 import androidx.compose.animation.*
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
@@ -17,13 +18,21 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.cityflux.model.*
+import com.example.cityflux.service.PricingService
 import com.example.cityflux.ui.theme.*
+import com.google.zxing.BarcodeFormat
+import com.google.zxing.qrcode.QRCodeWriter
 import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
 import java.util.*
@@ -42,6 +51,11 @@ fun MyBookingsScreen(
     val colors = MaterialTheme.cityFluxColors
     val uiState by viewModel.uiState.collectAsState()
     var selectedTab by remember { mutableIntStateOf(0) }
+    
+    // Dialog states
+    var showExtendDialog by remember { mutableStateOf(false) }
+    var showQRDialog by remember { mutableStateOf(false) }
+    var selectedBookingForAction by remember { mutableStateOf<ParkingBooking?>(null) }
     
     // Pull to refresh state
     val pullToRefreshState = rememberPullToRefreshState()
@@ -84,7 +98,7 @@ fun MyBookingsScreen(
                 .fillMaxSize()
                 .padding(padding)
         ) {
-            // Tab Row
+            // Tab Row - fixed styling
             TabRow(
                 selectedTabIndex = selectedTab,
                 containerColor = colors.cardBackground,
@@ -100,7 +114,10 @@ fun MyBookingsScreen(
                         ) {
                             Text("Active")
                             if (uiState.activeBookings.isNotEmpty()) {
-                                Badge {
+                                Badge(
+                                    containerColor = PrimaryBlue,
+                                    contentColor = Color.White
+                                ) {
                                     Text("${uiState.activeBookings.size}")
                                 }
                             }
@@ -117,7 +134,10 @@ fun MyBookingsScreen(
                         ) {
                             Text("Upcoming")
                             if (uiState.upcomingBookings.isNotEmpty()) {
-                                Badge {
+                                Badge(
+                                    containerColor = AccentAlerts,
+                                    contentColor = Color.White
+                                ) {
                                     Text("${uiState.upcomingBookings.size}")
                                 }
                             }
@@ -145,7 +165,12 @@ fun MyBookingsScreen(
                             viewModel.cancelBooking(booking.id, "User cancelled")
                         },
                         onExtendClick = { booking ->
-                            viewModel.extendBooking(booking.id, 1)
+                            selectedBookingForAction = booking
+                            showExtendDialog = true
+                        },
+                        onShowQRClick = { booking ->
+                            selectedBookingForAction = booking
+                            showQRDialog = true
                         },
                         colors = colors
                     )
@@ -173,6 +198,185 @@ fun MyBookingsScreen(
                 )
             }
         }
+        
+        // Extend Booking Dialog
+        if (showExtendDialog && selectedBookingForAction != null) {
+            ExtendBookingDialog(
+                booking = selectedBookingForAction!!,
+                onDismiss = { 
+                    showExtendDialog = false
+                    selectedBookingForAction = null
+                },
+                onConfirm = { hours ->
+                    viewModel.extendBooking(selectedBookingForAction!!.id, hours)
+                    showExtendDialog = false
+                    selectedBookingForAction = null
+                },
+                colors = colors
+            )
+        }
+        
+        // QR Code Dialog
+        if (showQRDialog && selectedBookingForAction != null) {
+            QRCodeDialog(
+                booking = selectedBookingForAction!!,
+                onDismiss = { 
+                    showQRDialog = false
+                    selectedBookingForAction = null
+                },
+                colors = colors
+            )
+        }
+    }
+}
+
+/**
+ * Enhanced My Bookings Content - Embeddable version without Scaffold
+ * Used within ParkingScreen's tab layout
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun MyBookingsContentEnhanced(
+    onBookingClick: (ParkingBooking) -> Unit,
+    viewModel: BookingViewModel = viewModel()
+) {
+    val colors = MaterialTheme.cityFluxColors
+    val uiState by viewModel.uiState.collectAsState()
+    var selectedTab by remember { mutableIntStateOf(0) }
+    
+    // Dialog states
+    var showExtendDialog by remember { mutableStateOf(false) }
+    var showQRDialog by remember { mutableStateOf(false) }
+    var selectedBookingForAction by remember { mutableStateOf<ParkingBooking?>(null) }
+    
+    Box(modifier = Modifier.fillMaxSize()) {
+        Column(
+            modifier = Modifier.fillMaxSize()
+        ) {
+            // Tab Row - fixed styling
+            TabRow(
+                selectedTabIndex = selectedTab,
+                containerColor = colors.cardBackground,
+                contentColor = PrimaryBlue
+            ) {
+                Tab(
+                    selected = selectedTab == 0,
+                    onClick = { selectedTab = 0 },
+                    text = {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(Spacing.XSmall)
+                        ) {
+                            Text("Active")
+                            if (uiState.activeBookings.isNotEmpty()) {
+                                Badge(
+                                    containerColor = PrimaryBlue,
+                                    contentColor = Color.White
+                                ) {
+                                    Text("${uiState.activeBookings.size}")
+                                }
+                            }
+                        }
+                    }
+                )
+                Tab(
+                    selected = selectedTab == 1,
+                    onClick = { selectedTab = 1 },
+                    text = {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(Spacing.XSmall)
+                        ) {
+                            Text("Upcoming")
+                            if (uiState.upcomingBookings.isNotEmpty()) {
+                                Badge(
+                                    containerColor = AccentAlerts,
+                                    contentColor = Color.White
+                                ) {
+                                    Text("${uiState.upcomingBookings.size}")
+                                }
+                            }
+                        }
+                    }
+                )
+                Tab(
+                    selected = selectedTab == 2,
+                    onClick = { selectedTab = 2 },
+                    text = { Text("History") }
+                )
+            }
+            
+            // Content area
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .weight(1f)
+            ) {
+                when (selectedTab) {
+                    0 -> ActiveBookingsTab(
+                        bookings = uiState.activeBookings,
+                        onBookingClick = onBookingClick,
+                        onCancelClick = { booking ->
+                            viewModel.cancelBooking(booking.id, "User cancelled")
+                        },
+                        onExtendClick = { booking ->
+                            selectedBookingForAction = booking
+                            showExtendDialog = true
+                        },
+                        onShowQRClick = { booking ->
+                            selectedBookingForAction = booking
+                            showQRDialog = true
+                        },
+                        colors = colors
+                    )
+                    1 -> UpcomingBookingsTab(
+                        bookings = uiState.upcomingBookings,
+                        onBookingClick = onBookingClick,
+                        onCancelClick = { booking ->
+                            viewModel.cancelBooking(booking.id, "User cancelled")
+                        },
+                        onModifyClick = { booking ->
+                            // TODO: Implement modify booking
+                        },
+                        colors = colors
+                    )
+                    2 -> HistoryTab(
+                        bookings = uiState.pastBookings,
+                        onBookingClick = onBookingClick,
+                        colors = colors
+                    )
+                }
+            }
+        }
+        
+        // Extend Booking Dialog
+        if (showExtendDialog && selectedBookingForAction != null) {
+            ExtendBookingDialog(
+                booking = selectedBookingForAction!!,
+                onDismiss = { 
+                    showExtendDialog = false
+                    selectedBookingForAction = null
+                },
+                onConfirm = { hours ->
+                    viewModel.extendBooking(selectedBookingForAction!!.id, hours)
+                    showExtendDialog = false
+                    selectedBookingForAction = null
+                },
+                colors = colors
+            )
+        }
+        
+        // QR Code Dialog
+        if (showQRDialog && selectedBookingForAction != null) {
+            QRCodeDialog(
+                booking = selectedBookingForAction!!,
+                onDismiss = { 
+                    showQRDialog = false
+                    selectedBookingForAction = null
+                },
+                colors = colors
+            )
+        }
     }
 }
 
@@ -182,6 +386,7 @@ private fun ActiveBookingsTab(
     onBookingClick: (ParkingBooking) -> Unit,
     onCancelClick: (ParkingBooking) -> Unit,
     onExtendClick: (ParkingBooking) -> Unit,
+    onShowQRClick: (ParkingBooking) -> Unit,
     colors: CityFluxColors
 ) {
     if (bookings.isEmpty()) {
@@ -203,6 +408,7 @@ private fun ActiveBookingsTab(
                     onClick = { onBookingClick(booking) },
                     onCancel = { onCancelClick(booking) },
                     onExtend = { onExtendClick(booking) },
+                    onShowQR = { onShowQRClick(booking) },
                     colors = colors
                 )
             }
@@ -280,6 +486,7 @@ private fun ActiveBookingCard(
     onClick: () -> Unit,
     onCancel: () -> Unit,
     onExtend: () -> Unit,
+    onShowQR: () -> Unit,
     colors: CityFluxColors
 ) {
     var showActions by remember { mutableStateOf(false) }
@@ -374,7 +581,7 @@ private fun ActiveBookingCard(
                 }
                 
                 Button(
-                    onClick = { /* Show QR */ },
+                    onClick = onShowQR,
                     modifier = Modifier.weight(1f),
                     colors = ButtonDefaults.buttonColors(
                         containerColor = PrimaryBlue
@@ -851,5 +1058,410 @@ private fun RealTimeCountdown(
                 }
             }
         }
+    }
+}
+
+// ═══════════════════════════════════════════════════════
+// Extend Booking Dialog
+// ═══════════════════════════════════════════════════════
+
+@Composable
+private fun ExtendBookingDialog(
+    booking: ParkingBooking,
+    onDismiss: () -> Unit,
+    onConfirm: (Int) -> Unit,
+    colors: CityFluxColors
+) {
+    var selectedHours by remember { mutableIntStateOf(1) }
+    val hourOptions = listOf(1, 2, 3, 4, 5, 6)
+    
+    // Calculate price for extension - recalculates when selectedHours changes
+    val extensionPrice by remember {
+        derivedStateOf {
+            val pricing = PricingService.calculateParkingFee(
+                vehicleType = booking.vehicleType,
+                durationHours = selectedHours
+            )
+            pricing.totalAmount
+        }
+    }
+    
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth(0.9f)
+                .padding(Spacing.Medium),
+            shape = RoundedCornerShape(CornerRadius.Large),
+            color = colors.cardBackground,
+            shadowElevation = 8.dp
+        ) {
+            Column(
+                modifier = Modifier.padding(Spacing.Large)
+            ) {
+                // Header
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Extend Booking",
+                        style = MaterialTheme.typography.titleLarge,
+                        color = colors.textPrimary,
+                        fontWeight = FontWeight.Bold
+                    )
+                    IconButton(onClick = onDismiss) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "Close",
+                            tint = colors.textSecondary
+                        )
+                    }
+                }
+                
+                Spacer(Modifier.height(Spacing.Medium))
+                
+                // Booking info
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(CornerRadius.Medium),
+                    color = colors.surfaceVariant
+                ) {
+                    Row(
+                        modifier = Modifier.padding(Spacing.Medium),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.LocalParking,
+                            contentDescription = null,
+                            tint = AccentParking,
+                            modifier = Modifier.size(40.dp)
+                        )
+                        Spacer(Modifier.width(Spacing.Medium))
+                        Column {
+                            Text(
+                                text = booking.parkingSpotName,
+                                style = MaterialTheme.typography.titleMedium,
+                                color = colors.textPrimary,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = "${booking.vehicleNumber} • ${booking.vehicleType.displayName}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = colors.textSecondary
+                            )
+                        }
+                    }
+                }
+                
+                Spacer(Modifier.height(Spacing.Large))
+                
+                // Duration selector
+                Text(
+                    text = "Extend by",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = colors.textSecondary
+                )
+                
+                Spacer(Modifier.height(Spacing.Small))
+                
+                // Hour chips
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(Spacing.Small)
+                ) {
+                    hourOptions.take(3).forEach { hours ->
+                        FilterChip(
+                            selected = selectedHours == hours,
+                            onClick = { selectedHours = hours },
+                            label = { Text("$hours hr") },
+                            modifier = Modifier.weight(1f),
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = PrimaryBlue,
+                                selectedLabelColor = Color.White
+                            )
+                        )
+                    }
+                }
+                
+                Spacer(Modifier.height(Spacing.Small))
+                
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(Spacing.Small)
+                ) {
+                    hourOptions.drop(3).forEach { hours ->
+                        FilterChip(
+                            selected = selectedHours == hours,
+                            onClick = { selectedHours = hours },
+                            label = { Text("$hours hr") },
+                            modifier = Modifier.weight(1f),
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = PrimaryBlue,
+                                selectedLabelColor = Color.White
+                            )
+                        )
+                    }
+                }
+                
+                Spacer(Modifier.height(Spacing.Large))
+                
+                // Price summary
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(CornerRadius.Medium),
+                    color = PrimaryBlue.copy(alpha = 0.1f)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(Spacing.Medium),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column {
+                            Text(
+                                text = "Extension Cost",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = colors.textSecondary
+                            )
+                            Text(
+                                text = "$selectedHours hour${if (selectedHours > 1) "s" else ""} additional",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = colors.textTertiary
+                            )
+                        }
+                        Text(
+                            text = "₹${extensionPrice.toInt()}",
+                            style = MaterialTheme.typography.headlineMedium,
+                            color = PrimaryBlue,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+                
+                Spacer(Modifier.height(Spacing.Large))
+                
+                // Action buttons
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(Spacing.Medium)
+                ) {
+                    OutlinedButton(
+                        onClick = onDismiss,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("Cancel")
+                    }
+                    
+                    Button(
+                        onClick = { onConfirm(selectedHours) },
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = PrimaryBlue
+                        )
+                    ) {
+                        Icon(Icons.Default.Add, null, Modifier.size(18.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("Extend Now")
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ═══════════════════════════════════════════════════════
+// QR Code Dialog
+// ═══════════════════════════════════════════════════════
+
+@Composable
+private fun QRCodeDialog(
+    booking: ParkingBooking,
+    onDismiss: () -> Unit,
+    colors: CityFluxColors
+) {
+    // Generate QR code content
+    val qrContent = remember(booking) {
+        "CITYFLUX:${booking.id}:${booking.parkingSpotId}:${booking.userId}"
+    }
+    
+    // Generate QR bitmap
+    val qrBitmap = remember(qrContent) {
+        generateQRCode(qrContent, 512)
+    }
+    
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth(0.9f)
+                .padding(Spacing.Medium),
+            shape = RoundedCornerShape(CornerRadius.Large),
+            color = colors.cardBackground,
+            shadowElevation = 8.dp
+        ) {
+            Column(
+                modifier = Modifier.padding(Spacing.Large),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                // Header
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Parking QR Code",
+                        style = MaterialTheme.typography.titleLarge,
+                        color = colors.textPrimary,
+                        fontWeight = FontWeight.Bold
+                    )
+                    IconButton(onClick = onDismiss) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "Close",
+                            tint = colors.textSecondary
+                        )
+                    }
+                }
+                
+                Spacer(Modifier.height(Spacing.Medium))
+                
+                // QR Code
+                Surface(
+                    modifier = Modifier.size(250.dp),
+                    shape = RoundedCornerShape(CornerRadius.Medium),
+                    color = Color.White,
+                    shadowElevation = 4.dp
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(Spacing.Medium),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        qrBitmap?.let { bitmap ->
+                            Image(
+                                bitmap = bitmap.asImageBitmap(),
+                                contentDescription = "Booking QR Code",
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        } ?: run {
+                            CircularProgressIndicator(color = PrimaryBlue)
+                        }
+                    }
+                }
+                
+                Spacer(Modifier.height(Spacing.Large))
+                
+                // Booking details
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(CornerRadius.Medium),
+                    color = colors.surfaceVariant
+                ) {
+                    Column(
+                        modifier = Modifier.padding(Spacing.Medium)
+                    ) {
+                        QRDetailRow(
+                            label = "Location",
+                            value = booking.parkingSpotName,
+                            colors = colors
+                        )
+                        QRDetailRow(
+                            label = "Vehicle",
+                            value = booking.vehicleNumber,
+                            colors = colors
+                        )
+                        QRDetailRow(
+                            label = "Valid Until",
+                            value = booking.bookingEndTime?.toDate()?.let {
+                                SimpleDateFormat("dd MMM, hh:mm a", Locale.getDefault()).format(it)
+                            } ?: "N/A",
+                            colors = colors
+                        )
+                        QRDetailRow(
+                            label = "Booking ID",
+                            value = booking.id.takeLast(8).uppercase(),
+                            colors = colors
+                        )
+                    }
+                }
+                
+                Spacer(Modifier.height(Spacing.Medium))
+                
+                // Instructions
+                Text(
+                    text = "Show this QR code to the parking attendant",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = colors.textSecondary,
+                    textAlign = TextAlign.Center
+                )
+                
+                Spacer(Modifier.height(Spacing.Large))
+                
+                // Close button
+                Button(
+                    onClick = onDismiss,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = PrimaryBlue
+                    )
+                ) {
+                    Text("Done")
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun QRDetailRow(
+    label: String,
+    value: String,
+    colors: CityFluxColors
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp),
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodySmall,
+            color = colors.textSecondary
+        )
+        Text(
+            text = value,
+            style = MaterialTheme.typography.bodyMedium,
+            color = colors.textPrimary,
+            fontWeight = FontWeight.Medium
+        )
+    }
+}
+
+/**
+ * Generate QR code bitmap using ZXing
+ */
+private fun generateQRCode(content: String, size: Int): Bitmap? {
+    return try {
+        val writer = QRCodeWriter()
+        val bitMatrix = writer.encode(content, BarcodeFormat.QR_CODE, size, size)
+        val width = bitMatrix.width
+        val height = bitMatrix.height
+        val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.RGB_565)
+        for (x in 0 until width) {
+            for (y in 0 until height) {
+                bitmap.setPixel(x, y, if (bitMatrix[x, y]) Color.Black.toArgb() else Color.White.toArgb())
+            }
+        }
+        bitmap
+    } catch (e: Exception) {
+        null
     }
 }
