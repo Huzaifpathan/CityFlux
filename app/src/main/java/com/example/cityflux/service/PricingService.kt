@@ -65,7 +65,7 @@ object PricingService {
         }
         
         // Get parking spot's rate per hour and apply vehicle multiplier
-        val spotRate = if (parkingSpot.ratePerHour > 0) parkingSpot.ratePerHour else DEFAULT_RATES[VehicleType.CAR]!!
+        val spotRate = if (parkingSpot.ratePerHour > 0) parkingSpot.ratePerHour.toDouble() else DEFAULT_RATES[VehicleType.CAR]!!
         val vehicleMultiplier = VEHICLE_MULTIPLIERS[vehicleType] ?: 1.0
         val baseRate = spotRate * vehicleMultiplier
         
