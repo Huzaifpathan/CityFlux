@@ -1,6 +1,10 @@
 package com.example.cityflux.model
 
 import com.google.firebase.Timestamp
+<<<<<<< HEAD
+=======
+import com.google.firebase.firestore.GeoPoint
+>>>>>>> vikas
 import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.Exclude
 import com.google.firebase.firestore.GeoPoint
@@ -41,6 +45,7 @@ data class ParkingSpot(
     val totalSlots: Int = 0,
     val availableSlots: Int = 0,
     val isLegal: Boolean = true,
+<<<<<<< HEAD
     
     // New fields for zone-based parking - maps to "parkingType" in Firebase
     val parkingType: String = "paid",
@@ -92,6 +97,16 @@ data class ParkingSpot(
         return if (isFree) 0.0 else ratePerHour * durationHours
     }
 }
+=======
+    val parkingType: String = "free", // "free" or "paid"
+    val ratePerHour: Int = 0,
+    val minDuration: Int = 0,
+    val maxDuration: Int = 0,
+    val vehicleTypes: List<String> = emptyList(), // ["car", "bike", "truck"]
+    val createdAt: Timestamp? = null,
+    val updatedAt: Timestamp? = null
+)
+>>>>>>> vikas
 
 /**
  * Helper function to safely parse ParkingSpot from Firestore DocumentSnapshot.
@@ -104,11 +119,19 @@ fun DocumentSnapshot.toParkingSpot(): ParkingSpot? {
         val totalSlots = getLong("totalSlots")?.toInt() ?: 0
         val availableSlots = getLong("availableSlots")?.toInt() ?: 0
         val isLegal = getBoolean("isLegal") ?: true
+<<<<<<< HEAD
         val parkingType = getString("parkingType") ?: "paid"
         val ratePerHour = getDouble("ratePerHour") ?: 0.0
         val minDuration = getLong("minDuration")?.toInt() ?: 15
         val maxDuration = getLong("maxDuration")?.toInt() ?: 480
         val vehicleTypes = (get("vehicleTypes") as? List<*>)?.mapNotNull { it as? String } ?: listOf("car", "bike", "ev")
+=======
+        val parkingType = getString("parkingType") ?: "free"
+        val ratePerHour = getLong("ratePerHour")?.toInt() ?: 0
+        val minDuration = getLong("minDuration")?.toInt() ?: 0
+        val maxDuration = getLong("maxDuration")?.toInt() ?: 0
+        val vehicleTypes = get("vehicleTypes") as? List<String> ?: emptyList()
+>>>>>>> vikas
         val createdAt = getTimestamp("createdAt")
         val updatedAt = getTimestamp("updatedAt")
         

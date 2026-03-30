@@ -557,64 +557,26 @@ fun CitizenHomeContent(
 
             NearbyEmergencyServicesCard()
 
-            // ──────── QUICK ACTIONS (premium with badges) ────────
-            SectionHeader(
-                title = "Quick Actions",
-                icon = Icons.Outlined.FlashOn
+            // ──────── QUICK ACTIONS (Modern Grid Design) ────────
+            QuickActionsGrid(
+                highTrafficCount = highTrafficZones.size,
+                unreadAlerts = unreadCount,
+                pendingReports = myPendingReports.size,
+                newParkingAreas = nearbyParkingItems.size,
+                onMapClick = {
+                    try { Firebase.analytics.logEvent("map_opened_from_home", null) } catch (_: Exception) {}
+                    onNavigateToTab(CitizenTab.MAP)
+                },
+                onParkingClick = {
+                    try { Firebase.analytics.logEvent("find_parking_clicked", null) } catch (_: Exception) {}
+                    onNavigateToTab(CitizenTab.PARKING)
+                },
+                onReportClick = {
+                    try { Firebase.analytics.logEvent("report_issue_clicked", null) } catch (_: Exception) {}
+                    onNavigateToTab(CitizenTab.REPORT)
+                },
+                onAlertsClick = { onNavigateToTab(CitizenTab.ALERTS) }
             )
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(Spacing.Medium)
-            ) {
-                PremiumActionButton(
-                    label = "Traffic\nMap",
-                    icon = Icons.Outlined.Traffic,
-                    accentColor = AccentTraffic,
-                    badge = highTrafficZones.size.let { if (it > 0) "$it" else null },
-                    modifier = Modifier.weight(1f),
-                    onClick = {
-                        try { Firebase.analytics.logEvent("map_opened_from_home", null) } catch (_: Exception) {}
-                        onNavigateToTab(CitizenTab.MAP)
-                    }
-                )
-                PremiumActionButton(
-                    label = "Find\nParking",
-                    icon = Icons.Outlined.LocalParking,
-                    accentColor = AccentParking,
-                    badge = null,
-                    modifier = Modifier.weight(1f),
-                    onClick = {
-                        try { Firebase.analytics.logEvent("find_parking_clicked", null) } catch (_: Exception) {}
-                        onNavigateToTab(CitizenTab.PARKING)
-                    }
-                )
-            }
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(Spacing.Medium)
-            ) {
-                PremiumActionButton(
-                    label = "Report\nIssue",
-                    icon = Icons.Outlined.ReportProblem,
-                    accentColor = AccentIssues,
-                    badge = null,
-                    modifier = Modifier.weight(1f),
-                    onClick = {
-                        try { Firebase.analytics.logEvent("report_issue_clicked", null) } catch (_: Exception) {}
-                        onNavigateToTab(CitizenTab.REPORT)
-                    }
-                )
-                PremiumActionButton(
-                    label = "My\nAlerts",
-                    icon = Icons.AutoMirrored.Outlined.ListAlt,
-                    accentColor = AccentAlerts,
-                    badge = myPendingReports.size.let { if (it > 0) "$it" else null },
-                    modifier = Modifier.weight(1f),
-                    onClick = { onNavigateToTab(CitizenTab.ALERTS) }
-                )
-            }
 
             // ──────── RECENT ACTIVITY TIMELINE ────────
             SectionHeader(
@@ -755,84 +717,229 @@ private fun HomeTopBar(
     onProfileClick: () -> Unit = {}
 ) {
     val colors = MaterialTheme.cityFluxColors
+    
+    // Get time-based greeting
+    val greeting = remember {
+        val hour = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)
+        when {
+            hour < 12 -> "Good Morning"
+            hour < 17 -> "Good Afternoon"
+            else -> "Good Evening"
+        }
+    }
+    
+    val greetingEmoji = remember {
+        val hour = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)
+        when {
+            hour < 12 -> "☀️"
+            hour < 17 -> "🌤️"
+            hour < 20 -> "🌅"
+            else -> "🌙"
+        }
+    }
 
-    Row(
+    // Subtle breathing animation for the card
+    val infiniteTransition = rememberInfiniteTransition(label = "topBarBreath")
+    val breathScale by infiniteTransition.animateFloat(
+        initialValue = 1f,
+        targetValue = 1.01f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(3000, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "breathScale"
+    )
+
+    // Clean, minimal welcome card
+    Card(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = Spacing.XLarge, vertical = Spacing.Large),
-        verticalAlignment = Alignment.CenterVertically
+            .padding(horizontal = Spacing.Large, vertical = Spacing.Medium)
+            .scale(breathScale)
+            .shadow(
+                elevation = 16.dp,
+                shape = RoundedCornerShape(20.dp),
+                ambientColor = PrimaryBlue.copy(alpha = 0.25f),
+                spotColor = GradientBright.copy(alpha = 0.15f)
+            ),
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.Transparent)
     ) {
-        // City badge icon (matching police shield style)
         Box(
             modifier = Modifier
-                .size(44.dp)
-                .clip(CircleShape)
+                .fillMaxWidth()
                 .background(
                     Brush.linearGradient(
-                        listOf(PrimaryBlue, GradientBright)
+                        colors = listOf(
+                            Color(0xFF1E3A5F),
+                            Color(0xFF2E5A8F),
+                            Color(0xFF1E4976)
+                        ),
+                        start = Offset.Zero,
+                        end = Offset(Float.POSITIVE_INFINITY, Float.POSITIVE_INFINITY)
                     )
-                ),
-            contentAlignment = Alignment.Center
+                )
         ) {
-            Icon(
-                imageVector = Icons.Filled.LocationCity,
-                contentDescription = null,
-                tint = Color.White,
-                modifier = Modifier.size(24.dp)
+            // Subtle pattern overlay
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(
+                        Brush.radialGradient(
+                            colors = listOf(
+                                Color.White.copy(alpha = 0.08f),
+                                Color.Transparent
+                            ),
+                            center = Offset(100f, 50f),
+                            radius = 300f
+                        )
+                    )
             )
-        }
-
-        Spacer(modifier = Modifier.width(Spacing.Medium))
-
-        Column(modifier = Modifier.weight(1f)) {
-            if (userLoading) {
-                CitizenShimmerBox(width = 140.dp, height = 16.dp)
-                Spacer(modifier = Modifier.height(4.dp))
-                CitizenShimmerBox(width = 100.dp, height = 12.dp)
-            } else {
-                Text(
-                    text = "Hello, ${userName ?: "Citizen"} 👋",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = colors.textPrimary
-                )
-                Text(
-                    text = "Smart City Dashboard",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = colors.textSecondary
-                )
-            }
-        }
-
-        // Notification bell
-        BadgedBox(
-            badge = {
-                if (unreadCount > 0) {
-                    Badge(containerColor = AccentRed, contentColor = Color.White) {
+            
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp, vertical = 16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Clean avatar with gradient border
+                Box(
+                    modifier = Modifier
+                        .size(52.dp)
+                        .clip(CircleShape)
+                        .background(
+                            Brush.linearGradient(
+                                colors = listOf(
+                                    Color(0xFF60A5FA),
+                                    Color(0xFF3B82F6)
+                                )
+                            )
+                        )
+                        .padding(2.dp)
+                        .clip(CircleShape)
+                        .background(Color(0xFF1E3A5F)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (!userLoading && !userName.isNullOrBlank()) {
                         Text(
-                            if (unreadCount > 9) "9+" else "$unreadCount",
-                            style = MaterialTheme.typography.labelSmall
+                            text = userName.first().uppercaseChar().toString(),
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White
+                        )
+                    } else {
+                        Icon(
+                            imageVector = Icons.Filled.Person,
+                            contentDescription = null,
+                            tint = Color.White,
+                            modifier = Modifier.size(26.dp)
                         )
                     }
                 }
-            }
-        ) {
-            IconButton(onClick = onNotificationClick) {
-                Icon(
-                    imageVector = Icons.Filled.Notifications,
-                    contentDescription = "Notifications",
-                    tint = colors.textSecondary
-                )
-            }
-        }
 
-        // Profile
-        IconButton(onClick = onProfileClick) {
-            Icon(
-                imageVector = Icons.Outlined.AccountCircle,
-                contentDescription = "Profile",
-                tint = colors.textSecondary
-            )
+                Spacer(modifier = Modifier.width(14.dp))
+
+                // Greeting & Name
+                Column(modifier = Modifier.weight(1f)) {
+                    if (userLoading) {
+                        Box(
+                            modifier = Modifier
+                                .width(120.dp)
+                                .height(16.dp)
+                                .clip(RoundedCornerShape(4.dp))
+                                .background(Color.White.copy(alpha = 0.2f))
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Box(
+                            modifier = Modifier
+                                .width(80.dp)
+                                .height(12.dp)
+                                .clip(RoundedCornerShape(4.dp))
+                                .background(Color.White.copy(alpha = 0.15f))
+                        )
+                    } else {
+                        // Time-based greeting
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = "$greeting $greetingEmoji",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Color(0xFF93C5FD),
+                                fontWeight = FontWeight.Medium,
+                                letterSpacing = 0.5.sp
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = userName ?: "Citizen",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White,
+                            letterSpacing = 0.25.sp
+                        )
+                    }
+                }
+
+                // Action buttons
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    // Notification button with badge
+                    Box {
+                        Surface(
+                            onClick = onNotificationClick,
+                            shape = CircleShape,
+                            color = Color.White.copy(alpha = 0.12f),
+                            modifier = Modifier.size(40.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = Icons.Outlined.Notifications,
+                                    contentDescription = "Notifications",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        }
+                        if (unreadCount > 0) {
+                            Surface(
+                                modifier = Modifier
+                                    .align(Alignment.TopEnd)
+                                    .offset(x = 4.dp, y = (-2).dp),
+                                shape = CircleShape,
+                                color = Color(0xFFEF4444),
+                                shadowElevation = 2.dp
+                            ) {
+                                Text(
+                                    text = if (unreadCount > 99) "99+" else "$unreadCount",
+                                    modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White
+                                )
+                            }
+                        }
+                    }
+
+                    // Profile/Settings button
+                    Surface(
+                        onClick = onProfileClick,
+                        shape = CircleShape,
+                        color = Color.White.copy(alpha = 0.12f),
+                        modifier = Modifier.size(40.dp)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = Icons.Outlined.Person,
+                                contentDescription = "Profile",
+                                tint = Color.White,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    }
+                }
+            }
         }
     }
 }
@@ -3233,6 +3340,247 @@ private fun NearbyEmergencyServicesCard() {
                             )
                         }
                     }
+                }
+            }
+        }
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// ⚡ Quick Actions Grid - Modern Card Design with Live Badges
+// ═══════════════════════════════════════════════════════════════════
+
+@Composable
+private fun QuickActionsGrid(
+    highTrafficCount: Int,
+    unreadAlerts: Int,
+    pendingReports: Int,
+    newParkingAreas: Int,
+    onMapClick: () -> Unit,
+    onParkingClick: () -> Unit,
+    onReportClick: () -> Unit,
+    onAlertsClick: () -> Unit
+) {
+    val colors = MaterialTheme.cityFluxColors
+    
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        // Section header
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = Icons.Outlined.FlashOn,
+                    contentDescription = null,
+                    tint = AccentOrange,
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "Quick Actions",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = colors.textPrimary
+                )
+            }
+            // Total notification count
+            val totalCount = highTrafficCount + unreadAlerts + pendingReports
+            if (totalCount > 0) {
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = AccentRed.copy(alpha = 0.1f)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(6.dp)
+                                .clip(CircleShape)
+                                .background(AccentRed)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "$totalCount new",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.SemiBold,
+                            color = AccentRed,
+                            fontSize = 11.sp
+                        )
+                    }
+                }
+            }
+        }
+
+        // Action cards grid - 2x2
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            QuickActionCard(
+                title = "Traffic Map",
+                subtitle = if (highTrafficCount > 0) "$highTrafficCount zones" else "View live",
+                icon = Icons.Outlined.Traffic,
+                accentColor = Color(0xFFEF4444),
+                badgeCount = highTrafficCount,
+                modifier = Modifier.weight(1f),
+                onClick = onMapClick
+            )
+            QuickActionCard(
+                title = "Find Parking",
+                subtitle = if (newParkingAreas > 0) "$newParkingAreas nearby" else "Search",
+                icon = Icons.Outlined.LocalParking,
+                accentColor = Color(0xFF3B82F6),
+                badgeCount = 0,
+                modifier = Modifier.weight(1f),
+                onClick = onParkingClick
+            )
+        }
+        
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            QuickActionCard(
+                title = "Report Issue",
+                subtitle = "Submit now",
+                icon = Icons.Outlined.ReportProblem,
+                accentColor = Color(0xFFF59E0B),
+                badgeCount = 0,
+                modifier = Modifier.weight(1f),
+                onClick = onReportClick
+            )
+            QuickActionCard(
+                title = "My Alerts",
+                subtitle = if (unreadAlerts > 0) "$unreadAlerts unread" else "All clear",
+                icon = Icons.Outlined.Notifications,
+                accentColor = Color(0xFF8B5CF6),
+                badgeCount = unreadAlerts,
+                modifier = Modifier.weight(1f),
+                onClick = onAlertsClick
+            )
+        }
+    }
+}
+
+@Composable
+private fun QuickActionCard(
+    title: String,
+    subtitle: String,
+    icon: ImageVector,
+    accentColor: Color,
+    badgeCount: Int,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
+) {
+    val colors = MaterialTheme.cityFluxColors
+    
+    Card(
+        onClick = onClick,
+        modifier = modifier
+            .height(100.dp)
+            .shadow(
+                elevation = 6.dp,
+                shape = RoundedCornerShape(16.dp),
+                ambientColor = accentColor.copy(alpha = 0.15f),
+                spotColor = accentColor.copy(alpha = 0.1f)
+            ),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = colors.cardBackground)
+    ) {
+        Box(modifier = Modifier.fillMaxSize()) {
+            // Accent stripe on left
+            Box(
+                modifier = Modifier
+                    .width(4.dp)
+                    .fillMaxHeight()
+                    .background(
+                        Brush.verticalGradient(
+                            listOf(accentColor, accentColor.copy(alpha = 0.5f))
+                        )
+                    )
+            )
+            
+            // Content
+            Row(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(start = 16.dp, end = 12.dp, top = 14.dp, bottom = 14.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Icon container with gradient background
+                Box(
+                    modifier = Modifier
+                        .size(44.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(
+                            Brush.linearGradient(
+                                listOf(
+                                    accentColor.copy(alpha = 0.15f),
+                                    accentColor.copy(alpha = 0.08f)
+                                )
+                            )
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = title,
+                        tint = accentColor,
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
+                
+                Spacer(modifier = Modifier.width(12.dp))
+                
+                // Text content
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    Text(
+                        text = title,
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = colors.textPrimary,
+                        maxLines = 1
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = subtitle,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = colors.textTertiary,
+                        maxLines = 1,
+                        fontSize = 11.sp
+                    )
+                }
+                
+                // Badge or arrow
+                if (badgeCount > 0) {
+                    Surface(
+                        shape = CircleShape,
+                        color = accentColor,
+                        shadowElevation = 2.dp
+                    ) {
+                        Text(
+                            text = if (badgeCount > 99) "99+" else "$badgeCount",
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White,
+                            fontSize = 11.sp
+                        )
+                    }
+                } else {
+                    Icon(
+                        imageVector = Icons.Filled.ChevronRight,
+                        contentDescription = null,
+                        tint = colors.textTertiary.copy(alpha = 0.5f),
+                        modifier = Modifier.size(20.dp)
+                    )
                 }
             }
         }

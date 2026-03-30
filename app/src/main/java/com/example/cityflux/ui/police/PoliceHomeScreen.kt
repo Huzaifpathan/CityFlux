@@ -281,7 +281,9 @@ fun PoliceHomeScreen(
                     isLegal = spot.isLegal,
                     distanceKm = 0f,
                     latitude = spot.location?.latitude ?: 0.0,
-                    longitude = spot.location?.longitude ?: 0.0
+                    longitude = spot.location?.longitude ?: 0.0,
+                    parkingType = spot.parkingType,
+                    ratePerHour = spot.ratePerHour
                 )
             }.take(5)
         } else {
@@ -301,7 +303,9 @@ fun PoliceHomeScreen(
                     isLegal = spot.isLegal,
                     distanceKm = distanceKm,
                     latitude = loc.latitude,
-                    longitude = loc.longitude
+                    longitude = loc.longitude,
+                    parkingType = spot.parkingType,
+                    ratePerHour = spot.ratePerHour
                 )
             }.sortedBy { it.distanceKm }
         }
@@ -536,23 +540,18 @@ private fun PoliceHomeTopBar(
     onProfileClick: () -> Unit
 ) {
     val colors = MaterialTheme.cityFluxColors
-    val infiniteTransition = rememberInfiniteTransition(label = "header_glow")
-    val glowAlpha by infiniteTransition.animateFloat(
-        initialValue = 0.3f,
-        targetValue = 0.6f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(2000, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "glow"
-    )
 
-    // Premium gradient header card
+    // Premium gradient header card - cleaner design
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = Spacing.Large, vertical = Spacing.Medium),
-        shape = RoundedCornerShape(CornerRadius.XLarge),
+            .padding(horizontal = Spacing.Large, vertical = Spacing.Medium)
+            .shadow(
+                elevation = 12.dp,
+                shape = RoundedCornerShape(20.dp),
+                ambientColor = PrimaryBlue.copy(alpha = 0.3f)
+            ),
+        shape = RoundedCornerShape(20.dp),
         colors = CardDefaults.cardColors(containerColor = Color.Transparent)
     ) {
         Box(
@@ -561,168 +560,174 @@ private fun PoliceHomeTopBar(
                 .background(
                     Brush.linearGradient(
                         colors = listOf(
-                            PrimaryBlue,
+                            Color(0xFF1E40AF),
                             Color(0xFF3B82F6),
                             Color(0xFF60A5FA)
                         ),
                         start = Offset(0f, 0f),
-                        end = Offset(1000f, 500f)
+                        end = Offset(800f, 400f)
                     )
                 )
-                .padding(Spacing.Large)
+                .padding(16.dp)
         ) {
-            // Animated background accent
-            Box(
-                modifier = Modifier
-                    .size(120.dp)
-                    .offset(x = 200.dp, y = (-20).dp)
-                    .background(
-                        color = Color.White.copy(alpha = glowAlpha * 0.2f),
-                        shape = CircleShape
-                    )
-            )
-            
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Officer shield badge with animation
+                // Officer shield badge
                 Box(
                     modifier = Modifier
-                        .size(56.dp)
+                        .size(50.dp)
                         .clip(CircleShape)
                         .background(Color.White.copy(alpha = 0.2f))
-                        .border(2.dp, Color.White.copy(alpha = 0.3f), CircleShape),
+                        .border(2.dp, Color.White.copy(alpha = 0.4f), CircleShape),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
                         imageVector = Icons.Filled.Shield,
                         contentDescription = null,
                         tint = Color.White,
-                        modifier = Modifier.size(32.dp)
+                        modifier = Modifier.size(28.dp)
                     )
                 }
 
-                Spacer(modifier = Modifier.width(Spacing.Large))
+                Spacer(modifier = Modifier.width(12.dp))
 
+                // Name & Status - takes remaining space
                 Column(modifier = Modifier.weight(1f)) {
                     if (userLoading) {
                         Box(
                             modifier = Modifier
-                                .width(180.dp)
-                                .height(20.dp)
+                                .width(100.dp)
+                                .height(14.dp)
                                 .clip(RoundedCornerShape(4.dp))
                                 .background(Color.White.copy(alpha = 0.3f))
                         )
-                        Spacer(modifier = Modifier.height(6.dp))
+                        Spacer(modifier = Modifier.height(4.dp))
                         Box(
                             modifier = Modifier
-                                .width(140.dp)
-                                .height(14.dp)
+                                .width(80.dp)
+                                .height(18.dp)
                                 .clip(RoundedCornerShape(4.dp))
                                 .background(Color.White.copy(alpha = 0.2f))
                         )
                     } else {
                         Text(
                             text = "Welcome, Officer",
-                            style = MaterialTheme.typography.labelMedium,
-                            fontWeight = FontWeight.Medium,
-                            color = Color.White.copy(alpha = 0.9f),
-                            letterSpacing = 0.5.sp
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Color.White.copy(alpha = 0.85f),
+                            letterSpacing = 0.3.sp
                         )
-                        Spacer(modifier = Modifier.height(2.dp))
                         Text(
-                            text = userName ?: "On Duty",
-                            style = MaterialTheme.typography.headlineSmall,
+                            text = userName ?: "Officer",
+                            style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
-                            color = Color.White
+                            color = Color.White,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
-                        Spacer(modifier = Modifier.height(2.dp))
+                        // Location + Status row
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            modifier = Modifier.padding(top = 2.dp)
                         ) {
                             Icon(
                                 imageVector = Icons.Outlined.LocationOn,
                                 contentDescription = null,
-                                tint = Color.White.copy(alpha = 0.8f),
-                                modifier = Modifier.size(14.dp)
+                                tint = Color.White.copy(alpha = 0.7f),
+                                modifier = Modifier.size(12.dp)
                             )
                             Text(
                                 text = if (areaName.isNotBlank()) areaName else "City Patrol",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = Color.White.copy(alpha = 0.85f)
+                                style = MaterialTheme.typography.labelSmall,
+                                color = Color.White.copy(alpha = 0.75f),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f, fill = false)
                             )
-                            Box(
-                                modifier = Modifier
-                                    .size(4.dp)
-                                    .background(Color.White.copy(alpha = 0.6f), CircleShape)
-                            )
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            Spacer(modifier = Modifier.width(6.dp))
+                            // On Duty badge
+                            Surface(
+                                shape = RoundedCornerShape(10.dp),
+                                color = AccentGreen.copy(alpha = 0.25f)
                             ) {
-                                PulsingDot(color = AccentGreen, size = 6.dp)
-                                Text(
-                                    text = "On Duty",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = Color.White.copy(alpha = 0.9f)
-                                )
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(5.dp)
+                                            .background(AccentGreen, CircleShape)
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(
+                                        text = "On Duty",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontSize = 9.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = Color.White
+                                    )
+                                }
                             }
                         }
                     }
                 }
 
-                // Action buttons
-                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    // Notification bell with glass effect
-                    BadgedBox(
-                        badge = {
-                            if (unreadCount > 0) {
-                                Badge(
-                                    containerColor = AccentRed,
-                                    contentColor = Color.White
-                                ) {
-                                    Text(
-                                        if (unreadCount > 9) "9+" else "$unreadCount",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                }
-                            }
-                        }
-                    ) {
+                Spacer(modifier = Modifier.width(8.dp))
+
+                // Action buttons - fixed width
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    // Notification bell
+                    Box {
                         Surface(
                             onClick = onNotificationClick,
                             shape = CircleShape,
-                            color = Color.White.copy(alpha = 0.2f),
-                            modifier = Modifier.size(44.dp)
+                            color = Color.White.copy(alpha = 0.15f),
+                            modifier = Modifier.size(40.dp)
                         ) {
                             Box(contentAlignment = Alignment.Center) {
                                 Icon(
-                                    imageVector = Icons.Filled.Notifications,
+                                    imageVector = Icons.Outlined.Notifications,
                                     contentDescription = "Notifications",
                                     tint = Color.White,
-                                    modifier = Modifier.size(22.dp)
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        }
+                        if (unreadCount > 0) {
+                            Surface(
+                                modifier = Modifier
+                                    .align(Alignment.TopEnd)
+                                    .offset(x = 4.dp, y = (-2).dp),
+                                shape = CircleShape,
+                                color = AccentRed
+                            ) {
+                                Text(
+                                    text = if (unreadCount > 9) "9+" else "$unreadCount",
+                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontSize = 8.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White
                                 )
                             }
                         }
                     }
 
-                    // Profile with glass effect
+                    // Profile
                     Surface(
                         onClick = onProfileClick,
                         shape = CircleShape,
-                        color = Color.White.copy(alpha = 0.2f),
-                        modifier = Modifier.size(44.dp)
+                        color = Color.White.copy(alpha = 0.15f),
+                        modifier = Modifier.size(40.dp)
                     ) {
                         Box(contentAlignment = Alignment.Center) {
                             Icon(
-                                imageVector = Icons.Filled.Person,
+                                imageVector = Icons.Outlined.Person,
                                 contentDescription = "Profile",
                                 tint = Color.White,
-                                modifier = Modifier.size(22.dp)
+                                modifier = Modifier.size(20.dp)
                             )
                         }
                     }
@@ -880,7 +885,8 @@ private fun LiveCongestionActivityCard(
                         modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
                         style = MaterialTheme.typography.labelSmall,
                         fontWeight = FontWeight.SemiBold,
-                        color = PrimaryBlue
+                        color = PrimaryBlue,
+                        maxLines = 1
                     )
                 }
             }
@@ -1992,7 +1998,9 @@ private data class NearbyParkingAreaItem(
     val isLegal: Boolean,
     val distanceKm: Float,
     val latitude: Double,
-    val longitude: Double
+    val longitude: Double,
+    val parkingType: String = "free", // "free" or "paid"
+    val ratePerHour: Int = 0
 )
 
 private data class PoliceBookingData(
@@ -2045,60 +2053,65 @@ private fun AssignedParkingAreasCard(
             )
             
             Column(modifier = Modifier.padding(Spacing.Large)) {
-                // Header
+                // Header - simplified layout
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Box(
-                            modifier = Modifier
-                                .size(44.dp)
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(AccentParking.copy(alpha = 0.1f)),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                imageVector = Icons.Filled.LocalParking,
-                                contentDescription = null,
-                                tint = AccentParking,
-                                modifier = Modifier.size(24.dp)
-                            )
-                        }
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Column {
-                            Text(
-                                text = "Nearby Parking Areas",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = colors.textPrimary
-                            )
-                            Text(
-                                text = "Within 4km of your working area",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = colors.textSecondary
-                            )
-                        }
+                    // Icon
+                    Box(
+                        modifier = Modifier
+                            .size(40.dp)
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(AccentParking.copy(alpha = 0.1f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.LocalParking,
+                            contentDescription = null,
+                            tint = AccentParking,
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(10.dp))
+                    
+                    // Title & subtitle
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Nearby Parking Areas",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = colors.textPrimary,
+                            maxLines = 1
+                        )
+                        Text(
+                            text = "Within 4km of your working area",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = colors.textSecondary,
+                            maxLines = 1
+                        )
                     }
                     
-                    // Live badge with count
+                    // Badge - compact
                     Surface(
-                        shape = RoundedCornerShape(CornerRadius.Round),
-                        color = AccentParking.copy(alpha = 0.1f)
+                        shape = RoundedCornerShape(8.dp),
+                        color = AccentParking.copy(alpha = 0.12f)
                     ) {
                         Row(
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            PulsingDot(color = AccentParking, size = 6.dp)
+                            Box(
+                                modifier = Modifier
+                                    .size(6.dp)
+                                    .background(AccentParking, CircleShape)
+                            )
                             Spacer(modifier = Modifier.width(4.dp))
                             Text(
-                                text = "${parkingAreas.size} AREAS",
-                                style = MaterialTheme.typography.labelSmall,
+                                text = "${parkingAreas.size}",
+                                style = MaterialTheme.typography.labelMedium,
                                 fontWeight = FontWeight.Bold,
-                                color = AccentParking,
-                                letterSpacing = 0.5.sp
+                                color = AccentParking
                             )
                         }
                     }
@@ -2295,13 +2308,13 @@ private fun ParkingAreaRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 4.dp),
+            .padding(vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         // Rank badge
         Box(
             modifier = Modifier
-                .size(28.dp)
+                .size(32.dp)
                 .clip(CircleShape)
                 .background(
                     if (rank <= 3) rankColor.copy(alpha = 0.15f)
@@ -2311,7 +2324,7 @@ private fun ParkingAreaRow(
         ) {
             Text(
                 text = "#$rank",
-                style = MaterialTheme.typography.labelSmall,
+                style = MaterialTheme.typography.labelMedium,
                 fontWeight = FontWeight.Bold,
                 color = if (rank <= 3) rankColor else AccentParking
             )
@@ -2321,6 +2334,7 @@ private fun ParkingAreaRow(
         
         // Parking info
         Column(modifier = Modifier.weight(1f)) {
+            // First row: Parking name
             Text(
                 text = area.name,
                 style = MaterialTheme.typography.bodyMedium,
@@ -2329,9 +2343,13 @@ private fun ParkingAreaRow(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
+            
+            Spacer(modifier = Modifier.height(4.dp))
+            
+            // Second row: Distance and Availability
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 // Distance
                 if (area.distanceKm > 0) {
@@ -2357,6 +2375,23 @@ private fun ParkingAreaRow(
                         style = MaterialTheme.typography.labelSmall,
                         color = statusColor,
                         fontWeight = FontWeight.Medium
+                    )
+                }
+                
+                Text("•", style = MaterialTheme.typography.labelSmall, color = colors.textTertiary)
+                
+                // Free/Paid badge
+                Surface(
+                    shape = RoundedCornerShape(4.dp),
+                    color = if (area.parkingType == "paid") AccentOrange.copy(alpha = 0.15f) else AccentGreen.copy(alpha = 0.15f)
+                ) {
+                    Text(
+                        if (area.parkingType == "paid") "₹${area.ratePerHour}/hr" else "FREE",
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = if (area.parkingType == "paid") AccentOrange else AccentGreen,
+                        fontSize = 10.sp
                     )
                 }
                 
