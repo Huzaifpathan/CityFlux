@@ -321,12 +321,18 @@ class BookingRepository {
                     ?: System.currentTimeMillis() + (additionalHours * 60 * 60 * 1000)
             )
             
+            // Calculate additional cost
+            val additionalCost = (booking.totalAmount / booking.durationHours) * additionalHours
+            val newTotalAmount = booking.totalAmount + additionalCost
+            
             firestore.collection(BOOKINGS_COLLECTION)
                 .document(bookingId)
                 .update(
                     mapOf(
                         "durationHours" to booking.durationHours + additionalHours,
-                        "bookingEndTime" to Timestamp(newEndTime)
+                        "bookingEndTime" to Timestamp(newEndTime),
+                        "totalAmount" to newTotalAmount,
+                        "extendedAt" to Timestamp.now()
                     )
                 )
                 .await()

@@ -115,6 +115,26 @@ class BookingViewModel : ViewModel() {
             BookingStatus.REFUNDED
         )
 
+        // Check for expired bookings and update status in background
+        bookings.forEach { booking ->
+            if (booking.status.isActive() && booking.bookingEndTime != null) {
+                val endTime = booking.bookingEndTime!!.toDate()
+                if (endTime.before(now)) {
+                    // Booking has expired, update status to COMPLETED
+                    viewModelScope.launch {
+                        try {
+                            firestore.collection("bookings")
+                                .document(booking.id)
+                                .update("status", BookingStatus.COMPLETED.name)
+                                .await()
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Failed to update expired booking status", e)
+                        }
+                    }
+                }
+            }
+        }
+
         val upcoming = bookings.filter { booking ->
             booking.status == BookingStatus.PENDING ||
                 (booking.bookingStartTime?.toDate()?.after(now) == true &&
@@ -124,7 +144,8 @@ class BookingViewModel : ViewModel() {
 
         val active = bookings.filter { booking ->
             booking.id !in upcomingIds &&
-                booking.status.isActive()
+                booking.status.isActive() &&
+                (booking.bookingEndTime?.toDate()?.after(now) == true)
         }
         val activeIds = active.map { it.id }.toSet()
 
@@ -226,6 +247,8 @@ class BookingViewModel : ViewModel() {
             repository.cancelBooking(bookingId)
                 .onSuccess {
                     Log.d(TAG, "Booking cancelled: $bookingId")
+                    // Refresh bookings list immediately
+                    refreshBookings()
                     _uiState.update {
                         it.copy(
                             isLoading = false,
@@ -267,6 +290,8 @@ class BookingViewModel : ViewModel() {
                     )
                         .onSuccess {
                             Log.d(TAG, "Booking extended: $bookingId")
+                            // Refresh bookings list immediately
+                            refreshBookings()
                             _uiState.update {
                                 it.copy(
                                     isLoading = false,

@@ -46,6 +46,7 @@ import com.example.cityflux.ui.theme.*
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.qrcode.QRCodeWriter
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -76,9 +77,10 @@ fun MyBookingsContentEnhanced(
     
     // Dialog states
     var showQrDialog by remember { mutableStateOf<ParkingBooking?>(null) }
-    var showDetailsDialog by remember { mutableStateOf<ParkingBooking?>(null) }
+    var showDetailsDialogBookingId by remember { mutableStateOf<String?>(null) }
     var showRatingDialog by remember { mutableStateOf<ParkingBooking?>(null) }
     var showExtendDialog by remember { mutableStateOf<ParkingBooking?>(null) }
+    var showCancelDialog by remember { mutableStateOf<ParkingBooking?>(null) }
     
     // Pull to refresh
     val pullToRefreshState = rememberPullToRefreshState()
@@ -99,22 +101,7 @@ fun MyBookingsContentEnhanced(
         }
     }
     
-    // Calculate stats
-    val totalBookings = uiState.activeBookings.size + uiState.upcomingBookings.size + uiState.pastBookings.size
-    val totalSpent = (uiState.activeBookings + uiState.upcomingBookings + uiState.pastBookings)
-        .sumOf { it.totalAmount }
-    val completedBookings = uiState.pastBookings.count { it.status == BookingStatus.COMPLETED }
-    
     Column(modifier = Modifier.fillMaxSize()) {
-        // ═══════════════ Stats Dashboard ═══════════════
-        StatsDashboard(
-            totalBookings = totalBookings,
-            totalSpent = totalSpent,
-            activeCount = uiState.activeBookings.size,
-            completedCount = completedBookings,
-            colors = colors
-        )
-        
         // ═══════════════ Search Bar ═══════════════
         SearchFilterBar(
             searchQuery = searchQuery,
@@ -174,6 +161,7 @@ fun MyBookingsContentEnhanced(
         Box(
             modifier = Modifier
                 .fillMaxSize()
+                .weight(1f)
                 .nestedScroll(pullToRefreshState.nestedScrollConnection)
         ) {
             // Filter bookings by search
@@ -190,27 +178,26 @@ fun MyBookingsContentEnhanced(
             when (selectedBookingsTab) {
                 0 -> ActiveBookingsTabEnhanced(
                     bookings = filteredActive,
-                    onBookingClick = { showDetailsDialog = it },
+                    onBookingClick = { showDetailsDialogBookingId = it.id },
                     onShowQR = { showQrDialog = it },
                     onNavigate = { navigateToParking(context, it) },
                     onExtend = { showExtendDialog = it },
-                    onCancel = { viewModel.cancelBooking(it.id, "User cancelled") },
+                    onCancel = { showCancelDialog = it },
                     colors = colors
                 )
                 1 -> UpcomingBookingsTabEnhanced(
                     bookings = filteredUpcoming,
-                    onBookingClick = { showDetailsDialog = it },
-                    onCancel = { viewModel.cancelBooking(it.id, "User cancelled") },
+                    onBookingClick = { showDetailsDialogBookingId = it.id },
+                    onCancel = { showCancelDialog = it },
                     onAddToCalendar = { addToCalendar(context, it) },
                     onShare = { shareBooking(context, it) },
                     colors = colors
                 )
                 2 -> HistoryTabEnhanced(
                     bookings = filteredHistory,
-                    onBookingClick = { showDetailsDialog = it },
+                    onBookingClick = { showDetailsDialogBookingId = it.id },
                     onDownloadReceipt = { downloadReceipt(context, it) },
                     onRateBooking = { showRatingDialog = it },
-                    onRebook = { /* Rebook functionality */ },
                     colors = colors
                 )
             }
@@ -235,13 +222,14 @@ fun MyBookingsContentEnhanced(
     }
     
     // ═══════════════ Booking Details Dialog ═══════════════
-    showDetailsDialog?.let { booking ->
-        BookingDetailsDialog(
-            booking = booking,
-            onDismiss = { showDetailsDialog = null },
-            onShowQR = { showQrDialog = booking; showDetailsDialog = null },
-            onNavigate = { navigateToParking(context, booking) },
-            onShare = { shareBooking(context, booking) },
+    showDetailsDialogBookingId?.let { bookingId ->
+        BookingDetailsDialogRealtime(
+            bookingId = bookingId,
+            viewModel = viewModel,
+            onDismiss = { showDetailsDialogBookingId = null },
+            onShowQR = { booking -> showQrDialog = booking; showDetailsDialogBookingId = null },
+            onNavigate = { booking -> navigateToParking(context, booking) },
+            onShare = { booking -> shareBooking(context, booking) },
             onCall = { callHelpline(context) }
         )
     }
@@ -271,100 +259,18 @@ fun MyBookingsContentEnhanced(
             }
         )
     }
-}
-
-// ═══════════════════════════════════════════════════════════════
-// STATS DASHBOARD
-// ═══════════════════════════════════════════════════════════════
-@Composable
-private fun StatsDashboard(
-    totalBookings: Int,
-    totalSpent: Double,
-    activeCount: Int,
-    completedCount: Int,
-    colors: CityFluxColors
-) {
-    LazyRow(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        item {
-            StatCard(
-                icon = Icons.Default.Receipt,
-                value = "$totalBookings",
-                label = "Total Bookings",
-                color = PremiumBlue,
-                colors = colors
-            )
-        }
-        item {
-            StatCard(
-                icon = Icons.Default.CurrencyRupee,
-                value = "₹${totalSpent.toInt()}",
-                label = "Total Spent",
-                color = SuccessGreen,
-                colors = colors
-            )
-        }
-        item {
-            StatCard(
-                icon = Icons.Default.PlayCircle,
-                value = "$activeCount",
-                label = "Active Now",
-                color = PremiumGold,
-                colors = colors
-            )
-        }
-        item {
-            StatCard(
-                icon = Icons.Default.CheckCircle,
-                value = "$completedCount",
-                label = "Completed",
-                color = AccentPurple,
-                colors = colors
-            )
-        }
-    }
-}
-
-@Composable
-private fun StatCard(
-    icon: ImageVector,
-    value: String,
-    label: String,
-    color: Color,
-    colors: CityFluxColors
-) {
-    Surface(
-        shape = RoundedCornerShape(16.dp),
-        color = color.copy(alpha = 0.1f),
-        modifier = Modifier.width(130.dp)
-    ) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                tint = color,
-                modifier = Modifier.size(28.dp)
-            )
-            Spacer(Modifier.height(8.dp))
-            Text(
-                text = value,
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold,
-                color = color
-            )
-            Text(
-                text = label,
-                style = MaterialTheme.typography.labelSmall,
-                color = colors.textSecondary
-            )
-        }
+    
+    // ═══════════════ Cancel Booking Dialog ═══════════════
+    showCancelDialog?.let { booking ->
+        CancelBookingDialog(
+            booking = booking,
+            onDismiss = { showCancelDialog = null },
+            onCancel = { reason ->
+                viewModel.cancelBooking(booking.id, reason)
+                showCancelDialog = null
+                Toast.makeText(context, "Booking cancelled", Toast.LENGTH_SHORT).show()
+            }
+        )
     }
 }
 
@@ -401,11 +307,6 @@ private fun SearchFilterBar(
             unfocusedBorderColor = colors.cardBorder
         )
     )
-}
-        ) {
-            Icon(Icons.Default.FilterList, "Filter", Modifier.size(22.dp))
-        }
-    }
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -461,18 +362,21 @@ private fun ActiveBookingCardEnhanced(
     onCancel: () -> Unit,
     colors: CityFluxColors
 ) {
-    var currentTime by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    // Convert Timestamp to Long so LaunchedEffect can detect changes
+    val endTimeMillis = remember(booking.bookingEndTime) { 
+        booking.bookingEndTime?.toDate()?.time ?: 0L
+    }
     
-    // Update every second
-    LaunchedEffect(booking.id) {
-        while (true) {
-            currentTime = System.currentTimeMillis()
-            delay(1000)
+    var remainingMillis by remember { mutableStateOf((endTimeMillis - System.currentTimeMillis()).coerceAtLeast(0)) }
+    
+    // Update every second and restart when end time changes
+    LaunchedEffect(booking.id, endTimeMillis) {
+        while (isActive) {
+            remainingMillis = (endTimeMillis - System.currentTimeMillis()).coerceAtLeast(0)
+            delay(1000L)
         }
     }
     
-    val endTime = booking.bookingEndTime?.toDate()?.time ?: 0
-    val remainingMillis = (endTime - currentTime).coerceAtLeast(0)
     val remainingMinutes = (remainingMillis / 60000).toInt()
     val isExpiringSoon = remainingMinutes < 30
     
@@ -635,7 +539,7 @@ private fun ActiveBookingCardEnhanced(
             
             Spacer(Modifier.height(16.dp))
             
-            // Action Buttons
+            // Action Buttons Row 1
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -663,7 +567,15 @@ private fun ActiveBookingCardEnhanced(
                     Spacer(Modifier.width(4.dp))
                     Text("Navigate")
                 }
-                
+            }
+            
+            Spacer(Modifier.height(8.dp))
+            
+            // Action Buttons Row 2
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
                 // Extend Button
                 OutlinedButton(
                     onClick = onExtend,
@@ -674,6 +586,18 @@ private fun ActiveBookingCardEnhanced(
                     Icon(Icons.Default.Add, null, Modifier.size(18.dp))
                     Spacer(Modifier.width(4.dp))
                     Text("Extend")
+                }
+                
+                // Cancel Button
+                OutlinedButton(
+                    onClick = onCancel,
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFEF4444))
+                ) {
+                    Icon(Icons.Default.Cancel, null, Modifier.size(18.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("Cancel")
                 }
             }
         }
@@ -904,7 +828,6 @@ private fun HistoryTabEnhanced(
     onBookingClick: (ParkingBooking) -> Unit,
     onDownloadReceipt: (ParkingBooking) -> Unit,
     onRateBooking: (ParkingBooking) -> Unit,
-    onRebook: (ParkingBooking) -> Unit,
     colors: CityFluxColors
 ) {
     if (bookings.isEmpty()) {
@@ -928,7 +851,6 @@ private fun HistoryTabEnhanced(
                     onClick = { onBookingClick(booking) },
                     onDownloadReceipt = { onDownloadReceipt(booking) },
                     onRate = { onRateBooking(booking) },
-                    onRebook = { onRebook(booking) },
                     colors = colors
                 )
             }
@@ -942,7 +864,6 @@ private fun HistoryBookingCardEnhanced(
     onClick: () -> Unit,
     onDownloadReceipt: () -> Unit,
     onRate: () -> Unit,
-    onRebook: () -> Unit,
     colors: CityFluxColors
 ) {
     val isCompleted = booking.status == BookingStatus.COMPLETED
@@ -1053,15 +974,6 @@ private fun HistoryBookingCardEnhanced(
                                 )
                             }
                         }
-                    }
-                    
-                    TextButton(
-                        onClick = onRebook,
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Icon(Icons.Default.Refresh, null, Modifier.size(16.dp))
-                        Spacer(Modifier.width(4.dp))
-                        Text("Rebook", fontSize = 12.sp)
                     }
                 }
             }
@@ -1189,18 +1101,27 @@ private fun QRCodeDialog(
 }
 
 // ═══════════════════════════════════════════════════════════════
-// BOOKING DETAILS DIALOG
+// BOOKING DETAILS DIALOG (REALTIME)
 // ═══════════════════════════════════════════════════════════════
 @Composable
-private fun BookingDetailsDialog(
-    booking: ParkingBooking,
+private fun BookingDetailsDialogRealtime(
+    bookingId: String,
+    viewModel: BookingViewModel,
     onDismiss: () -> Unit,
-    onShowQR: () -> Unit,
-    onNavigate: () -> Unit,
-    onShare: () -> Unit,
+    onShowQR: (ParkingBooking) -> Unit,
+    onNavigate: (ParkingBooking) -> Unit,
+    onShare: (ParkingBooking) -> Unit,
     onCall: () -> Unit
 ) {
     val colors = MaterialTheme.cityFluxColors
+    val repository = remember { com.example.cityflux.data.BookingRepository() }
+    
+    // Observe real-time booking data from Firestore
+    val realtimeBooking by repository.observeBooking(bookingId)
+        .collectAsState(initial = null)
+    
+    // Show loading while fetching
+    val booking = realtimeBooking
     
     Dialog(
         onDismissRequest = onDismiss,
@@ -1213,148 +1134,282 @@ private fun BookingDetailsDialog(
             shape = RoundedCornerShape(24.dp),
             colors = CardDefaults.cardColors(containerColor = colors.cardBackground)
         ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .verticalScroll(rememberScrollState())
-                    .padding(20.dp)
-            ) {
-                // Header
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+            if (booking == null) {
+                // Loading state
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(48.dp),
+                    contentAlignment = Alignment.Center
                 ) {
-                    Text(
-                        text = "Booking Details",
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold,
-                        color = colors.textPrimary
-                    )
-                    IconButton(onClick = onDismiss) {
-                        Icon(Icons.Default.Close, "Close")
-                    }
-                }
-                
-                Spacer(Modifier.height(16.dp))
-                
-                // Parking Info
-                Surface(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(16.dp),
-                    color = colors.surfaceVariant
-                ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Text(
-                            text = booking.parkingSpotName,
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = colors.textPrimary
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        CircularProgressIndicator(
+                            color = PremiumBlue,
+                            modifier = Modifier.size(40.dp)
                         )
+                        Spacer(Modifier.height(16.dp))
                         Text(
-                            text = booking.parkingAddress,
-                            style = MaterialTheme.typography.bodySmall,
+                            text = "Loading booking details...",
+                            style = MaterialTheme.typography.bodyMedium,
                             color = colors.textSecondary
                         )
                     }
                 }
-                
-                Spacer(Modifier.height(16.dp))
-                
-                // Details Grid
-                DetailItem("Vehicle", booking.vehicleNumber, Icons.Default.DirectionsCar)
-                DetailItem("Type", booking.vehicleType.displayName, Icons.Default.Category)
-                DetailItem("Duration", "${booking.durationHours} hour(s)", Icons.Default.Schedule)
-                DetailItem(
-                    "Start Time",
-                    booking.bookingStartTime?.toDate()?.let {
-                        SimpleDateFormat("dd MMM, hh:mm a", Locale.getDefault()).format(it)
-                    } ?: "N/A",
-                    Icons.Default.AccessTime
-                )
-                DetailItem(
-                    "End Time",
-                    booking.bookingEndTime?.toDate()?.let {
-                        SimpleDateFormat("dd MMM, hh:mm a", Locale.getDefault()).format(it)
-                    } ?: "N/A",
-                    Icons.Default.AccessTime
-                )
-                
-                Spacer(Modifier.height(12.dp))
-                
-                // Amount breakdown
-                Surface(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp),
-                    color = SuccessGreen.copy(alpha = 0.1f)
+            } else {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState())
+                        .padding(20.dp)
                 ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Text("Base Amount", color = colors.textSecondary)
-                            Text("₹${booking.baseAmount.toInt()}", color = colors.textPrimary)
-                        }
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Text("GST (18%)", color = colors.textSecondary)
-                            Text("₹${booking.gstAmount.toInt()}", color = colors.textPrimary)
-                        }
-                        HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Text("Total", fontWeight = FontWeight.Bold, color = SuccessGreen)
+                    // Header
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
-                                "₹${booking.totalAmount.toInt()}",
+                                text = "Booking Details",
+                                style = MaterialTheme.typography.titleLarge,
                                 fontWeight = FontWeight.Bold,
-                                color = SuccessGreen,
-                                style = MaterialTheme.typography.titleMedium
+                                color = colors.textPrimary
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            // Live indicator
+                            Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                color = SuccessGreen.copy(alpha = 0.15f)
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    val infiniteTransition = rememberInfiniteTransition(label = "live_dot")
+                                    val dotAlpha by infiniteTransition.animateFloat(
+                                        initialValue = 1f,
+                                        targetValue = 0.3f,
+                                        animationSpec = infiniteRepeatable(
+                                            animation = tween(600),
+                                            repeatMode = RepeatMode.Reverse
+                                        ),
+                                        label = "dot_alpha"
+                                    )
+                                    Box(
+                                        modifier = Modifier
+                                            .size(6.dp)
+                                            .clip(CircleShape)
+                                            .background(SuccessGreen.copy(alpha = dotAlpha))
+                                    )
+                                    Spacer(Modifier.width(4.dp))
+                                    Text(
+                                        text = "LIVE",
+                                        fontSize = 9.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = SuccessGreen
+                                    )
+                                }
+                            }
+                        }
+                        IconButton(onClick = onDismiss) {
+                            Icon(Icons.Default.Close, "Close")
+                        }
+                    }
+                    
+                    Spacer(Modifier.height(4.dp))
+                    
+                    // Status badge
+                    val statusColor = when (booking.status) {
+                        BookingStatus.CONFIRMED, BookingStatus.ACTIVE -> SuccessGreen
+                        BookingStatus.PENDING -> PremiumGold
+                        BookingStatus.CANCELLED -> Color(0xFFEF4444)
+                        BookingStatus.COMPLETED -> PremiumBlue
+                        else -> SoftGray
+                    }
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = statusColor.copy(alpha = 0.1f)
+                    ) {
+                        Text(
+                            text = booking.status.displayName,
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = statusColor,
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                        )
+                    }
+                    
+                    Spacer(Modifier.height(16.dp))
+                    
+                    // Parking Info
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(16.dp),
+                        color = colors.surfaceVariant
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Text(
+                                text = booking.parkingSpotName,
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = colors.textPrimary
+                            )
+                            Text(
+                                text = booking.parkingAddress,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = colors.textSecondary
                             )
                         }
                     }
-                }
-                
-                Spacer(Modifier.height(20.dp))
-                
-                // Action buttons
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    OutlinedButton(
-                        onClick = onShowQR,
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(12.dp)
-                    ) {
-                        Icon(Icons.Default.QrCode2, null, Modifier.size(18.dp))
-                        Spacer(Modifier.width(4.dp))
-                        Text("QR")
+                    
+                    Spacer(Modifier.height(16.dp))
+                    
+                    // Realtime countdown for active bookings
+                    if (booking.status.isActive() && booking.bookingEndTime != null) {
+                        val endTimeMillis = booking.bookingEndTime!!.toDate().time
+                        var timeRemaining by remember { mutableStateOf((endTimeMillis - System.currentTimeMillis()).coerceAtLeast(0)) }
+                        
+                        LaunchedEffect(endTimeMillis) {
+                            while (isActive) {
+                                timeRemaining = (endTimeMillis - System.currentTimeMillis()).coerceAtLeast(0)
+                                delay(1000L)
+                            }
+                        }
+                        
+                        val isExpiring = timeRemaining < 30 * 60 * 1000
+                        
+                        Surface(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(12.dp),
+                            color = if (isExpiring) PremiumGold.copy(alpha = 0.1f) else SuccessGreen.copy(alpha = 0.1f)
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    Icons.Default.Timer,
+                                    null,
+                                    tint = if (isExpiring) PremiumGold else SuccessGreen,
+                                    modifier = Modifier.size(24.dp)
+                                )
+                                Spacer(Modifier.width(12.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = "Time Remaining",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = colors.textSecondary
+                                    )
+                                    Text(
+                                        text = formatRemainingTime(timeRemaining),
+                                        style = MaterialTheme.typography.titleLarge,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (isExpiring) PremiumGold else SuccessGreen
+                                    )
+                                }
+                            }
+                        }
+                        
+                        Spacer(Modifier.height(16.dp))
                     }
-                    OutlinedButton(
-                        onClick = onNavigate,
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(12.dp)
+                    
+                    // Details Grid
+                    DetailItem("Booking ID", booking.id.takeLast(10).uppercase(), Icons.Default.Tag)
+                    DetailItem("Vehicle", booking.vehicleNumber, Icons.Default.DirectionsCar)
+                    DetailItem("Type", booking.vehicleType.displayName, Icons.Default.Category)
+                    DetailItem("Duration", "${booking.durationHours} hour(s)", Icons.Default.Schedule)
+                    DetailItem(
+                        "Start Time",
+                        booking.bookingStartTime?.toDate()?.let {
+                            SimpleDateFormat("dd MMM, hh:mm a", Locale.getDefault()).format(it)
+                        } ?: "N/A",
+                        Icons.Default.AccessTime
+                    )
+                    DetailItem(
+                        "End Time",
+                        booking.bookingEndTime?.toDate()?.let {
+                            SimpleDateFormat("dd MMM, hh:mm a", Locale.getDefault()).format(it)
+                        } ?: "N/A",
+                        Icons.Default.AccessTime
+                    )
+                    DetailItem("Status", booking.status.displayName, Icons.Default.Info)
+                    
+                    Spacer(Modifier.height(12.dp))
+                    
+                    // Amount breakdown
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        color = SuccessGreen.copy(alpha = 0.1f)
                     ) {
-                        Icon(Icons.Default.Navigation, null, Modifier.size(18.dp))
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text("Base Amount", color = colors.textSecondary)
+                                Text("₹${booking.baseAmount.toInt()}", color = colors.textPrimary)
+                            }
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text("GST (18%)", color = colors.textSecondary)
+                                Text("₹${booking.gstAmount.toInt()}", color = colors.textPrimary)
+                            }
+                            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text("Total", fontWeight = FontWeight.Bold, color = SuccessGreen)
+                                Text(
+                                    "₹${booking.totalAmount.toInt()}",
+                                    fontWeight = FontWeight.Bold,
+                                    color = SuccessGreen,
+                                    style = MaterialTheme.typography.titleMedium
+                                )
+                            }
+                        }
                     }
-                    OutlinedButton(
-                        onClick = onShare,
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(12.dp)
+                    
+                    Spacer(Modifier.height(20.dp))
+                    
+                    // Action buttons
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Icon(Icons.Default.Share, null, Modifier.size(18.dp))
-                    }
-                    OutlinedButton(
-                        onClick = onCall,
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(12.dp)
-                    ) {
-                        Icon(Icons.Default.Phone, null, Modifier.size(18.dp))
+                        OutlinedButton(
+                            onClick = { onShowQR(booking) },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Icon(Icons.Default.QrCode2, null, Modifier.size(18.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("QR")
+                        }
+                        OutlinedButton(
+                            onClick = { onNavigate(booking) },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Icon(Icons.Default.Navigation, null, Modifier.size(18.dp))
+                        }
+                        OutlinedButton(
+                            onClick = { onShare(booking) },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Icon(Icons.Default.Share, null, Modifier.size(18.dp))
+                        }
+                        OutlinedButton(
+                            onClick = onCall,
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Icon(Icons.Default.Phone, null, Modifier.size(18.dp))
+                        }
                     }
                 }
             }
@@ -1620,6 +1675,183 @@ private fun ExtendBookingDialog(
                         Icon(Icons.Default.Check, null, Modifier.size(18.dp))
                         Spacer(Modifier.width(4.dp))
                         Text("Extend")
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// CANCEL BOOKING DIALOG
+// ═══════════════════════════════════════════════════════════════
+@Composable
+private fun CancelBookingDialog(
+    booking: ParkingBooking,
+    onDismiss: () -> Unit,
+    onCancel: (String) -> Unit
+) {
+    var cancelReason by remember { mutableStateOf("") }
+    var selectedReason by remember { mutableStateOf("") }
+    val colors = MaterialTheme.cityFluxColors
+    
+    val predefinedReasons = listOf(
+        "Change of plans",
+        "Found alternative parking",
+        "Incorrect booking details",
+        "Emergency situation",
+        "Other"
+    )
+    
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            shape = RoundedCornerShape(24.dp),
+            colors = CardDefaults.cardColors(containerColor = Color.White)
+        ) {
+            Column(
+                modifier = Modifier.padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Icon(
+                    Icons.Default.Cancel,
+                    null,
+                    tint = Color(0xFFEF4444),
+                    modifier = Modifier.size(48.dp)
+                )
+                
+                Spacer(Modifier.height(16.dp))
+                
+                Text(
+                    text = "Cancel Booking?",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold
+                )
+                
+                Spacer(Modifier.height(8.dp))
+                
+                Text(
+                    text = booking.parkingSpotName,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = SoftGray
+                )
+                
+                Spacer(Modifier.height(24.dp))
+                
+                Text(
+                    text = "Reason for cancellation:",
+                    style = MaterialTheme.typography.titleSmall,
+                    color = colors.textPrimary,
+                    modifier = Modifier.align(Alignment.Start)
+                )
+                
+                Spacer(Modifier.height(12.dp))
+                
+                // Reason chips
+                predefinedReasons.forEach { reason ->
+                    Surface(
+                        onClick = { 
+                            selectedReason = reason
+                            if (reason != "Other") cancelReason = reason
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        color = if (selectedReason == reason) PremiumBlue.copy(alpha = 0.1f) else colors.surfaceVariant
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(16.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = reason,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = if (selectedReason == reason) PremiumBlue else colors.textPrimary,
+                                modifier = Modifier.weight(1f)
+                            )
+                            if (selectedReason == reason) {
+                                Icon(
+                                    Icons.Default.Check,
+                                    null,
+                                    tint = PremiumBlue,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+                
+                // Custom reason field (shown when "Other" is selected)
+                if (selectedReason == "Other") {
+                    Spacer(Modifier.height(12.dp))
+                    OutlinedTextField(
+                        value = cancelReason,
+                        onValueChange = { cancelReason = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        placeholder = { Text("Please specify reason...") },
+                        minLines = 2,
+                        shape = RoundedCornerShape(12.dp)
+                    )
+                }
+                
+                Spacer(Modifier.height(24.dp))
+                
+                // Warning message
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    color = Color(0xFFEF4444).copy(alpha = 0.1f)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            Icons.Default.Warning,
+                            null,
+                            tint = Color(0xFFEF4444),
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            text = "This action cannot be undone",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color(0xFFEF4444)
+                        )
+                    }
+                }
+                
+                Spacer(Modifier.height(24.dp))
+                
+                // Action buttons
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    OutlinedButton(
+                        onClick = onDismiss,
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Text("Keep Booking")
+                    }
+                    
+                    Button(
+                        onClick = { 
+                            val finalReason = if (cancelReason.isNotBlank()) cancelReason else selectedReason
+                            onCancel(finalReason)
+                        },
+                        modifier = Modifier.weight(1f),
+                        enabled = selectedReason.isNotEmpty(),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF4444))
+                    ) {
+                        Icon(Icons.Default.Cancel, null, Modifier.size(18.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("Cancel Booking")
                     }
                 }
             }
