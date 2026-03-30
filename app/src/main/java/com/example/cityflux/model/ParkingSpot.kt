@@ -1,9 +1,9 @@
 package com.example.cityflux.model
 
 import com.google.firebase.Timestamp
-import com.google.firebase.firestore.GeoPoint
-<<<<<<< HEAD
+import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.Exclude
+import com.google.firebase.firestore.GeoPoint
 
 /**
  * Parking type enum - Free or Paid
@@ -22,9 +22,6 @@ enum class ParkingType(val displayName: String) {
         }
     }
 }
-=======
-import com.google.firebase.firestore.DocumentSnapshot
->>>>>>> 5cf645739de12c61b1a6dd26fdd4ab27873715ef
 
 /**
  * Represents a parking spot document in the Firestore `parking` collection.
@@ -43,7 +40,6 @@ data class ParkingSpot(
     val address: String = "",
     val totalSlots: Int = 0,
     val availableSlots: Int = 0,
-<<<<<<< HEAD
     val isLegal: Boolean = true,
     
     // New fields for zone-based parking - maps to "parkingType" in Firebase
@@ -94,9 +90,8 @@ data class ParkingSpot(
     /** Calculate price for given duration (in hours) */
     fun calculatePrice(durationHours: Int): Double {
         return if (isFree) 0.0 else ratePerHour * durationHours
-=======
-    val isLegal: Boolean = true
-)
+    }
+}
 
 /**
  * Helper function to safely parse ParkingSpot from Firestore DocumentSnapshot.
@@ -109,6 +104,13 @@ fun DocumentSnapshot.toParkingSpot(): ParkingSpot? {
         val totalSlots = getLong("totalSlots")?.toInt() ?: 0
         val availableSlots = getLong("availableSlots")?.toInt() ?: 0
         val isLegal = getBoolean("isLegal") ?: true
+        val parkingType = getString("parkingType") ?: "paid"
+        val ratePerHour = getDouble("ratePerHour") ?: 0.0
+        val minDuration = getLong("minDuration")?.toInt() ?: 15
+        val maxDuration = getLong("maxDuration")?.toInt() ?: 480
+        val vehicleTypes = (get("vehicleTypes") as? List<*>)?.mapNotNull { it as? String } ?: listOf("car", "bike", "ev")
+        val createdAt = getTimestamp("createdAt")
+        val updatedAt = getTimestamp("updatedAt")
         
         // Handle location field - can be GeoPoint or Array
         val location = try {
@@ -131,10 +133,16 @@ fun DocumentSnapshot.toParkingSpot(): ParkingSpot? {
             address = address,
             totalSlots = totalSlots,
             availableSlots = availableSlots,
-            isLegal = isLegal
+            isLegal = isLegal,
+            parkingType = parkingType,
+            ratePerHour = ratePerHour,
+            minDuration = minDuration,
+            maxDuration = maxDuration,
+            vehicleTypes = vehicleTypes,
+            createdAt = createdAt,
+            updatedAt = updatedAt
         )
     } catch (e: Exception) {
         null
->>>>>>> 5cf645739de12c61b1a6dd26fdd4ab27873715ef
     }
 }

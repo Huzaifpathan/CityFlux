@@ -59,12 +59,12 @@ private val AccentPink = Color(0xFFEC4899)
 private val SoftGray = Color(0xFF6B7280)
 
 /**
- * Enhanced My Bookings Content with all features
+ * Enhanced My Bookings Content with all features (LEGACY - use MyBookingsContentEnhanced from MyBookingsScreen.kt)
  * Used inside ParkingScreen tabs
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun MyBookingsContentEnhanced(
+fun MyBookingsContentEnhancedLegacy(
     onBookingClick: (ParkingBooking) -> Unit,
     viewModel: BookingViewModel = viewModel()
 ) {

@@ -394,6 +394,11 @@ fun MyBookingsContent(
     val uiState by viewModel.uiState.collectAsState()
     var selectedBookingsTab by remember { mutableIntStateOf(0) }
     
+    // Dialog states for this component
+    var showExtendDialog by remember { mutableStateOf(false) }
+    var showQRDialog by remember { mutableStateOf(false) }
+    var selectedBookingForAction by remember { mutableStateOf<ParkingBooking?>(null) }
+    
     // Pull to refresh state
     val pullToRefreshState = rememberPullToRefreshState()
     var isRefreshing by remember { mutableStateOf(false) }
@@ -477,7 +482,12 @@ fun MyBookingsContent(
                         viewModel.cancelBooking(booking.id, "User cancelled")
                     },
                     onExtendClick = { booking ->
-                        viewModel.extendBooking(booking.id, 1)
+                        selectedBookingForAction = booking
+                        showExtendDialog = true
+                    },
+                    onShowQRClick = { booking ->
+                        selectedBookingForAction = booking
+                        showQRDialog = true
                     },
                     colors = colors
                 )
@@ -506,6 +516,35 @@ fun MyBookingsContent(
                 )
             }
         }
+    }
+    
+    // Extend Booking Dialog
+    if (showExtendDialog && selectedBookingForAction != null) {
+        ExtendBookingDialog(
+            booking = selectedBookingForAction!!,
+            onDismiss = {
+                showExtendDialog = false
+                selectedBookingForAction = null
+            },
+            onConfirm = { hours: Int ->
+                viewModel.extendBooking(selectedBookingForAction!!.id, hours)
+                showExtendDialog = false
+                selectedBookingForAction = null
+            },
+            colors = colors
+        )
+    }
+    
+    // QR Code Dialog
+    if (showQRDialog && selectedBookingForAction != null) {
+        QRCodeDialog(
+            booking = selectedBookingForAction!!,
+            onDismiss = {
+                showQRDialog = false
+                selectedBookingForAction = null
+            },
+            colors = colors
+        )
     }
 }
 
