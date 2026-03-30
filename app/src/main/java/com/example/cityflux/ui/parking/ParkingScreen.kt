@@ -845,8 +845,8 @@ fun ParkingScreen(
                     }
                     }
                     2 -> {
-                        // ──────── My Bookings View ────────
-                        MyBookingsContent(
+                        // ──────── My Bookings View (Enhanced) ────────
+                        MyBookingsContentEnhanced(
                             onBookingClick = { booking ->
                                 // Handle booking click if needed
                             }

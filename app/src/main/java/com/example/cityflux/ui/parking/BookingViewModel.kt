@@ -290,6 +290,36 @@ class BookingViewModel : ViewModel() {
         }
     }
     
+    /**
+     * Rate a completed booking
+     */
+    fun rateBooking(bookingId: String, rating: Int, review: String) {
+        viewModelScope.launch {
+            try {
+                val updates = mapOf(
+                    "rating" to rating.toFloat(),
+                    "review" to review,
+                    "ratedAt" to com.google.firebase.Timestamp.now()
+                )
+                firestore.collection("bookings")
+                    .document(bookingId)
+                    .update(updates)
+                    .await()
+                
+                // Update local state
+                _uiState.update { state ->
+                    state.copy(
+                        pastBookings = state.pastBookings.map { 
+                            if (it.id == bookingId) it.copy(rating = rating.toFloat(), review = review) else it 
+                        }
+                    )
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to rate booking: ${e.message}")
+            }
+        }
+    }
+    
     // ═══════════════════════════════════════════════════════
     // Form Management
     // ═══════════════════════════════════════════════════════
