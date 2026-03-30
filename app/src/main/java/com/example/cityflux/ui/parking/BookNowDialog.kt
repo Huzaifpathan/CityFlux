@@ -77,6 +77,27 @@ fun BookNowDialog(
             viewModel.clearMessages()
         }
     }
+    
+    // Show Premium Success Dialog
+    if (uiState.showSuccessDialog && uiState.successBooking != null) {
+        BookingSuccessDialog(
+            booking = uiState.successBooking!!,
+            onDismiss = {
+                viewModel.dismissSuccessDialog()
+                onDismiss()
+            },
+            onViewBooking = {
+                viewModel.dismissSuccessDialog()
+                onBookingCreated(uiState.successBooking!!.id)
+            },
+            onNavigate = {
+                viewModel.dismissSuccessDialog()
+                onNavigateToParking()
+            },
+            onShare = { /* Share handled inside dialog */ }
+        )
+        return // Don't show main dialog when success dialog is showing
+    }
 
     Dialog(
         onDismissRequest = onDismiss,
@@ -611,9 +632,7 @@ private fun PaymentStep(
     onUpdatePricing: (PricingBreakdown) -> Unit,
     colors: CityFluxColors
 ) {
-    val context = LocalContext.current
     val pricing = PricingService.calculateParkingFee(bookingForm.vehicleType, bookingForm.durationHours)
-    var showPaymentConfirmation by remember { mutableStateOf(false) }
     
     // Update pricing in ViewModel when entering this step
     LaunchedEffect(pricing) {
@@ -622,7 +641,7 @@ private fun PaymentStep(
     
     Column {
         Text(
-            text = "Payment & Confirmation",
+            text = "Confirm Booking",
             style = MaterialTheme.typography.titleLarge,
             color = colors.textPrimary,
             fontWeight = FontWeight.Bold
@@ -670,34 +689,34 @@ private fun PaymentStep(
             }
         }
         
-        Spacer(Modifier.height(20.dp))
+        Spacer(Modifier.height(16.dp))
         
-        // UPI Payment Info
+        // Payment method info (coming soon)
         Surface(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(12.dp),
-            color = colors.surfaceVariant
+            color = AccentOrange.copy(alpha = 0.1f)
         ) {
             Row(
                 modifier = Modifier.padding(16.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Icon(
-                    imageVector = Icons.Default.QrCode,
+                    imageVector = Icons.Default.Info,
                     contentDescription = null,
-                    tint = PrimaryBlue,
-                    modifier = Modifier.size(32.dp)
+                    tint = AccentOrange,
+                    modifier = Modifier.size(24.dp)
                 )
                 Spacer(Modifier.width(12.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "Pay via UPI",
+                        text = "Payment Coming Soon",
                         style = MaterialTheme.typography.titleSmall,
                         color = colors.textPrimary,
                         fontWeight = FontWeight.SemiBold
                     )
                     Text(
-                        text = "Google Pay, PhonePe, Paytm & more",
+                        text = "UPI payment will be enabled shortly. For now, bookings are free!",
                         style = MaterialTheme.typography.bodySmall,
                         color = colors.textSecondary
                     )
@@ -705,9 +724,9 @@ private fun PaymentStep(
             }
         }
         
-        Spacer(Modifier.height(20.dp))
+        Spacer(Modifier.height(24.dp))
         
-        // Navigation buttons
+        // Action buttons
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(12.dp)
@@ -724,84 +743,24 @@ private fun PaymentStep(
             }
             
             Button(
-                onClick = {
-                    // Launch UPI payment app chooser
-                    val launched = com.example.cityflux.service.UpiPaymentService.launchPayment(
-                        context = context,
-                        amount = pricing.totalAmount,
-                        parkingName = parkingSpot.address,
-                        bookingId = "PENDING", // Will be replaced after booking creation
-                        vehicleNumber = bookingForm.vehicleNumber
-                    )
-                    if (launched) {
-                        showPaymentConfirmation = true
-                    }
-                },
+                onClick = onConfirmBooking,
                 modifier = Modifier.weight(2f).height(56.dp),
                 enabled = !uiState.isLoading && bookingForm.vehicleNumber.isNotBlank(),
-                colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue)
+                colors = ButtonDefaults.buttonColors(containerColor = AccentGreen)
             ) {
-                Icon(Icons.Default.OpenInNew, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    text = "Open Payment App",
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Bold
-                )
-            }
-        }
-        
-        // Payment confirmation dialog
-        if (showPaymentConfirmation) {
-            Spacer(Modifier.height(16.dp))
-            
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp),
-                color = AccentOrange.copy(alpha = 0.1f)
-            ) {
-                Column(
-                    modifier = Modifier.padding(16.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Info,
-                        contentDescription = null,
-                        tint = AccentOrange,
-                        modifier = Modifier.size(24.dp)
+                if (uiState.isLoading) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(20.dp),
+                        color = Color.White
                     )
-                    Spacer(Modifier.height(8.dp))
+                } else {
+                    Icon(Icons.Default.CheckCircle, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
                     Text(
-                        text = "Payment Completed?",
-                        style = MaterialTheme.typography.titleSmall,
-                        color = colors.textPrimary,
-                        fontWeight = FontWeight.SemiBold
+                        text = "Confirm Booking",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold
                     )
-                    Text(
-                        text = "Click below after completing payment in your UPI app",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = colors.textSecondary,
-                        textAlign = TextAlign.Center
-                    )
-                    Spacer(Modifier.height(12.dp))
-                    
-                    Button(
-                        onClick = onConfirmBooking,
-                        modifier = Modifier.fillMaxWidth().height(48.dp),
-                        enabled = !uiState.isLoading,
-                        colors = ButtonDefaults.buttonColors(containerColor = AccentGreen)
-                    ) {
-                        if (uiState.isLoading) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(20.dp),
-                                color = Color.White
-                            )
-                        } else {
-                            Icon(Icons.Default.CheckCircle, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(8.dp))
-                            Text("Confirm Booking", fontWeight = FontWeight.Bold)
-                        }
-                    }
                 }
             }
         }

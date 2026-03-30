@@ -689,11 +689,12 @@ fun ParkingScreen(
 
             // ══════════════════════ Content ══════════════════════
             Crossfade(
-                targetState = selectedTab == 1,
+                targetState = selectedTab,
                 animationSpec = tween(300),
                 label = "parking_view_toggle"
-            ) { showMap ->
-                if (showMap) {
+            ) { currentTab ->
+                when (currentTab) {
+                    1 -> {
                     // ──────── Map View ────────
                     ParkingMapView(
                         spots = displaySpots,
@@ -731,7 +732,8 @@ fun ParkingScreen(
                             selectedSpot = spot
                         }
                     )
-                } else {
+                    }
+                    0 -> {
                     // ──────── List View ────────
                     if (state.isLoading && displaySpots.isEmpty()) {
                         // Shimmer loading
@@ -840,6 +842,15 @@ fun ParkingScreen(
                                 )
                             }
                         }
+                    }
+                    }
+                    2 -> {
+                        // ──────── My Bookings View ────────
+                        MyBookingsContent(
+                            onBookingClick = { booking ->
+                                // Handle booking click if needed
+                            }
+                        )
                     }
                 }
             }

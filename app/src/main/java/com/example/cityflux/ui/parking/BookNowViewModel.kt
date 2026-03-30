@@ -288,14 +288,14 @@ class BookNowViewModel(
                     bookingStartTime = startTime,
                     bookingEndTime = endTime,
                     status = BookingStatus.CONFIRMED,
-                    paymentStatus = PaymentStatus.COMPLETED,
+                    paymentStatus = PaymentStatus.PENDING, // Payment will be implemented later
                     baseAmount = pricing.baseAmount,
                     gstAmount = pricing.gst,
                     totalAmount = pricing.totalAmount,
                     amount = pricing.totalAmount,
-                    isPaid = true,
+                    isPaid = false, // Payment pending
                     paymentMethod = form.paymentMethod.name,
-                    paymentTimestamp = com.google.firebase.Timestamp.now(),
+                    paymentTimestamp = null, // No payment yet
                     notes = form.notes
                 )
                 

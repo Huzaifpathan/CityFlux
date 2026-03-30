@@ -176,6 +176,135 @@ fun MyBookingsScreen(
     }
 }
 
+/**
+ * MyBookingsContent - Reusable component for embedding My Bookings within ParkingScreen tab
+ * Contains the 3 internal tabs (Active, Upcoming, History) without the Scaffold/TopAppBar
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun MyBookingsContent(
+    onBookingClick: (ParkingBooking) -> Unit,
+    viewModel: BookingViewModel = viewModel()
+) {
+    val colors = MaterialTheme.cityFluxColors
+    val uiState by viewModel.uiState.collectAsState()
+    var selectedBookingsTab by remember { mutableIntStateOf(0) }
+    
+    // Pull to refresh state
+    val pullToRefreshState = rememberPullToRefreshState()
+    var isRefreshing by remember { mutableStateOf(false) }
+    
+    LaunchedEffect(pullToRefreshState.isRefreshing) {
+        if (pullToRefreshState.isRefreshing) {
+            isRefreshing = true
+            viewModel.refreshBookings()
+            delay(1000)
+            isRefreshing = false
+        }
+    }
+    
+    LaunchedEffect(isRefreshing) {
+        if (!isRefreshing) {
+            pullToRefreshState.endRefresh()
+        }
+    }
+
+    Column(
+        modifier = Modifier.fillMaxSize()
+    ) {
+        // Sub-Tab Row for Active/Upcoming/History
+        TabRow(
+            selectedTabIndex = selectedBookingsTab,
+            containerColor = colors.cardBackground,
+            contentColor = PrimaryBlue
+        ) {
+            Tab(
+                selected = selectedBookingsTab == 0,
+                onClick = { selectedBookingsTab = 0 },
+                text = {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(Spacing.XSmall)
+                    ) {
+                        Text("Active")
+                        if (uiState.activeBookings.isNotEmpty()) {
+                            Badge {
+                                Text("${uiState.activeBookings.size}")
+                            }
+                        }
+                    }
+                }
+            )
+            Tab(
+                selected = selectedBookingsTab == 1,
+                onClick = { selectedBookingsTab = 1 },
+                text = {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(Spacing.XSmall)
+                    ) {
+                        Text("Upcoming")
+                        if (uiState.upcomingBookings.isNotEmpty()) {
+                            Badge {
+                                Text("${uiState.upcomingBookings.size}")
+                            }
+                        }
+                    }
+                }
+            )
+            Tab(
+                selected = selectedBookingsTab == 2,
+                onClick = { selectedBookingsTab = 2 },
+                text = { Text("History") }
+            )
+        }
+        
+        // Content with pull-to-refresh
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .nestedScroll(pullToRefreshState.nestedScrollConnection)
+        ) {
+            when (selectedBookingsTab) {
+                0 -> ActiveBookingsTab(
+                    bookings = uiState.activeBookings,
+                    onBookingClick = onBookingClick,
+                    onCancelClick = { booking ->
+                        viewModel.cancelBooking(booking.id, "User cancelled")
+                    },
+                    onExtendClick = { booking ->
+                        viewModel.extendBooking(booking.id, 1)
+                    },
+                    colors = colors
+                )
+                1 -> UpcomingBookingsTab(
+                    bookings = uiState.upcomingBookings,
+                    onBookingClick = onBookingClick,
+                    onCancelClick = { booking ->
+                        viewModel.cancelBooking(booking.id, "User cancelled")
+                    },
+                    onModifyClick = { booking ->
+                        // TODO: Implement modify booking
+                    },
+                    colors = colors
+                )
+                2 -> HistoryTab(
+                    bookings = uiState.pastBookings,
+                    onBookingClick = onBookingClick,
+                    colors = colors
+                )
+            }
+            
+            if (pullToRefreshState.isRefreshing || pullToRefreshState.progress > 0f) {
+                PullToRefreshContainer(
+                    modifier = Modifier.align(Alignment.TopCenter),
+                    state = pullToRefreshState,
+                )
+            }
+        }
+    }
+}
+
 @Composable
 private fun ActiveBookingsTab(
     bookings: List<ParkingBooking>,
