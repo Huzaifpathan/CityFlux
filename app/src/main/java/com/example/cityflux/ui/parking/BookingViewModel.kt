@@ -211,7 +211,7 @@ class BookingViewModel : ViewModel() {
                 durationHours = form.durationHours,
                 amount = pricing.totalAmount,
                 notes = form.notes.ifBlank { null },
-                status = BookingStatus.PENDING
+                status = BookingStatus.CONFIRMED
             )
             
             try {
