@@ -1,0 +1,1502 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CityFlux Citizen App - Complete Documentation</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background: #fff;
+            padding: 40px;
+            max-width: 900px;
+            margin: 0 auto;
+        }
+        
+        @media print {
+            body {
+                padding: 20px;
+            }
+            .page-break {
+                page-break-before: always;
+            }
+            .no-break {
+                page-break-inside: avoid;
+            }
+        }
+        
+        .cover {
+            text-align: center;
+            padding: 100px 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-radius: 20px;
+            margin-bottom: 50px;
+        }
+        
+        .cover h1 {
+            font-size: 3em;
+            margin-bottom: 20px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+        
+        .cover .subtitle {
+            font-size: 1.5em;
+            opacity: 0.9;
+            margin-bottom: 30px;
+        }
+        
+        .cover .version {
+            font-size: 1em;
+            opacity: 0.8;
+        }
+        
+        .logo {
+            font-size: 80px;
+            margin-bottom: 20px;
+        }
+        
+        h1 {
+            color: #667eea;
+            font-size: 2em;
+            margin: 40px 0 20px 0;
+            padding-bottom: 10px;
+            border-bottom: 3px solid #667eea;
+        }
+        
+        h2 {
+            color: #764ba2;
+            font-size: 1.5em;
+            margin: 30px 0 15px 0;
+            padding-left: 15px;
+            border-left: 4px solid #764ba2;
+        }
+        
+        h3 {
+            color: #555;
+            font-size: 1.2em;
+            margin: 20px 0 10px 0;
+        }
+        
+        .toc {
+            background: #f8f9fa;
+            padding: 30px;
+            border-radius: 15px;
+            margin: 30px 0;
+        }
+        
+        .toc h2 {
+            border-left: none;
+            padding-left: 0;
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        
+        .toc ul {
+            list-style: none;
+            columns: 2;
+        }
+        
+        .toc li {
+            padding: 8px 0;
+            border-bottom: 1px dotted #ddd;
+        }
+        
+        .toc a {
+            color: #667eea;
+            text-decoration: none;
+        }
+        
+        .screen-box {
+            background: linear-gradient(135deg, #f5f7fa 0%, #e4e8ec 100%);
+            border-radius: 15px;
+            padding: 25px;
+            margin: 20px 0;
+            border-left: 5px solid #667eea;
+        }
+        
+        .screen-title {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 1.3em;
+            font-weight: bold;
+            color: #333;
+            margin-bottom: 15px;
+        }
+        
+        .screen-title .icon {
+            font-size: 1.5em;
+        }
+        
+        .file-path {
+            background: #2d3748;
+            color: #68d391;
+            padding: 8px 15px;
+            border-radius: 8px;
+            font-family: 'Consolas', monospace;
+            font-size: 0.9em;
+            margin-bottom: 15px;
+            display: inline-block;
+        }
+        
+        .flow-diagram {
+            background: #1a202c;
+            color: #e2e8f0;
+            padding: 20px;
+            border-radius: 10px;
+            font-family: 'Consolas', 'Courier New', monospace;
+            font-size: 0.85em;
+            overflow-x: auto;
+            white-space: pre;
+            margin: 15px 0;
+            line-height: 1.4;
+        }
+        
+        .feature-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 15px;
+            margin: 20px 0;
+        }
+        
+        .feature-card {
+            background: white;
+            border: 2px solid #e2e8f0;
+            border-radius: 12px;
+            padding: 20px;
+            transition: all 0.3s ease;
+        }
+        
+        .feature-card:hover {
+            border-color: #667eea;
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.2);
+        }
+        
+        .feature-card .icon {
+            font-size: 2em;
+            margin-bottom: 10px;
+        }
+        
+        .feature-card h4 {
+            color: #333;
+            margin-bottom: 8px;
+        }
+        
+        .feature-card p {
+            color: #666;
+            font-size: 0.9em;
+        }
+        
+        .step-list {
+            counter-reset: step-counter;
+            list-style: none;
+            padding: 0;
+        }
+        
+        .step-list li {
+            counter-increment: step-counter;
+            padding: 15px 15px 15px 60px;
+            margin: 10px 0;
+            background: #f8f9fa;
+            border-radius: 10px;
+            position: relative;
+        }
+        
+        .step-list li::before {
+            content: counter(step-counter);
+            position: absolute;
+            left: 15px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 30px;
+            height: 30px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+        }
+        
+        .ui-mockup {
+            background: #f0f0f0;
+            border: 2px solid #ccc;
+            border-radius: 20px;
+            padding: 15px;
+            margin: 20px auto;
+            max-width: 350px;
+            font-family: 'Consolas', monospace;
+            font-size: 0.8em;
+        }
+        
+        .ui-mockup .header {
+            background: #667eea;
+            color: white;
+            padding: 10px;
+            border-radius: 10px 10px 0 0;
+            text-align: center;
+            font-weight: bold;
+            margin: -15px -15px 15px -15px;
+        }
+        
+        .ui-mockup .content {
+            background: white;
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 10px;
+        }
+        
+        .ui-mockup .button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 10px 20px;
+            border-radius: 8px;
+            text-align: center;
+            margin: 10px 0;
+        }
+        
+        .tech-badge {
+            display: inline-block;
+            background: #e2e8f0;
+            color: #4a5568;
+            padding: 5px 12px;
+            border-radius: 20px;
+            font-size: 0.85em;
+            margin: 3px;
+        }
+        
+        .tech-badge.firebase {
+            background: #ffcb2b;
+            color: #333;
+        }
+        
+        .tech-badge.compose {
+            background: #4285f4;
+            color: white;
+        }
+        
+        .tech-badge.maps {
+            background: #34a853;
+            color: white;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+            font-size: 0.9em;
+        }
+        
+        th, td {
+            border: 1px solid #e2e8f0;
+            padding: 12px;
+            text-align: left;
+        }
+        
+        th {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        
+        tr:nth-child(even) {
+            background: #f8f9fa;
+        }
+        
+        .status-badge {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 0.8em;
+            font-weight: bold;
+        }
+        
+        .status-badge.active { background: #c6f6d5; color: #276749; }
+        .status-badge.pending { background: #fef3c7; color: #92400e; }
+        .status-badge.completed { background: #e2e8f0; color: #4a5568; }
+        
+        .firebase-structure {
+            background: #2d3748;
+            color: #fff;
+            padding: 20px;
+            border-radius: 10px;
+            font-family: 'Consolas', monospace;
+            font-size: 0.85em;
+        }
+        
+        .firebase-structure .collection {
+            color: #68d391;
+        }
+        
+        .firebase-structure .field {
+            color: #63b3ed;
+        }
+        
+        .highlight-box {
+            background: linear-gradient(135deg, #667eea20 0%, #764ba220 100%);
+            border: 2px solid #667eea;
+            border-radius: 15px;
+            padding: 20px;
+            margin: 20px 0;
+        }
+        
+        .journey-map {
+            background: #f8f9fa;
+            border-radius: 15px;
+            padding: 30px;
+            margin: 30px 0;
+        }
+        
+        .journey-step {
+            display: flex;
+            align-items: flex-start;
+            margin: 15px 0;
+        }
+        
+        .journey-number {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            flex-shrink: 0;
+            margin-right: 15px;
+        }
+        
+        .journey-content {
+            flex: 1;
+        }
+        
+        .journey-content h4 {
+            margin-bottom: 5px;
+        }
+        
+        .arrow-down {
+            text-align: center;
+            font-size: 1.5em;
+            color: #667eea;
+            margin: 10px 0;
+        }
+        
+        footer {
+            text-align: center;
+            margin-top: 50px;
+            padding: 30px;
+            background: #f8f9fa;
+            border-radius: 15px;
+        }
+        
+        .print-btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 15px 40px;
+            font-size: 1.1em;
+            border-radius: 30px;
+            cursor: pointer;
+            margin: 20px 0;
+        }
+        
+        .print-btn:hover {
+            transform: scale(1.05);
+        }
+        
+        @media print {
+            .print-btn {
+                display: none;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- COVER PAGE -->
+    <div class="cover">
+        <div class="logo">🚗</div>
+        <h1>CityFlux</h1>
+        <div class="subtitle">Citizen App - Complete Documentation</div>
+        <div class="version">Screen-by-Screen Flow Guide</div>
+        <div style="margin-top: 40px; opacity: 0.8;">
+            <p>Version 1.0 | March 2026</p>
+            <p>Android Application</p>
+        </div>
+    </div>
+
+    <button class="print-btn" onclick="window.print()">📄 Save as PDF / Print</button>
+
+    <!-- TABLE OF CONTENTS -->
+    <div class="toc">
+        <h2>📑 Table of Contents</h2>
+        <ul>
+            <li>1. Splash Screen</li>
+            <li>2. Login Screen</li>
+            <li>3. Register Screen</li>
+            <li>4. Forgot Password</li>
+            <li>5. Main Dashboard</li>
+            <li>6. Home Tab</li>
+            <li>7. Map Tab</li>
+            <li>8. Parking Tab</li>
+            <li>9. Book Now Dialog</li>
+            <li>10. Report Issue Tab</li>
+            <li>11. My Bookings</li>
+            <li>12. Notifications Tab</li>
+            <li>13. Profile Screen</li>
+            <li>14. Firebase Structure</li>
+            <li>15. Technology Stack</li>
+        </ul>
+    </div>
+
+    <!-- SECTION 1: SPLASH SCREEN -->
+    <div class="page-break"></div>
+    <h1>1. Splash Screen</h1>
+    
+    <div class="screen-box no-break">
+        <div class="screen-title">
+            <span class="icon">🚀</span>
+            <span>App Launch Screen</span>
+        </div>
+        <div class="file-path">📁 ui/splash/SplashScreen.kt</div>
+        
+        <h3>Purpose</h3>
+        <p>First screen when app opens. Checks authentication status and routes to appropriate dashboard.</p>
+        
+        <h3>Flow</h3>
+        <div class="flow-diagram">
+App Open
+    ↓
+Logo Animation Display (2-3 seconds)
+    ↓
+Firebase Auth Check: Is user logged in?
+    │
+    ├─ NO → Navigate to LOGIN Screen
+    │
+    └─ YES → Read user role from Firestore
+              │
+              ├─ role = "citizen" → CITIZEN DASHBOARD
+              ├─ role = "police"  → POLICE DASHBOARD
+              └─ role = "admin"   → ADMIN DASHBOARD
+        </div>
+        
+        <h3>Features</h3>
+        <ul class="step-list">
+            <li>Animated logo display with fade-in effect</li>
+            <li>Firebase Authentication state check</li>
+            <li>Firestore user document read for role detection</li>
+            <li>Automatic navigation based on user role</li>
+        </ul>
+    </div>
+
+    <!-- SECTION 2: LOGIN SCREEN -->
+    <div class="page-break"></div>
+    <h1>2. Login Screen</h1>
+    
+    <div class="screen-box no-break">
+        <div class="screen-title">
+            <span class="icon">🔐</span>
+            <span>User Authentication</span>
+        </div>
+        <div class="file-path">📁 ui/login/LoginScreen.kt</div>
+        
+        <h3>Login Methods</h3>
+        <div class="feature-grid">
+            <div class="feature-card">
+                <div class="icon">📧</div>
+                <h4>Email + Password</h4>
+                <p>Traditional login with email and password using Firebase Auth</p>
+            </div>
+            <div class="feature-card">
+                <div class="icon">📱</div>
+                <h4>Phone OTP</h4>
+                <p>10-digit phone number with +91 auto-prefix and 6-digit OTP verification</p>
+            </div>
+        </div>
+        
+        <h3>Complete Flow</h3>
+        <div class="flow-diagram">
+Screen Open
+    ↓
+Input Field: Enter Email or Phone
+    ↓
+System Detection: Email or Phone?
+    │
+    ├─ EMAIL (contains @)
+    │     ↓
+    │   Show Password Field
+    │     ↓
+    │   Tap "Login" Button
+    │     ↓
+    │   Firebase.signInWithEmailAndPassword()
+    │     ├─ SUCCESS → Read role → Dashboard
+    │     └─ FAIL → Show error message
+    │
+    └─ PHONE (10 digits)
+          ↓
+        Auto-add "+91" prefix
+          ↓
+        Tap "Send OTP" Button
+          ↓
+        Firebase PhoneAuthProvider.verifyPhoneNumber()
+          ↓
+        Show OTP Input Field
+          ↓
+        User enters 6-digit OTP
+          ↓
+        Verify → Success → Dashboard
+
+OTHER OPTIONS:
+├─ "Forgot Password?" → ForgotPasswordScreen
+└─ "Create Account"   → RegisterScreen
+        </div>
+    </div>
+
+    <!-- SECTION 3: REGISTER SCREEN -->
+    <div class="page-break"></div>
+    <h1>3. Register Screen</h1>
+    
+    <div class="screen-box no-break">
+        <div class="screen-title">
+            <span class="icon">📝</span>
+            <span>New User Registration</span>
+        </div>
+        <div class="file-path">📁 ui/register/RegisterScreen.kt</div>
+        
+        <h3>Registration Form Fields</h3>
+        <table>
+            <tr>
+                <th>Field</th>
+                <th>Validation</th>
+                <th>Required</th>
+            </tr>
+            <tr>
+                <td>Full Name</td>
+                <td>Minimum 2 characters</td>
+                <td>✅ Yes</td>
+            </tr>
+            <tr>
+                <td>Email</td>
+                <td>Valid email format (user@domain.com)</td>
+                <td>✅ Yes</td>
+            </tr>
+            <tr>
+                <td>Mobile Number</td>
+                <td>Exactly 10 digits</td>
+                <td>✅ Yes</td>
+            </tr>
+            <tr>
+                <td>Password</td>
+                <td>Minimum 6 characters</td>
+                <td>✅ Yes</td>
+            </tr>
+            <tr>
+                <td>Confirm Password</td>
+                <td>Must match password</td>
+                <td>✅ Yes</td>
+            </tr>
+            <tr>
+                <td>Role Selection</td>
+                <td>Citizen or Traffic Police</td>
+                <td>✅ Yes</td>
+            </tr>
+        </table>
+        
+        <h3>Registration Flow</h3>
+        <div class="flow-diagram">
+Fill Form Fields
+    ↓
+Real-time Validation on Each Field
+    ├─ Error? → Show red error message below field
+    └─ Valid? → Enable Submit button
+          ↓
+Tap "Register" Button
+    ↓
+Firebase.createUserWithEmailAndPassword()
+    ↓
+SUCCESS → Create Firestore Document:
+    {
+      collection: "users",
+      document: "{uid}",
+      data: {
+        name: "User Name",
+        email: "user@email.com",
+        phone: "9876543210",
+        role: "citizen",
+        createdAt: timestamp,
+        lastLoginAt: timestamp
+      }
+    }
+    ↓
+Navigate to CITIZEN DASHBOARD
+        </div>
+    </div>
+
+    <!-- SECTION 4: FORGOT PASSWORD -->
+    <h1>4. Forgot Password Screen</h1>
+    
+    <div class="screen-box no-break">
+        <div class="screen-title">
+            <span class="icon">🔑</span>
+            <span>Password Recovery</span>
+        </div>
+        <div class="file-path">📁 ui/login/ForgotPasswordScreen.kt</div>
+        
+        <div class="flow-diagram">
+Enter Email Address
+    ↓
+Tap "Send Reset Link"
+    ↓
+Firebase.sendPasswordResetEmail()
+    │
+    ├─ SUCCESS → "Check your email" message shown
+    │             User clicks link in email
+    │             Sets new password
+    │             Returns to Login
+    │
+    └─ FAIL → "Email not found" error
+        </div>
+    </div>
+
+    <!-- SECTION 5: MAIN DASHBOARD -->
+    <div class="page-break"></div>
+    <h1>5. Citizen Main Dashboard</h1>
+    
+    <div class="screen-box no-break">
+        <div class="screen-title">
+            <span class="icon">🏠</span>
+            <span>Main Navigation Structure</span>
+        </div>
+        <div class="file-path">📁 ui/dashboard/CitizenMainScreen.kt</div>
+        
+        <h3>Bottom Navigation (5 Tabs)</h3>
+        <div class="feature-grid">
+            <div class="feature-card">
+                <div class="icon">🏠</div>
+                <h4>HOME</h4>
+                <p>Dashboard with traffic status, recent reports, quick actions</p>
+            </div>
+            <div class="feature-card">
+                <div class="icon">🗺️</div>
+                <h4>MAP</h4>
+                <p>Google Maps with parking spots, traffic zones, incidents</p>
+            </div>
+            <div class="feature-card">
+                <div class="icon">🅿️</div>
+                <h4>PARKING</h4>
+                <p>Search, browse, and book parking spots</p>
+            </div>
+            <div class="feature-card">
+                <div class="icon">📝</div>
+                <h4>REPORT</h4>
+                <p>Submit issues: illegal parking, accidents, road damage</p>
+            </div>
+        </div>
+        <div class="feature-grid" style="grid-template-columns: 1fr;">
+            <div class="feature-card">
+                <div class="icon">🔔</div>
+                <h4>ALERTS</h4>
+                <p>View notifications with unread badge count, filter by type</p>
+            </div>
+        </div>
+        
+        <h3>Navigation Features</h3>
+        <ul>
+            <li>Crossfade animation between tabs</li>
+            <li>Animated icon scaling when selected</li>
+            <li>Unread notification badge on ALERTS tab</li>
+            <li>Profile icon accessible from HOME header</li>
+        </ul>
+    </div>
+
+    <!-- SECTION 6: HOME TAB -->
+    <div class="page-break"></div>
+    <h1>6. Home Tab</h1>
+    
+    <div class="screen-box no-break">
+        <div class="screen-title">
+            <span class="icon">🏠</span>
+            <span>Citizen Home Content</span>
+        </div>
+        <div class="file-path">📁 ui/dashboard/CitizenHomeContent.kt</div>
+        
+        <h3>Screen Sections</h3>
+        
+        <div class="highlight-box">
+            <h4>1️⃣ User Welcome Header</h4>
+            <p>"Hello, [UserName]" with profile photo and edit button</p>
+        </div>
+        
+        <div class="highlight-box">
+            <h4>2️⃣ Live Traffic Status</h4>
+            <p>Real-time data from Firebase Realtime DB</p>
+            <p>Zone-wise congestion: 🟢 Free | 🟡 Moderate | 🟠 Heavy | 🔴 Jam</p>
+        </div>
+        
+        <div class="highlight-box">
+            <h4>3️⃣ Recent Nearby Incidents</h4>
+            <p>Latest 5 reports from Firestore with type, location, status, time</p>
+        </div>
+        
+        <div class="highlight-box">
+            <h4>4️⃣ My Recent Reports</h4>
+            <p>User's own submitted reports filtered by userId</p>
+        </div>
+        
+        <div class="highlight-box">
+            <h4>5️⃣ Quick Action Cards</h4>
+            <div class="feature-grid">
+                <div class="feature-card">🅿️ Find Parking</div>
+                <div class="feature-card">📝 Report Issue</div>
+                <div class="feature-card">🔔 View Alerts</div>
+                <div class="feature-card">📋 My Reports</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- SECTION 7: MAP TAB -->
+    <div class="page-break"></div>
+    <h1>7. Map Tab</h1>
+    
+    <div class="screen-box no-break">
+        <div class="screen-title">
+            <span class="icon">🗺️</span>
+            <span>Interactive Map Screen</span>
+        </div>
+        <div class="file-path">📁 ui/map/MapScreen.kt</div>
+        
+        <h3>Map Layers</h3>
+        <table>
+            <tr>
+                <th>Layer</th>
+                <th>Description</th>
+                <th>Data Source</th>
+            </tr>
+            <tr>
+                <td>🗺️ Base Map</td>
+                <td>Normal/Satellite/Terrain toggle</td>
+                <td>Google Maps SDK</td>
+            </tr>
+            <tr>
+                <td>📍 User Location</td>
+                <td>Blue dot with real-time GPS</td>
+                <td>Fused Location API</td>
+            </tr>
+            <tr>
+                <td>🅿️ Parking Markers</td>
+                <td>🟢 Legal / 🔴 Illegal with slot count</td>
+                <td>Firestore parking collection</td>
+            </tr>
+            <tr>
+                <td>🚦 Traffic Zones</td>
+                <td>Color overlay by congestion level</td>
+                <td>Realtime DB traffic</td>
+            </tr>
+            <tr>
+                <td>⚠️ Incidents</td>
+                <td>User reports on map</td>
+                <td>Firestore reports</td>
+            </tr>
+        </table>
+        
+        <h3>Interactions</h3>
+        <div class="flow-diagram">
+TAP PARKING MARKER
+    ↓
+Bottom Sheet Opens:
+┌─────────────────────────────────────┐
+│ 🅿️ MG Road Parking                  │
+│ 📍 Near Central Mall                │
+│ 🚗 12/30 slots • ₹20/hr            │
+│ 📏 1.2 km away                      │
+│                                     │
+│  [🗺️ Navigate]  [🅿️ Book Now]      │
+└─────────────────────────────────────┘
+    ↓
+TAP "Navigate"
+    ↓
+Navigation Mode:
+├─ Route polyline on map (blue line)
+├─ ETA banner: "5 min • 1.2 km"
+├─ Turn-by-turn directions
+└─ [❌ Exit Navigation] button
+        </div>
+    </div>
+
+    <!-- SECTION 8: PARKING TAB -->
+    <div class="page-break"></div>
+    <h1>8. Parking Tab</h1>
+    
+    <div class="screen-box no-break">
+        <div class="screen-title">
+            <span class="icon">🅿️</span>
+            <span>Parking Discovery & Booking</span>
+        </div>
+        <div class="file-path">📁 ui/parking/ParkingScreen.kt</div>
+        
+        <h3>Sub-Tabs</h3>
+        <table>
+            <tr>
+                <th>Tab</th>
+                <th>Content</th>
+            </tr>
+            <tr>
+                <td>📋 LIST VIEW</td>
+                <td>Searchable, filterable list of parking spots</td>
+            </tr>
+            <tr>
+                <td>🗺️ MAP VIEW</td>
+                <td>All parking spots on Google Map</td>
+            </tr>
+            <tr>
+                <td>📖 MY BOOKINGS</td>
+                <td>User's active, upcoming, and past bookings</td>
+            </tr>
+        </table>
+        
+        <h3>List View Features</h3>
+        <div class="flow-diagram">
+┌─────────────────────────────────────────────┐
+│  🔍 Search: "Search parking by name..."    │
+├─────────────────────────────────────────────┤
+│  FILTERS:                                   │
+│  Sort: [Nearest ▼] [Most Available ▼]      │
+│  Type: [All ▼] [Legal Only] [Illegal]      │
+│  Toggle: □ Show Available Only             │
+├─────────────────────────────────────────────┤
+│  PARKING CARDS:                             │
+│  ┌─────────────────────────────────────┐   │
+│  │ 🅿️ MG Road Parking                  │   │
+│  │ 📍 Near Central Mall                │   │
+│  │ 🚗 12/30 slots • 1.2 km away        │   │
+│  │ 💰 ₹20/hr  ✓ Legal                  │   │
+│  │              [Book Now →]           │   │
+│  └─────────────────────────────────────┘   │
+│                                             │
+│  ... Pull to refresh ...                    │
+└─────────────────────────────────────────────┘
+        </div>
+    </div>
+
+    <!-- SECTION 9: BOOK NOW DIALOG -->
+    <div class="page-break"></div>
+    <h1>9. Book Now Dialog</h1>
+    
+    <div class="screen-box no-break">
+        <div class="screen-title">
+            <span class="icon">📋</span>
+            <span>Multi-Step Booking Wizard</span>
+        </div>
+        <div class="file-path">📁 ui/parking/BookNowDialog.kt</div>
+        
+        <h3>Booking Steps</h3>
+        
+        <div class="journey-map">
+            <div class="journey-step">
+                <div class="journey-number">1</div>
+                <div class="journey-content">
+                    <h4>📍 Location Verification</h4>
+                    <p>Check if user is within 50m of parking. If too far, show "Navigate" option.</p>
+                </div>
+            </div>
+            <div class="arrow-down">↓</div>
+            
+            <div class="journey-step">
+                <div class="journey-number">2</div>
+                <div class="journey-content">
+                    <h4>🚗 Slot Selection</h4>
+                    <p>Show available slots by vehicle type (Bike, Car, SUV). Live data from Realtime DB.</p>
+                </div>
+            </div>
+            <div class="arrow-down">↓</div>
+            
+            <div class="journey-step">
+                <div class="journey-number">3</div>
+                <div class="journey-content">
+                    <h4>🚙 Vehicle Selection</h4>
+                    <p>Choose from recent vehicles or enter new vehicle number with type.</p>
+                </div>
+            </div>
+            <div class="arrow-down">↓</div>
+            
+            <div class="journey-step">
+                <div class="journey-number">4</div>
+                <div class="journey-content">
+                    <h4>⏱️ Duration Selection</h4>
+                    <p>Select parking duration (30 min to 8 hours) with start/end time display.</p>
+                </div>
+            </div>
+            <div class="arrow-down">↓</div>
+            
+            <div class="journey-step">
+                <div class="journey-number">5</div>
+                <div class="journey-content">
+                    <h4>💰 Pricing Review</h4>
+                    <p>Base rate + Peak charges - Discounts + GST (18%) = Total Amount</p>
+                </div>
+            </div>
+            <div class="arrow-down">↓</div>
+            
+            <div class="journey-step">
+                <div class="journey-number">6</div>
+                <div class="journey-content">
+                    <h4>💳 UPI Payment</h4>
+                    <p>Google Pay / PhonePe / Paytm - User enters PIN - Payment processed</p>
+                </div>
+            </div>
+            <div class="arrow-down">↓</div>
+            
+            <div class="journey-step">
+                <div class="journey-number">✓</div>
+                <div class="journey-content">
+                    <h4>✅ Booking Confirmed</h4>
+                    <p>QR Code generated for entry. Options: View Booking, Navigate, Share</p>
+                </div>
+            </div>
+        </div>
+        
+        <h3>Pricing Calculation</h3>
+        <div class="flow-diagram">
+💰 PRICE BREAKDOWN EXAMPLE
+─────────────────────────────────────
+Base Rate:         ₹20/hr × 2hr = ₹40.00
+Peak Hour Charge (1.5x):        + ₹6.00
+Duration Discount (10%):        - ₹4.60
+─────────────────────────────────────
+Subtotal:                        ₹41.40
+GST (18%):                     + ₹7.45
+═══════════════════════════════════════
+TOTAL:                          ₹48.85
+        </div>
+    </div>
+
+    <!-- SECTION 10: REPORT ISSUE -->
+    <div class="page-break"></div>
+    <h1>10. Report Issue Tab</h1>
+    
+    <div class="screen-box no-break">
+        <div class="screen-title">
+            <span class="icon">📝</span>
+            <span>Submit Issue Report</span>
+        </div>
+        <div class="file-path">📁 ui/report/ReportIssueScreen.kt</div>
+        
+        <h3>Issue Types</h3>
+        <div class="feature-grid">
+            <div class="feature-card">
+                <div class="icon">🚗</div>
+                <h4>Illegal Parking</h4>
+            </div>
+            <div class="feature-card">
+                <div class="icon">💥</div>
+                <h4>Accident</h4>
+            </div>
+            <div class="feature-card">
+                <div class="icon">🛒</div>
+                <h4>Hawkers</h4>
+            </div>
+            <div class="feature-card">
+                <div class="icon">🕳️</div>
+                <h4>Road Damage</h4>
+            </div>
+            <div class="feature-card">
+                <div class="icon">🚦</div>
+                <h4>Traffic Violation</h4>
+            </div>
+            <div class="feature-card">
+                <div class="icon">📋</div>
+                <h4>Other</h4>
+            </div>
+        </div>
+        
+        <h3>Report Submission Flow</h3>
+        <div class="flow-diagram">
+STEP 1: Select Issue Type
+    ↓
+STEP 2: Add Photos (Optional, max 5)
+    ├─ Camera capture
+    └─ Gallery selection
+    ↓
+STEP 3: Write Description
+    "Car parked on footpath near school gate..."
+    ↓
+STEP 4: Confirm Location
+    📍 Auto-detected via GPS
+    [🗺️ Adjust on Map] option
+    ↓
+STEP 5: Set Priority
+    ○ Low  ○ Medium  ● High  ○ Critical
+    ↓
+STEP 6: Options
+    ☑️ Submit Anonymously
+    ↓
+TAP "SUBMIT REPORT"
+    ↓
+Uploading photos to Firebase Storage...
+    ↓
+Creating Firestore document...
+    ↓
+✅ "Report Submitted Successfully!"
+        </div>
+    </div>
+
+    <!-- SECTION 11: MY BOOKINGS -->
+    <div class="page-break"></div>
+    <h1>11. My Bookings Screen</h1>
+    
+    <div class="screen-box no-break">
+        <div class="screen-title">
+            <span class="icon">📖</span>
+            <span>Booking Management</span>
+        </div>
+        <div class="file-path">📁 ui/parking/MyBookingsScreenNew.kt</div>
+        
+        <h3>Booking Tabs</h3>
+        <table>
+            <tr>
+                <th>Tab</th>
+                <th>Status Included</th>
+                <th>Description</th>
+            </tr>
+            <tr>
+                <td><span class="status-badge active">ACTIVE</span></td>
+                <td>CONFIRMED, ACTIVE</td>
+                <td>Current parking sessions with live countdown</td>
+            </tr>
+            <tr>
+                <td><span class="status-badge pending">UPCOMING</span></td>
+                <td>PENDING</td>
+                <td>Future bookings not yet started</td>
+            </tr>
+            <tr>
+                <td><span class="status-badge completed">HISTORY</span></td>
+                <td>COMPLETED, CANCELLED, EXPIRED</td>
+                <td>Past bookings with rating option</td>
+            </tr>
+        </table>
+        
+        <h3>Active Booking Card</h3>
+        <div class="flow-diagram">
+┌─────────────────────────────────────────────┐
+│ 🟢 ACTIVE BOOKING                           │
+├─────────────────────────────────────────────┤
+│ 🅿️ MG Road Parking                         │
+│ 📍 Near Central Mall                        │
+│ 🚗 MH-20-AB-1234 (Car)                      │
+│                                             │
+│ ⏰ Started: 3:30 PM                         │
+│ ⏳ Ends: 5:30 PM                            │
+│ 🕐 Time Left: 1hr 45min ← Live countdown   │
+│                                             │
+│ 💰 Paid: ₹49                               │
+│                                             │
+│ ┌──────┐ ┌──────┐ ┌──────┐ ┌──────┐       │
+│ │ QR   │ │ 🗺️   │ │ ⏱️   │ │ ❌   │       │
+│ │ Code │ │Direct│ │Extend│ │Cancel│       │
+│ └──────┘ └──────┘ └──────┘ └──────┘       │
+└─────────────────────────────────────────────┘
+        </div>
+        
+        <h3>Booking Actions</h3>
+        <table>
+            <tr>
+                <th>Action</th>
+                <th>Description</th>
+            </tr>
+            <tr>
+                <td>📱 QR Code</td>
+                <td>Display large QR for parking entry verification</td>
+            </tr>
+            <tr>
+                <td>🗺️ Directions</td>
+                <td>Open Google Maps navigation to parking</td>
+            </tr>
+            <tr>
+                <td>⏱️ Extend</td>
+                <td>Add more hours with additional payment</td>
+            </tr>
+            <tr>
+                <td>❌ Cancel</td>
+                <td>Cancel booking (full refund if before start)</td>
+            </tr>
+            <tr>
+                <td>⭐ Rate</td>
+                <td>5-star rating with optional review (after completion)</td>
+            </tr>
+        </table>
+    </div>
+
+    <!-- SECTION 12: NOTIFICATIONS -->
+    <div class="page-break"></div>
+    <h1>12. Notifications / Alerts Tab</h1>
+    
+    <div class="screen-box no-break">
+        <div class="screen-title">
+            <span class="icon">🔔</span>
+            <span>Alerts & Notifications</span>
+        </div>
+        <div class="file-path">📁 ui/notifications/NotificationsScreen.kt</div>
+        
+        <h3>Notification Types</h3>
+        <table>
+            <tr>
+                <th>Type</th>
+                <th>Color</th>
+                <th>Example</th>
+            </tr>
+            <tr>
+                <td>🚦 Traffic</td>
+                <td style="background:#fef3c7;">Yellow</td>
+                <td>"Heavy traffic on Jalna Road"</td>
+            </tr>
+            <tr>
+                <td>🅿️ Parking</td>
+                <td style="background:#dbeafe;">Blue</td>
+                <td>"Your booking ends in 15 min"</td>
+            </tr>
+            <tr>
+                <td>💥 Accident</td>
+                <td style="background:#fed7d7;">Orange</td>
+                <td>"Accident reported near Kranti Chowk"</td>
+            </tr>
+            <tr>
+                <td>🚨 Emergency</td>
+                <td style="background:#feb2b2;">Red</td>
+                <td>"Road blocked - find alternate route"</td>
+            </tr>
+            <tr>
+                <td>🌧️ Weather</td>
+                <td style="background:#c6f6d5;">Green</td>
+                <td>"Heavy rain expected today"</td>
+            </tr>
+            <tr>
+                <td>📢 General</td>
+                <td style="background:#e2e8f0;">Gray</td>
+                <td>"New parking zone available"</td>
+            </tr>
+        </table>
+        
+        <h3>Features & Actions</h3>
+        <div class="flow-diagram">
+┌─────────────────────────────────────────────┐
+│  🔍 Search notifications...                │
+│  Filter: [All ▼] [Traffic] [Parking]       │
+│  Time:   [All Time ▼]                      │
+├─────────────────────────────────────────────┤
+│  📌 PINNED NOTIFICATIONS                    │
+│  ─────────────────────────────              │
+│  🚨 EMERGENCY                               │
+│  Road blocked due to accident               │
+│  🕐 2 hours ago                             │
+├─────────────────────────────────────────────┤
+│  RECENT                                     │
+│  ─────────────────────────────              │
+│  🟡 Heavy traffic on Jalna Road             │
+│  🕐 30 min ago           ← Swipe to delete  │
+└─────────────────────────────────────────────┘
+
+ACTIONS:
+├─ Tap → Mark as read
+├─ Swipe Left → Delete
+├─ Swipe Right → Pin/Unpin
+└─ ⚙️ Settings → Toggle notification types
+        </div>
+    </div>
+
+    <!-- SECTION 13: PROFILE -->
+    <div class="page-break"></div>
+    <h1>13. Profile Screen</h1>
+    
+    <div class="screen-box no-break">
+        <div class="screen-title">
+            <span class="icon">👤</span>
+            <span>User Profile & Settings</span>
+        </div>
+        <div class="file-path">📁 ui/profile/ProfileScreen.kt</div>
+        
+        <h3>Profile Sections</h3>
+        
+        <div class="highlight-box">
+            <h4>👤 User Header</h4>
+            <p>Profile photo (uploadable), Name, Email, Phone, Edit button</p>
+        </div>
+        
+        <div class="highlight-box">
+            <h4>📊 Report Statistics</h4>
+            <table>
+                <tr>
+                    <td>📋 Total Reports</td>
+                    <td>✅ Resolved</td>
+                    <td>⏳ Pending</td>
+                    <td>🔄 In Progress</td>
+                </tr>
+                <tr>
+                    <td style="text-align:center; font-size:1.5em;">12</td>
+                    <td style="text-align:center; font-size:1.5em;">8</td>
+                    <td style="text-align:center; font-size:1.5em;">3</td>
+                    <td style="text-align:center; font-size:1.5em;">1</td>
+                </tr>
+            </table>
+            <p>📈 Weekly activity chart + 🏆 Citizen Score (gamification)</p>
+        </div>
+        
+        <div class="highlight-box">
+            <h4>📍 Saved Places</h4>
+            <p>Home, Office, etc. with swipe-to-delete and add new option</p>
+        </div>
+        
+        <div class="highlight-box">
+            <h4>⚙️ Settings</h4>
+            <table>
+                <tr><td>📍 Location Permission</td><td>[Enabled ✓]</td></tr>
+                <tr><td>🔔 Notifications</td><td>[Enabled ✓]</td></tr>
+                <tr><td>📷 Camera</td><td>[Disabled →]</td></tr>
+                <tr><td>🔊 Alert Sounds</td><td>[ON/OFF]</td></tr>
+                <tr><td>📳 Vibration</td><td>[ON/OFF]</td></tr>
+            </table>
+        </div>
+        
+        <div class="highlight-box">
+            <h4>🔐 Account</h4>
+            <p>[🔑 Change Password] [🚪 Logout]</p>
+        </div>
+    </div>
+
+    <!-- SECTION 14: FIREBASE STRUCTURE -->
+    <div class="page-break"></div>
+    <h1>14. Firebase Data Structure</h1>
+    
+    <div class="screen-box no-break">
+        <div class="screen-title">
+            <span class="icon">🔥</span>
+            <span>Database Architecture</span>
+        </div>
+        
+        <h3>Firestore Collections</h3>
+        <div class="firebase-structure">
+├─ <span class="collection">users</span>/{uid}
+│  ├─ <span class="field">name</span>: "Shivam Sharma"
+│  ├─ <span class="field">email</span>: "user@email.com"
+│  ├─ <span class="field">phone</span>: "9876543210"
+│  ├─ <span class="field">role</span>: "citizen"
+│  ├─ <span class="field">profileImageUrl</span>: "https://..."
+│  ├─ <span class="field">vehicleNumbers</span>: ["MH-20-AB-1234"]
+│  └─ <span class="collection">notifications</span>/{notificationId}
+│     ├─ <span class="field">title, message, type, priority</span>
+│     └─ <span class="field">read, pinned, timestamp</span>
+│
+├─ <span class="collection">bookings</span>/{bookingId}
+│  ├─ <span class="field">userId, parkingSpotId, vehicleNumber</span>
+│  ├─ <span class="field">bookingStartTime, bookingEndTime, durationHours</span>
+│  ├─ <span class="field">status, paymentStatus, totalAmount, isPaid</span>
+│  ├─ <span class="field">qrCodeData</span>
+│  └─ <span class="field">rating, review</span>
+│
+├─ <span class="collection">parking</span>/{parkingId}
+│  ├─ <span class="field">address, location (GeoPoint)</span>
+│  ├─ <span class="field">totalSlots, availableSlots, isLegal</span>
+│  ├─ <span class="field">parkingType</span>: "free" | "paid"
+│  ├─ <span class="field">ratePerHour, minDuration, maxDuration</span>
+│  └─ <span class="field">vehicleTypes</span>: ["car", "bike", "ev"]
+│
+└─ <span class="collection">reports</span>/{reportId}
+   ├─ <span class="field">userId, type, title, description</span>
+   ├─ <span class="field">imageUrls[], latitude, longitude</span>
+   ├─ <span class="field">status, priority, isAnonymous</span>
+   ├─ <span class="field">upvoteCount, upvotedBy[], timestamp</span>
+   └─ <span class="collection">chat</span>/{messageId}
+        </div>
+        
+        <h3>Realtime Database Nodes</h3>
+        <div class="firebase-structure">
+├─ <span class="collection">traffic</span>/{areaId}
+│  ├─ <span class="field">status</span>: "free" | "moderate" | "heavy" | "severe"
+│  ├─ <span class="field">congestionLevel</span>: 0-100
+│  └─ <span class="field">lastUpdated</span>: timestamp
+│
+├─ <span class="collection">parking_live</span>/{parkingId}
+│  ├─ <span class="field">availableSlots, totalSlots</span>
+│  ├─ <span class="field">slotsByType</span>: {bike: {}, car: {}, suv: {}}
+│  ├─ <span class="field">peakHourMultiplier</span>: 1.5
+│  └─ <span class="field">lastUpdated</span>: timestamp
+│
+└─ <span class="collection">live_users</span>/{userId}
+   ├─ <span class="field">latitude, longitude</span>
+   ├─ <span class="field">role</span>: "citizen" | "police"
+   └─ <span class="field">timestamp</span>
+        </div>
+    </div>
+
+    <!-- SECTION 15: TECHNOLOGY STACK -->
+    <div class="page-break"></div>
+    <h1>15. Technology Stack</h1>
+    
+    <div class="screen-box no-break">
+        <div class="screen-title">
+            <span class="icon">⚙️</span>
+            <span>Technologies Used</span>
+        </div>
+        
+        <h3>Frontend</h3>
+        <p>
+            <span class="tech-badge compose">Jetpack Compose</span>
+            <span class="tech-badge">Material 3</span>
+            <span class="tech-badge">Kotlin</span>
+            <span class="tech-badge">Coroutines</span>
+            <span class="tech-badge">StateFlow</span>
+            <span class="tech-badge">ViewModel</span>
+        </p>
+        
+        <h3>Backend Services</h3>
+        <p>
+            <span class="tech-badge firebase">Firebase Auth</span>
+            <span class="tech-badge firebase">Firestore</span>
+            <span class="tech-badge firebase">Realtime DB</span>
+            <span class="tech-badge firebase">Cloud Storage</span>
+            <span class="tech-badge firebase">FCM</span>
+            <span class="tech-badge firebase">Analytics</span>
+        </p>
+        
+        <h3>Maps & Location</h3>
+        <p>
+            <span class="tech-badge maps">Google Maps SDK</span>
+            <span class="tech-badge maps">Maps Compose</span>
+            <span class="tech-badge maps">Fused Location</span>
+            <span class="tech-badge maps">Directions API</span>
+            <span class="tech-badge maps">Geocoding</span>
+        </p>
+        
+        <h3>Payments</h3>
+        <p>
+            <span class="tech-badge">UPI Intent</span>
+            <span class="tech-badge">Google Pay</span>
+            <span class="tech-badge">PhonePe</span>
+            <span class="tech-badge">Paytm</span>
+        </p>
+        
+        <h3>Architecture Pattern</h3>
+        <p>
+            <span class="tech-badge">MVVM</span>
+            <span class="tech-badge">Clean Architecture</span>
+            <span class="tech-badge">Repository Pattern</span>
+            <span class="tech-badge">Single Activity</span>
+        </p>
+    </div>
+
+    <!-- COMPLETE JOURNEY -->
+    <div class="page-break"></div>
+    <h1>Complete User Journey</h1>
+    
+    <div class="journey-map">
+        <h3 style="text-align:center; margin-bottom:30px;">🚗 End-to-End Citizen Flow</h3>
+        
+        <div class="journey-step">
+            <div class="journey-number">1</div>
+            <div class="journey-content">
+                <h4>App Launch</h4>
+                <p>Splash Screen → Firebase Auth check → Role detection</p>
+            </div>
+        </div>
+        <div class="arrow-down">↓</div>
+        
+        <div class="journey-step">
+            <div class="journey-number">2</div>
+            <div class="journey-content">
+                <h4>Authentication</h4>
+                <p>Login (Email/Phone) or Register → Create Firestore user document</p>
+            </div>
+        </div>
+        <div class="arrow-down">↓</div>
+        
+        <div class="journey-step">
+            <div class="journey-number">3</div>
+            <div class="journey-content">
+                <h4>Citizen Dashboard</h4>
+                <p>5-tab navigation: HOME | MAP | PARKING | REPORT | ALERTS</p>
+            </div>
+        </div>
+        <div class="arrow-down">↓</div>
+        
+        <div class="journey-step">
+            <div class="journey-number">4</div>
+            <div class="journey-content">
+                <h4>Find Parking</h4>
+                <p>Search/Filter parking → View on map → Check availability</p>
+            </div>
+        </div>
+        <div class="arrow-down">↓</div>
+        
+        <div class="journey-step">
+            <div class="journey-number">5</div>
+            <div class="journey-content">
+                <h4>Book Parking</h4>
+                <p>Location verify → Select slot → Choose vehicle → Set duration → Review pricing</p>
+            </div>
+        </div>
+        <div class="arrow-down">↓</div>
+        
+        <div class="journey-step">
+            <div class="journey-number">6</div>
+            <div class="journey-content">
+                <h4>UPI Payment</h4>
+                <p>Google Pay / PhonePe → Enter PIN → Payment confirmed</p>
+            </div>
+        </div>
+        <div class="arrow-down">↓</div>
+        
+        <div class="journey-step">
+            <div class="journey-number">7</div>
+            <div class="journey-content">
+                <h4>Booking Confirmed</h4>
+                <p>QR Code generated → Navigate to parking → Show QR for entry</p>
+            </div>
+        </div>
+        <div class="arrow-down">↓</div>
+        
+        <div class="journey-step">
+            <div class="journey-number">8</div>
+            <div class="journey-content">
+                <h4>Manage Booking</h4>
+                <p>View QR | Get Directions | Extend Duration | Cancel | Rate & Review</p>
+            </div>
+        </div>
+        <div class="arrow-down">↓</div>
+        
+        <div class="journey-step">
+            <div class="journey-number">9</div>
+            <div class="journey-content">
+                <h4>Report Issues</h4>
+                <p>Select type → Add photos → Description → Location → Submit</p>
+            </div>
+        </div>
+        <div class="arrow-down">↓</div>
+        
+        <div class="journey-step">
+            <div class="journey-number">10</div>
+            <div class="journey-content">
+                <h4>Stay Updated</h4>
+                <p>Real-time notifications → Traffic alerts → Booking reminders</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- FOOTER -->
+    <footer>
+        <h2>🚗 CityFlux</h2>
+        <p>Smart City Traffic & Parking Management System</p>
+        <p style="color:#666; margin-top:20px;">Documentation Version 1.0 | March 2026</p>
+        <button class="print-btn" onclick="window.print()">📄 Save as PDF / Print</button>
+    </footer>
+
+</body>
+</html>
