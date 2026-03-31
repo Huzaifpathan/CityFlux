@@ -28,6 +28,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -52,6 +53,7 @@ import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
 import com.google.firebase.ktx.Firebase
+import com.example.cityflux.R
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
@@ -66,16 +68,30 @@ import java.net.URL
 @Composable
 fun CitizenHomeContent(
     onNavigateToTab: (CitizenTab) -> Unit,
-    onProfileClick: () -> Unit = {}
+    onProfileClick: () -> Unit = {},
+    geminiApiKey: String = ""
 ) {
     @Suppress("UNUSED_VARIABLE")
     val colors = MaterialTheme.cityFluxColors
     val auth = FirebaseAuth.getInstance()
     val firestore = FirebaseFirestore.getInstance()
+    
+    // AI Screen visibility state
+    var showAIScreen by remember { mutableStateOf(false) }
 
     // ── Analytics: log once per screen open ──
     LaunchedEffect(Unit) {
         try { Firebase.analytics.logEvent("home_opened", null) } catch (_: Exception) {}
+    }
+    
+    // Show AI Screen overlay
+    if (showAIScreen) {
+        CityFluxAIScreen(
+            onClose = { showAIScreen = false },
+            apiKey = geminiApiKey,
+            userType = "citizen"
+        )
+        return
     }
 
     // ── User profile from Firestore ──
@@ -398,6 +414,7 @@ fun CitizenHomeContent(
                 userName = userName,
                 userLoading = userLoading,
                 unreadCount = unreadCount,
+                onAIClick = { showAIScreen = true },
                 onNotificationClick = { onNavigateToTab(CitizenTab.ALERTS) },
                 onProfileClick = onProfileClick
             )
@@ -713,6 +730,7 @@ private fun HomeTopBar(
     userName: String?,
     userLoading: Boolean,
     unreadCount: Int,
+    onAIClick: () -> Unit,
     onNotificationClick: () -> Unit,
     onProfileClick: () -> Unit = {}
 ) {
@@ -884,6 +902,23 @@ private fun HomeTopBar(
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
+                    // AI Assistant button
+                    Surface(
+                        onClick = onAIClick,
+                        shape = CircleShape,
+                        color = Color.White.copy(alpha = 0.12f),
+                        modifier = Modifier.size(40.dp)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                painter = painterResource(id = R.drawable.ic_ai_assistant),
+                                contentDescription = "CityFlux AI",
+                                tint = Color.Unspecified,
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
+                    }
+                    
                     // Notification button with badge
                     Box {
                         Surface(

@@ -1,7 +1,16 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     id("com.google.gms.google-services")
+}
+
+// Load local.properties for API keys
+val localProperties = Properties()
+val localPropertiesFile = rootProject.file("local.properties")
+if (localPropertiesFile.exists()) {
+    localProperties.load(localPropertiesFile.inputStream())
 }
 
 android {
@@ -16,6 +25,11 @@ android {
         versionName = "1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables { useSupportLibrary = true }
+        
+        // Groq API Key from local.properties (Free AI API)
+        buildConfigField("String", "GROQ_API_KEY", "\"${localProperties.getProperty("GROQ_API_KEY", "")}\"")
+        // Keep Gemini for backward compatibility
+        buildConfigField("String", "GEMINI_API_KEY", "\"${localProperties.getProperty("GEMINI_API_KEY", "")}\"")
     }
 
     buildTypes {
@@ -35,7 +49,10 @@ android {
 
     kotlinOptions { jvmTarget = "1.8" }
 
-    buildFeatures { compose = true }
+    buildFeatures { 
+        compose = true
+        buildConfig = true
+    }
 
     composeOptions {
         kotlinCompilerExtensionVersion = "1.5.1"
@@ -59,6 +76,12 @@ dependencies {
     implementation("com.google.firebase:firebase-messaging-ktx") // Cloud Messaging (FCM)
     implementation ("com.google.firebase:firebase-analytics-ktx")
 
+    // 🤖 Google Gemini AI (optional, keeping for compatibility)
+    implementation("com.google.ai.client.generativeai:generativeai:0.9.0")
+    
+    // 🚀 Groq AI (Free, Fast Llama 3)
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    implementation("org.json:json:20231013")
 
     // 🎨 Material
     implementation("com.google.android.material:material:1.11.0")
