@@ -23,6 +23,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -30,6 +31,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import android.location.Location
+import com.example.cityflux.R
 import com.example.cityflux.data.RealtimeDbService
 import com.example.cityflux.model.ParkingLive
 import com.example.cityflux.model.ParkingSpot
@@ -37,6 +39,7 @@ import com.example.cityflux.model.toParkingSpot
 import com.example.cityflux.model.Report
 import com.example.cityflux.model.TrafficStatus
 import com.example.cityflux.model.LocationUtils
+import com.example.cityflux.ui.dashboard.CityFluxAIScreen
 import com.example.cityflux.ui.theme.*
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
@@ -51,11 +54,25 @@ import com.google.firebase.Timestamp
 @Composable
 fun PoliceHomeScreen(
     onNavigateToTab: (PoliceTab) -> Unit,
-    onNavigateToParkingWithFilter: (String) -> Unit = {}
+    onNavigateToParkingWithFilter: (String) -> Unit = {},
+    geminiApiKey: String = ""
 ) {
     val colors = MaterialTheme.cityFluxColors
     val auth = FirebaseAuth.getInstance()
     val firestore = FirebaseFirestore.getInstance()
+    
+    // AI Screen visibility state
+    var showAIScreen by remember { mutableStateOf(false) }
+    
+    // Show AI Screen overlay
+    if (showAIScreen) {
+        CityFluxAIScreen(
+            onClose = { showAIScreen = false },
+            apiKey = geminiApiKey,
+            userType = "police"
+        )
+        return
+    }
 
     // ── User profile ──
     var userName by remember { mutableStateOf<String?>(null) }
@@ -335,6 +352,7 @@ fun PoliceHomeScreen(
             userLoading = userLoading,
             unreadCount = unreadCount,
             areaName = policeAreaName,
+            onAIClick = { showAIScreen = true },
             onNotificationClick = { onNavigateToTab(PoliceTab.REPORTS) },
             onProfileClick = { onNavigateToTab(PoliceTab.PROFILE) }
         )
@@ -536,6 +554,7 @@ private fun PoliceHomeTopBar(
     userLoading: Boolean,
     unreadCount: Int,
     areaName: String = "",
+    onAIClick: () -> Unit,
     onNotificationClick: () -> Unit,
     onProfileClick: () -> Unit
 ) {
@@ -678,6 +697,23 @@ private fun PoliceHomeTopBar(
 
                 // Action buttons - fixed width
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    // AI Assistant button
+                    Surface(
+                        onClick = onAIClick,
+                        shape = CircleShape,
+                        color = Color.White.copy(alpha = 0.15f),
+                        modifier = Modifier.size(40.dp)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                painter = painterResource(id = R.drawable.ic_ai_assistant),
+                                contentDescription = "CityFlux AI",
+                                tint = Color.Unspecified,
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
+                    }
+                    
                     // Notification bell
                     Box {
                         Surface(

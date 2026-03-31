@@ -23,10 +23,12 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.example.cityflux.R
 
 // ═══════════════════════════════════════════════════════════════════
 // CityFlux Modern UI Components - Clean Professional Design
@@ -102,16 +104,18 @@ fun GradientBackground(
 }
 
 /**
- * Modern top app bar with logo, notification and profile icons
+ * Modern top app bar with logo, AI assistant, notification and profile icons
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CityFluxTopBar(
     title: String = "CityFlux",
     showBack: Boolean = false,
+    showAI: Boolean = true,
     showNotification: Boolean = true,
     showProfile: Boolean = true,
     onBackClick: () -> Unit = {},
+    onAIClick: () -> Unit = {},
     onNotificationClick: () -> Unit = {},
     onProfileClick: () -> Unit = {},
     modifier: Modifier = Modifier
@@ -145,6 +149,17 @@ fun CityFluxTopBar(
             }
         },
         actions = {
+            // AI Assistant Icon - Left of notification
+            if (showAI) {
+                IconButton(onClick = onAIClick) {
+                    Icon(
+                        painter = painterResource(id = R.drawable.ic_ai_assistant),
+                        contentDescription = "CityFlux AI Assistant",
+                        modifier = Modifier.size(26.dp),
+                        tint = Color.Unspecified
+                    )
+                }
+            }
             if (showNotification) {
                 IconButton(onClick = onNotificationClick) {
                     Icon(

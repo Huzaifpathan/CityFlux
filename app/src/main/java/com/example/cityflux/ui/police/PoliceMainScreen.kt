@@ -17,6 +17,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.cityflux.BuildConfig
 import com.example.cityflux.ui.notifications.NotificationsViewModel
 import com.example.cityflux.ui.theme.*
 import com.google.firebase.auth.FirebaseAuth
@@ -172,7 +173,8 @@ fun PoliceMainScreen(
                     onNavigateToParkingWithFilter = { filter ->
                         pendingParkingFilter = filter
                         selectedTab = PoliceTab.PARKING
-                    }
+                    },
+                    geminiApiKey = BuildConfig.GROQ_API_KEY
                 )
                 PoliceTab.CONGESTION -> CongestionMapScreen(
                     onBack = { selectedTab = PoliceTab.HOME }

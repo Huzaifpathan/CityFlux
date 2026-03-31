@@ -20,6 +20,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.cityflux.BuildConfig
 import com.example.cityflux.ui.notifications.NotificationsViewModel
 import com.example.cityflux.ui.theme.*
 
@@ -159,7 +160,8 @@ fun CitizenMainScreen(
                 else -> when (tabs[tabIndex]) {
                     CitizenTab.HOME -> CitizenHomeContent(
                         onNavigateToTab = { tab -> selectedTab = tabs.indexOf(tab) },
-                        onProfileClick = { showProfile = true }
+                        onProfileClick = { showProfile = true },
+                        geminiApiKey = BuildConfig.GROQ_API_KEY
                     )
                     CitizenTab.MAP -> com.example.cityflux.ui.map.MapScreen(
                         onBack = { selectedTab = 0 },

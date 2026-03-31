@@ -1,0 +1,61 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+
+    <!-- CityFlux AI Assistant Icon - Brain + Circuit Design -->
+    
+    <!-- Outer Circle with Gradient -->
+    <path android:pathData="M12,2 C6.48,2 2,6.48 2,12 C2,17.52 6.48,22 12,22 C17.52,22 22,17.52 22,12 C22,6.48 17.52,2 12,2 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:startX="12"
+                android:startY="2"
+                android:endX="12"
+                android:endY="22"
+                android:type="linear">
+                <item android:offset="0" android:color="#FF1E3A8A"/>
+                <item android:offset="0.5" android:color="#FF2563EB"/>
+                <item android:offset="1" android:color="#FF3B82F6"/>
+            </gradient>
+        </aapt:attr>
+    </path>
+    
+    <!-- AI Brain Shape -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M12,6 C9.24,6 7,8.24 7,11 C7,12.85 8.07,14.45 9.62,15.27 L9.62,17.5 C9.62,17.78 9.84,18 10.12,18 L13.88,18 C14.16,18 14.38,17.78 14.38,17.5 L14.38,15.27 C15.93,14.45 17,12.85 17,11 C17,8.24 14.76,6 12,6 Z"/>
+    
+    <!-- Circuit Lines -->
+    <path
+        android:fillColor="#60A5FA"
+        android:pathData="M10.5,9.5 L10.5,11 L9,11"/>
+    <path
+        android:strokeColor="#60A5FA"
+        android:strokeWidth="0.8"
+        android:pathData="M10.5,9.5 L10.5,11 L9,11"/>
+        
+    <path
+        android:strokeColor="#60A5FA"
+        android:strokeWidth="0.8"
+        android:pathData="M13.5,9.5 L13.5,11 L15,11"/>
+    
+    <!-- Neural Dots -->
+    <path
+        android:fillColor="#3B82F6"
+        android:pathData="M10.5,9.5 m-0.8,0 a0.8,0.8 0 1,0 1.6,0 a0.8,0.8 0 1,0 -1.6,0"/>
+    <path
+        android:fillColor="#3B82F6"
+        android:pathData="M13.5,9.5 m-0.8,0 a0.8,0.8 0 1,0 1.6,0 a0.8,0.8 0 1,0 -1.6,0"/>
+    <path
+        android:fillColor="#3B82F6"
+        android:pathData="M12,12 m-0.8,0 a0.8,0.8 0 1,0 1.6,0 a0.8,0.8 0 1,0 -1.6,0"/>
+    
+    <!-- Base connector -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M11,18 L11,19.5 L13,19.5 L13,18"/>
+
+</vector>
