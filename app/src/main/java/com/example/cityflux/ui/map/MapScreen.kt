@@ -135,12 +135,12 @@ fun MapScreen(
         } catch (_: Exception) { /* graceful fallback */ }
     }
 
-    // ── Camera / Map State — always opens on Aurangabad (Chhatrapati Sambhajinagar) city ──
-    val aurangabadCity = LatLng(19.8762, 75.3433) // Aurangabad (Chhatrapati Sambhajinagar), Maharashtra
-    val defaultLocation = aurangabadCity
+    // ── Camera / Map State — always opens on Solapur city ──
+    val solapurCity = LatLng(17.6599, 75.9064) // Solapur, Maharashtra
+    val defaultLocation = solapurCity
     val cameraPositionState = rememberCameraPositionState {
-        // Zoom 12 shows the full Aurangabad city within city boundaries
-        position = CameraPosition.fromLatLngZoom(aurangabadCity, 12f)
+        // Zoom 12 shows the full Solapur city within city boundaries
+        position = CameraPosition.fromLatLngZoom(solapurCity, 12f)
     }
 
     // ── Map Type Toggle ──
@@ -261,6 +261,13 @@ fun MapScreen(
     val incidentParkingBitmap = remember { createCircleMarkerBitmap(AccentAlerts.toArgb(), 36) }
     val incidentHawkerBitmap = remember { createCircleMarkerBitmap(AccentOrange.toArgb(), 36) }
     val incidentDefaultBitmap = remember { createCircleMarkerBitmap(PrimaryBlue.toArgb(), 36) }
+    
+    // ── Pre-cached Live User Bitmaps by speed category (performance optimization) ──
+    val liveUserBitmapFast = remember { createLiveUserMarkerBitmap(50, 0f, false) }
+    val liveUserBitmapModerate = remember { createLiveUserMarkerBitmap(25, 0f, false) }
+    val liveUserBitmapSlow = remember { createLiveUserMarkerBitmap(5, 0f, false) }
+    val liveUserBitmapStopped = remember { createLiveUserMarkerBitmap(0, 0f, false) }
+    val liveUserBitmapMe = remember { createLiveUserMarkerBitmap(25, 0f, true) }
 
     // ── Map load timeout diagnostic ──
     var mapLoadTimedOut by remember { mutableStateOf(false) }
@@ -402,7 +409,7 @@ fun MapScreen(
                             isMedium -> 350.0
                             else -> 250.0
                         }
-                        val alpha = if (isHigh) pulseAlpha else if (isMedium) 0.3f else 0.2f
+                        val alpha = if (isHigh) 0.35f else if (isMedium) 0.25f else 0.15f
 
                         Circle(
                             center = latLng,
@@ -436,22 +443,6 @@ fun MapScreen(
                         fillColor = cell.color,
                         strokeColor = Color.Transparent,
                         strokeWidth = 0f
-                    )
-                }
-            }
-
-            // ──────── Crowd-sourced Traffic Density (from live user movement) ────────
-            if (showLiveUsers && liveLocations.size >= 2) {
-                val liveTrafficCells = remember(liveLocations) {
-                    buildLiveTrafficCells(liveLocations.values.toList())
-                }
-                liveTrafficCells.forEach { cell ->
-                    Circle(
-                        center = cell.center,
-                        radius = cell.radius,
-                        fillColor = cell.color,
-                        strokeColor = cell.color.copy(alpha = minOf(cell.color.alpha * 2f, 1f)),
-                        strokeWidth = 1.5f
                     )
                 }
             }
@@ -581,31 +572,34 @@ fun MapScreen(
                 liveLocations.forEach { (uid, loc) ->
                     val isMe = uid == currentUserId
                     val position = LatLng(loc.lat, loc.lng)
-                    androidx.compose.runtime.key(uid) {
-                        val markerBitmap = remember(loc.speed, loc.heading.toInt(), isMe) {
-                            createLiveUserMarkerBitmap(loc.speed, loc.heading.toFloat(), isMe)
-                        }
-                        Marker(
-                            state = MarkerState(position = position),
-                            title = if (isMe) "You (${loc.name})" else loc.name,
-                            snippet = buildString {
-                                append("${loc.speed} km/h")
-                                if (loc.speed < 5) append(" · Stopped")
-                                else if (loc.speed < 20) append(" · Slow")
-                                else if (loc.speed < 50) append(" · Moving")
-                                else append(" · Fast")
-                            },
-                            icon = BitmapDescriptorFactory.fromBitmap(markerBitmap),
-                            flat = true,
-                            anchor = Offset(0.5f, 0.5f),
-                            onClick = {
-                                selectedParking = null
-                                selectedIncident = null
-                                selectedLiveUser = uid to loc
-                                true
-                            }
-                        )
+                    // Use pre-cached bitmaps by speed category for performance
+                    val markerBitmap = when {
+                        isMe -> liveUserBitmapMe
+                        loc.speed >= 40 -> liveUserBitmapFast
+                        loc.speed >= 15 -> liveUserBitmapModerate
+                        loc.speed >= 5 -> liveUserBitmapSlow
+                        else -> liveUserBitmapStopped
                     }
+                    val speedLabel = when {
+                        loc.speed < 5 -> "Stopped"
+                        loc.speed < 20 -> "Slow"
+                        loc.speed < 50 -> "Moving"
+                        else -> "Fast"
+                    }
+                    Marker(
+                        state = MarkerState(position = position),
+                        title = if (isMe) "You (${loc.name})" else loc.name,
+                        snippet = "${loc.speed} km/h · $speedLabel",
+                        icon = BitmapDescriptorFactory.fromBitmap(markerBitmap),
+                        flat = true,
+                        anchor = Offset(0.5f, 0.5f),
+                        onClick = {
+                            selectedParking = null
+                            selectedIncident = null
+                            selectedLiveUser = uid to loc
+                            true
+                        }
+                    )
                 }
             }
         }
@@ -2451,10 +2445,10 @@ private fun parseRoadLatLng(roadId: String): LatLng? {
             return LatLng(lat, lng)
         }
     }
-    // Hash-based fallback: deterministic position around Mumbai
+    // Hash-based fallback: deterministic position around Solapur city center
     val hash = roadId.hashCode()
-    val baseLat = 19.076 + (hash % 100) * 0.002
-    val baseLng = 72.877 + ((hash / 100) % 100) * 0.002
+    val baseLat = 17.6599 + (hash % 100) * 0.0005
+    val baseLng = 75.9064 + ((hash / 100) % 100) * 0.0005
     return LatLng(baseLat, baseLng)
 }
 

@@ -51,7 +51,7 @@ import com.example.cityflux.model.ParkingLive
 import com.example.cityflux.model.ParkingSpot
 import com.example.cityflux.model.toParkingSpot
 import com.example.cityflux.model.Report
-import com.example.cityflux.model.AurangabadDummyData
+import com.example.cityflux.model.SolapurDummyData
 import com.example.cityflux.model.TrafficStatus
 import com.example.cityflux.ui.theme.*
 import com.google.android.gms.location.LocationServices
@@ -106,8 +106,11 @@ class CongestionMapViewModel : ViewModel() {
     private var policeLat = 0.0
     private var policeLon = 0.0
 
-    // ── Dummy Aurangabad live users (refreshed every 60s to stay "alive") ──
-    private val _dummyLocations = MutableStateFlow(AurangabadDummyData.dummyUsers)
+    // ── Dummy Solapur live users (refreshed every 60s to stay "alive") ──
+    private val _dummyLocations = MutableStateFlow(SolapurDummyData.dummyUsers)
+    
+    // ── Dummy traffic data for fallback ──
+    private val _dummyTraffic = MutableStateFlow(SolapurDummyData.dummyTrafficMap)
 
     init {
         observeTraffic()
@@ -136,11 +139,24 @@ class CongestionMapViewModel : ViewModel() {
             RealtimeDbService.observeTraffic()
                 .catch { e ->
                     Log.e(TAG, "Traffic observe error", e)
-                    _uiState.update { it.copy(error = "Traffic data unavailable") }
+                    // Use dummy traffic data as fallback on error
+                    _uiState.update { 
+                        it.copy(
+                            trafficMap = _dummyTraffic.value,
+                            error = null,
+                            isLoading = false
+                        ) 
+                    }
                 }
                 .collect { map ->
+                    // Merge: dummy traffic as base, real Firebase traffic overrides
+                    val mergedTraffic = if (map.isEmpty()) {
+                        _dummyTraffic.value
+                    } else {
+                        _dummyTraffic.value.toMutableMap().apply { putAll(map) }
+                    }
                     _uiState.update {
-                        it.copy(trafficMap = map, isLoading = false, isOffline = false, error = null)
+                        it.copy(trafficMap = mergedTraffic, isLoading = false, isOffline = false, error = null)
                     }
                 }
         }
@@ -272,12 +288,12 @@ fun CongestionMapScreen(
         } catch (_: Exception) {}
     }
 
-    // ── Camera State — always opens on Aurangabad city ──
-    val aurangabadCity = LatLng(19.8762, 75.3433) // Aurangabad (Chhatrapati Sambhajinagar), Maharashtra
-    val defaultLocation = aurangabadCity
+    // ── Camera State — always opens on Solapur city ──
+    val solapurCity = LatLng(17.6599, 75.9064) // Solapur, Maharashtra
+    val defaultLocation = solapurCity
     val cameraPositionState = rememberCameraPositionState {
-        // Zoom 12 shows the full Aurangabad city within city boundaries
-        position = CameraPosition.fromLatLngZoom(aurangabadCity, 12f)
+        // Zoom 12 shows the full Solapur city within city boundaries
+        position = CameraPosition.fromLatLngZoom(solapurCity, 12f)
     }
 
     // ── Map Properties ──
@@ -322,7 +338,7 @@ fun CongestionMapScreen(
     // ── Connectivity ──
     val isOffline = remember { !isNetworkAvailablePolice(context) }
 
-    // ── Custom Marker Bitmaps ──
+    // ── Custom Marker Bitmaps (cached) ──
     val highBitmap = remember { createCongestionMarkerBitmap(0xFFB91C1C.toInt(), 44) }
     val medBitmap = remember { createCongestionMarkerBitmap(0xFFF59E0B.toInt(), 38) }
     val lowBitmap = remember { createCongestionMarkerBitmap(0xFF10B981.toInt(), 32) }
@@ -332,6 +348,12 @@ fun CongestionMapScreen(
     val incidentParking = remember { createCongestionMarkerBitmap(AccentAlerts.toArgb(), 34) }
     val incidentHawker = remember { createCongestionMarkerBitmap(AccentOrange.toArgb(), 34) }
     val incidentDefault = remember { createCongestionMarkerBitmap(PrimaryBlue.toArgb(), 34) }
+    
+    // ── Pre-cached Live User Bitmaps by speed category (performance optimization) ──
+    val liveUserBitmapFast = remember { createLiveUserMarkerBitmapPolice(50, 0f) }
+    val liveUserBitmapModerate = remember { createLiveUserMarkerBitmapPolice(25, 0f) }
+    val liveUserBitmapSlow = remember { createLiveUserMarkerBitmapPolice(5, 0f) }
+    val liveUserBitmapStopped = remember { createLiveUserMarkerBitmapPolice(0, 0f) }
 
     // ── Congestion zone colors for circles ──
     val congestionHighFill = Color(0xFFB91C1C).copy(alpha = 0.30f)
@@ -340,16 +362,6 @@ fun CongestionMapScreen(
     val congestionMedStroke = Color(0xFFF59E0B).copy(alpha = 0.50f)
     val congestionLowFill = Color(0xFF10B981).copy(alpha = 0.10f)
     val congestionLowStroke = Color(0xFF10B981).copy(alpha = 0.35f)
-
-    // Pulsing animation for HIGH severity zones
-    val infiniteTransition = rememberInfiniteTransition(label = "pulse")
-    val pulseAlpha by infiniteTransition.animateFloat(
-        initialValue = 0.25f, targetValue = 0.45f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(1200, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
-        ), label = "pulseAlpha"
-    )
 
     Box(modifier = Modifier.fillMaxSize()) {
 
@@ -373,9 +385,10 @@ fun CongestionMapScreen(
                     val latLng = parseRoadLatLng(roadId, defaultLocation)
                     val level = traffic.congestionLevel.uppercase()
 
+                    // Use static alphas for better performance (removed pulsing)
                     val (fillColor, strokeColor, radius) = when (level) {
                         "HIGH" -> Triple(
-                            congestionHighFill.copy(alpha = pulseAlpha),
+                            congestionHighFill,
                             congestionHighStroke,
                             450.0
                         )
@@ -480,47 +493,33 @@ fun CongestionMapScreen(
             if (showLiveUsers) {
                 state.liveLocations.forEach { (uid, loc) ->
                     val position = LatLng(loc.lat, loc.lng)
-                    androidx.compose.runtime.key(uid) {
-                        val markerBitmap = remember(loc.speed, loc.heading.toInt()) {
-                            createLiveUserMarkerBitmapPolice(loc.speed, loc.heading.toFloat())
+                    // Use pre-cached bitmaps by speed category for performance
+                    val markerBitmap = when {
+                        loc.speed >= 40 -> liveUserBitmapFast
+                        loc.speed >= 15 -> liveUserBitmapModerate
+                        loc.speed >= 5 -> liveUserBitmapSlow
+                        else -> liveUserBitmapStopped
+                    }
+                    val speedLabel = when {
+                        loc.speed < 5 -> "Stopped"
+                        loc.speed < 20 -> "Slow"
+                        loc.speed < 50 -> "Moving"
+                        else -> "Fast"
+                    }
+                    Marker(
+                        state = MarkerState(position = position),
+                        title = loc.name,
+                        snippet = "${loc.speed} km/h · $speedLabel",
+                        icon = BitmapDescriptorFactory.fromBitmap(markerBitmap),
+                        flat = true,
+                        anchor = androidx.compose.ui.geometry.Offset(0.5f, 0.5f),
+                        onClick = {
+                            selectedIncident = null
+                            selectedParking = null
+                            selectedLiveUser = uid to loc
+                            true
                         }
-                        Marker(
-                            state = MarkerState(position = position),
-                            title = loc.name,
-                            snippet = buildString {
-                                append("${loc.speed} km/h")
-                                if (loc.speed < 5) append(" · Stopped")
-                                else if (loc.speed < 20) append(" · Slow")
-                                else if (loc.speed < 50) append(" · Moving")
-                                else append(" · Fast")
-                            },
-                            icon = BitmapDescriptorFactory.fromBitmap(markerBitmap),
-                            flat = true,
-                            anchor = androidx.compose.ui.geometry.Offset(0.5f, 0.5f),
-                            onClick = {
-                                selectedIncident = null
-                                selectedParking = null
-                                selectedLiveUser = uid to loc
-                                true
-                            }
-                        )
-                    }
-                }
-
-                // Crowd-sourced traffic density overlay from live users
-                if (state.liveLocations.size >= 2) {
-                    val trafficCells = remember(state.liveLocations) {
-                        buildPoliceTrafficCells(state.liveLocations.values.toList())
-                    }
-                    trafficCells.forEach { cell ->
-                        Circle(
-                            center = cell.center,
-                            radius = cell.radius,
-                            fillColor = cell.color,
-                            strokeColor = cell.color.copy(alpha = minOf(cell.color.alpha * 2f, 1f)),
-                            strokeWidth = 1.5f
-                        )
-                    }
+                    )
                 }
             }
         }

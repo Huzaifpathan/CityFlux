@@ -180,7 +180,6 @@ fun PoliceLocationSetupDialog(
                         },
                         uiSettings = MapUiSettings(
                             zoomControlsEnabled = true,
-                            compassEnabled = true,
                             myLocationButtonEnabled = false
                         ),
                         properties = MapProperties(

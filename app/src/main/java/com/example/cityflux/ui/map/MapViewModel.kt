@@ -9,7 +9,7 @@ import com.example.cityflux.model.ParkingLive
 import com.example.cityflux.model.ParkingSpot
 import com.example.cityflux.model.toParkingSpot
 import com.example.cityflux.model.Report
-import com.example.cityflux.model.AurangabadDummyData
+import com.example.cityflux.model.SolapurDummyData
 import com.example.cityflux.model.TrafficStatus
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
@@ -42,7 +42,14 @@ class MapViewModel : ViewModel() {
         val liveLocations: Map<String, LiveUserLocation> = emptyMap(),
         val isOffline: Boolean = false,
         val error: String? = null
-    )
+    ) {
+        // Congestion analytics (computed from trafficMap)
+        val highCount get() = trafficMap.count { it.value.congestionLevel.equals("HIGH", true) }
+        val mediumCount get() = trafficMap.count { it.value.congestionLevel.equals("MEDIUM", true) }
+        val lowCount get() = trafficMap.count { it.value.congestionLevel.equals("LOW", true) }
+        val totalZones get() = trafficMap.size
+        val liveUsersCount get() = liveLocations.size
+    }
 
     private val _uiState = MutableStateFlow(MapUiState())
     val uiState: StateFlow<MapUiState> = _uiState.asStateFlow()
@@ -50,8 +57,11 @@ class MapViewModel : ViewModel() {
     private val firestore = FirebaseFirestore.getInstance()
     private val currentUserId = FirebaseAuth.getInstance().currentUser?.uid ?: ""
 
-    // ── Dummy Aurangabad live users (refreshed every 60s to stay "alive") ──
-    private val _dummyLocations = MutableStateFlow(AurangabadDummyData.dummyUsers)
+    // ── Dummy Solapur live users (refreshed every 60s to stay "alive") ──
+    private val _dummyLocations = MutableStateFlow(SolapurDummyData.dummyUsers)
+    
+    // ── Dummy traffic data for fallback ──
+    private val _dummyTraffic = MutableStateFlow(SolapurDummyData.dummyTrafficMap)
 
     init {
         observeTraffic()
@@ -85,12 +95,25 @@ class MapViewModel : ViewModel() {
             RealtimeDbService.observeTraffic()
                 .catch { e ->
                     Log.e(TAG, "Traffic observe error", e)
-                    _uiState.update { it.copy(error = "Traffic data unavailable") }
+                    // Use dummy traffic data as fallback on error
+                    _uiState.update { 
+                        it.copy(
+                            trafficMap = _dummyTraffic.value,
+                            error = null,
+                            isLoading = false
+                        ) 
+                    }
                 }
                 .collect { map ->
+                    // Merge: dummy traffic as base, real Firebase traffic overrides
+                    val mergedTraffic = if (map.isEmpty()) {
+                        _dummyTraffic.value
+                    } else {
+                        _dummyTraffic.value.toMutableMap().apply { putAll(map) }
+                    }
                     _uiState.update {
                         it.copy(
-                            trafficMap = map,
+                            trafficMap = mergedTraffic,
                             isLoading = false,
                             isOffline = false,
                             error = null

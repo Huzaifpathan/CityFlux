@@ -44,6 +44,7 @@ import com.example.cityflux.model.ParkingLive
 import com.example.cityflux.model.ParkingSpot
 import com.example.cityflux.model.toParkingSpot
 import com.example.cityflux.model.Report
+import com.example.cityflux.model.SolapurDummyData
 import com.example.cityflux.model.TrafficStatus
 import com.example.cityflux.ui.theme.*
 import com.google.android.gms.location.LocationServices
@@ -114,17 +115,18 @@ fun CitizenHomeContent(
     // ── Real-time traffic from RTDB ──
     val trafficMap by RealtimeDbService.observeTraffic()
         .collectAsState(initial = emptyMap())
-    val dummyTrafficMap = remember { citizenTrafficDemoData() }
-    val effectiveTrafficMap = if (trafficMap.isEmpty()) dummyTrafficMap else trafficMap
+    val dummyTrafficMap = remember { SolapurDummyData.dummyTrafficMap }
+    val effectiveTrafficMap = if (trafficMap.isEmpty()) dummyTrafficMap else 
+        dummyTrafficMap.toMutableMap().apply { putAll(trafficMap) }
 
     // ── Real-time parking from RTDB ──
     val parkingMap by RealtimeDbService.observeParkingLive()
         .collectAsState(initial = emptyMap())
     var parkingSpots by remember { mutableStateOf<List<ParkingSpot>>(emptyList()) }
 
-    // ── User location (default Aurangabad) ──
-    var userLatitude by remember { mutableDoubleStateOf(19.8762) }
-    var userLongitude by remember { mutableDoubleStateOf(75.3433) }
+    // ── User location (default Solapur) ──
+    var userLatitude by remember { mutableDoubleStateOf(17.6599) }
+    var userLongitude by remember { mutableDoubleStateOf(75.9064) }
 
     // ── Nearby incidents from Firestore (latest 5) ──
     var recentReports by remember { mutableStateOf<List<Report>>(emptyList()) }
@@ -1260,7 +1262,7 @@ private fun CongestionChip(roadId: String, status: TrafficStatus) {
             )
             Column {
                 Text(
-                    text = roadId.replace("_", ", "),
+                    text = SolapurDummyData.getRoadName(roadId),
                     style = MaterialTheme.typography.labelMedium,
                     fontWeight = FontWeight.SemiBold,
                     color = chipColor,
@@ -1814,15 +1816,6 @@ private data class NearbyParkingItem(
     val distanceKmText: String
 )
 
-private fun citizenTrafficDemoData(now: Long = System.currentTimeMillis()): Map<String, TrafficStatus> = mapOf(
-    "jalna_road" to TrafficStatus("HIGH", now),
-    "station_road" to TrafficStatus("MEDIUM", now),
-    "kranti_chowk" to TrafficStatus("HIGH", now),
-    "beed_bypass" to TrafficStatus("LOW", now),
-    "cidco_n5" to TrafficStatus("MEDIUM", now),
-    "adalat_road" to TrafficStatus("LOW", now)
-)
-
 // ═══════════════════════════════════════════════════════════════════
 // ── LIVE CONGESTION STATS CARD (Blue+White Theme) ───────────────
 // ═══════════════════════════════════════════════════════════════════
@@ -2112,7 +2105,7 @@ private fun CitizenTrafficZonesGrid(
                             }
                             Spacer(modifier = Modifier.height(Spacing.Small))
                             Text(
-                                text = roadId.replace("_", ", "),
+                                text = SolapurDummyData.getRoadName(roadId),
                                 style = MaterialTheme.typography.bodySmall,
                                 fontWeight = FontWeight.SemiBold,
                                 color = colors.textPrimary,

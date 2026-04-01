@@ -134,6 +134,10 @@ fun ParkingScreen(
     var showBookNowDialog by remember { mutableStateOf(false) }
     var bookNowSpot by remember { mutableStateOf<ParkingSpot?>(null) }
     
+    // ── Distance restriction snackbar ──
+    var showDistanceRestrictionSnackbar by remember { mutableStateOf(false) }
+    var restrictedDistance by remember { mutableStateOf(0f) }
+    
     // ── Navigate target (for internal map navigation) ──
     var navigateToSpot by remember { mutableStateOf<ParkingSpot?>(null) }
     
@@ -831,8 +835,15 @@ fun ParkingScreen(
                                         }
                                     },
                                     onBookNow = {
-                                        bookNowSpot = spot
-                                        showBookNowDialog = true
+                                        // Check distance - only allow booking within 2km (2000 meters)
+                                        val distanceMeters = vm.distanceTo(spot)
+                                        if (distanceMeters != null && distanceMeters <= 2000f) {
+                                            bookNowSpot = spot
+                                            showBookNowDialog = true
+                                        } else {
+                                            restrictedDistance = distanceMeters ?: 0f
+                                            showDistanceRestrictionSnackbar = true
+                                        }
                                     },
                                     onClick = {
                                         try {
@@ -1047,8 +1058,15 @@ fun ParkingScreen(
                 },
                 onBookNow = { spot ->
                     showFindNearbyDialog = false
-                    bookNowSpot = spot
-                    showBookNowDialog = true
+                    // Check distance - only allow booking within 2km (2000 meters)
+                    val distanceMeters = vm.distanceTo(spot)
+                    if (distanceMeters != null && distanceMeters <= 2000f) {
+                        bookNowSpot = spot
+                        showBookNowDialog = true
+                    } else {
+                        restrictedDistance = distanceMeters ?: 0f
+                        showDistanceRestrictionSnackbar = true
+                    }
                 },
                 onDismiss = { showFindNearbyDialog = false }
             )
@@ -1102,6 +1120,44 @@ fun ParkingScreen(
                     }
                 }
             )
+        }
+        
+        // ══════════════════════ Distance Restriction Snackbar ══════════════════════
+        if (showDistanceRestrictionSnackbar) {
+            Snackbar(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(Spacing.Large),
+                containerColor = AccentRed,
+                contentColor = Color.White,
+                action = {
+                    TextButton(onClick = { showDistanceRestrictionSnackbar = false }) {
+                        Text("OK", color = Color.White, fontWeight = FontWeight.Bold)
+                    }
+                }
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.LocationOff,
+                        contentDescription = null,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Text(
+                        text = "Parking area is ${String.format("%.1f", restrictedDistance / 1000f)} km away. You can only book within 2 km of your location.",
+                        style = MaterialTheme.typography.bodySmall,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+            }
+            
+            // Auto-dismiss after 5 seconds
+            LaunchedEffect(Unit) {
+                kotlinx.coroutines.delay(5000)
+                showDistanceRestrictionSnackbar = false
+            }
         }
     }
 }
@@ -1405,12 +1461,15 @@ private fun ParkingCard(
                     .padding(bottom = Spacing.Small),
                 horizontalArrangement = Arrangement.spacedBy(Spacing.Small)
             ) {
-                // Book Now button (Phase 4)
+                // Book Now button (Phase 4) - disabled if distance > 2km
                 if (available > 0) {
+                    val isTooFar = distance != null && distance > 2000f
+                    val buttonColor = if (isTooFar) colors.textSecondary else AccentParking
+                    
                     Surface(
-                        onClick = onBookNow,
+                        onClick = { if (!isTooFar) onBookNow() },
                         shape = RoundedCornerShape(CornerRadius.Round),
-                        color = AccentParking.copy(alpha = 0.12f),
+                        color = buttonColor.copy(alpha = 0.12f),
                         modifier = Modifier.weight(1f).height(30.dp)
                     ) {
                         Row(
@@ -1418,9 +1477,19 @@ private fun ParkingCard(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.Center
                         ) {
-                            Icon(Icons.Filled.CalendarMonth, null, tint = AccentParking, modifier = Modifier.size(13.dp))
+                            Icon(
+                                if (isTooFar) Icons.Filled.LocationOff else Icons.Filled.CalendarMonth, 
+                                null, 
+                                tint = buttonColor, 
+                                modifier = Modifier.size(13.dp)
+                            )
                             Spacer(Modifier.width(4.dp))
-                            Text("Book Now", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = AccentParking)
+                            Text(
+                                if (isTooFar) "Too Far" else "Book Now", 
+                                fontSize = 11.sp, 
+                                fontWeight = FontWeight.SemiBold, 
+                                color = buttonColor
+                            )
                         }
                     }
                 }
