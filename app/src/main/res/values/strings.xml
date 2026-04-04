@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">CityFlux-MGM</string>
+    <string name="app_name">CityFlux</string>
     <string name="app_tagline">Smart Mobility · Safer Roads</string>
     <string name="app_description">Smart Traffic &amp; Parking Management System</string>
 </resources>
