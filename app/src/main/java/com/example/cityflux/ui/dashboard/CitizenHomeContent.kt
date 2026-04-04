@@ -3,6 +3,7 @@ package com.example.cityflux.ui.dashboard
 import android.content.Intent
 import android.location.Location
 import android.net.Uri
+import android.telephony.SmsManager
 import android.text.format.DateUtils
 import android.widget.Toast
 import androidx.compose.animation.*
@@ -679,6 +680,27 @@ fun CitizenHomeContent(
                                     )
                                     firestore.collection("sos_alerts").add(alert)
                                         .addOnSuccessListener {
+                                            // Send SMS to emergency contact
+                                            try {
+                                                val smsManager = SmsManager.getDefault()
+                                                val phoneNumber = "9657288928"
+                                                val lat = loc?.latitude ?: 0.0
+                                                val lon = loc?.longitude ?: 0.0
+                                                val mapsLink = "https://maps.google.com/?q=$lat,$lon"
+                                                val message = """
+                                                    🆘 CITYFLUX SOS ALERT
+                                                    From: ${userName ?: "Citizen"}
+                                                    Location: $lat, $lon
+                                                    Google Maps: $mapsLink
+                                                    Time: ${java.text.SimpleDateFormat("dd MMM yyyy, hh:mm a", java.util.Locale.getDefault()).format(java.util.Date())}
+                                                """.trimIndent()
+                                                
+                                                smsManager.sendTextMessage(phoneNumber, null, message, null, null)
+                                            } catch (e: Exception) {
+                                                // SMS failed, but alert was saved to Firestore
+                                                android.util.Log.e("SOS", "SMS failed: ${e.message}")
+                                            }
+                                            
                                             Toast.makeText(context, "🆘 SOS Alert Sent! Help is on the way.", Toast.LENGTH_LONG).show()
                                             sosSending = false
                                             showSosDialog = false

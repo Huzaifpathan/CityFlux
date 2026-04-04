@@ -344,15 +344,6 @@ fun ParkingScreen(
                 isLoading = state.isLoading
             )
 
-            // ══════════════════════ Nearby Alert Banner ══════════════════════
-            if (nearbyCount > 0 && !state.isLoading) {
-                NearbyParkingAlertBanner(nearbyCount = nearbyCount, availableNearby = filteredSpots.count { spot ->
-                    val dist = vm.distanceTo(spot)
-                    val avail = state.parkingLive[spot.id]?.availableSlots ?: spot.availableSlots
-                    dist != null && dist < 1000f && avail > 0
-                })
-            }
-
             // ══════════════════════ Stats Strip ══════════════════════
             Row(
                 modifier = Modifier
@@ -379,13 +370,6 @@ fun ParkingScreen(
                     value = "$totalFull",
                     icon = Icons.Outlined.Block,
                     color = AccentRed,
-                    modifier = Modifier.weight(1f)
-                )
-                ParkingStatMiniCard(
-                    label = "Nearby",
-                    value = "$nearbyCount",
-                    icon = Icons.Outlined.NearMe,
-                    color = AccentOrange,
                     modifier = Modifier.weight(1f)
                 )
             }
@@ -2972,88 +2956,6 @@ private fun ParkingStatMiniCard(
                 color = colors.textSecondary,
                 maxLines = 1
             )
-        }
-    }
-}
-
-
-// ═══════════════════════════════════════════════════════════════════
-// Nearby Parking Alert Banner
-// ═══════════════════════════════════════════════════════════════════
-
-@Composable
-private fun NearbyParkingAlertBanner(nearbyCount: Int, availableNearby: Int) {
-    val infiniteTransition = rememberInfiniteTransition(label = "alert_banner")
-    val shimmerOffset by infiniteTransition.animateFloat(
-        initialValue = -1f,
-        targetValue = 2f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(2000, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart
-        ),
-        label = "shimmer"
-    )
-
-    Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = Spacing.XLarge, vertical = Spacing.Small),
-        shape = RoundedCornerShape(CornerRadius.Medium),
-        color = AccentGreen.copy(alpha = 0.08f)
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = Spacing.Medium, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            // Pulsing radar icon
-            Box(contentAlignment = Alignment.Center) {
-                val pulseAlpha by infiniteTransition.animateFloat(
-                    initialValue = 0.3f, targetValue = 0.8f,
-                    animationSpec = infiniteRepeatable(
-                        animation = tween(1000, easing = FastOutSlowInEasing),
-                        repeatMode = RepeatMode.Reverse
-                    ), label = "pulse"
-                )
-                Box(
-                    modifier = Modifier
-                        .size(32.dp)
-                        .clip(CircleShape)
-                        .background(AccentGreen.copy(alpha = pulseAlpha * 0.15f))
-                )
-                Icon(
-                    Icons.Outlined.ShareLocation,
-                    null,
-                    tint = AccentGreen,
-                    modifier = Modifier.size(18.dp)
-                )
-            }
-            Spacer(Modifier.width(Spacing.Medium))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    "$nearbyCount parking spots within 1km",
-                    style = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = AccentGreen
-                )
-                Text(
-                    "$availableNearby have free slots right now",
-                    fontSize = 10.sp,
-                    color = MaterialTheme.cityFluxColors.textSecondary
-                )
-            }
-            Surface(
-                shape = RoundedCornerShape(CornerRadius.Round),
-                color = AccentGreen.copy(alpha = 0.15f)
-            ) {
-                Text(
-                    "NEARBY",
-                    fontSize = 9.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = AccentGreen,
-                    letterSpacing = 1.sp,
-                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                )
-            }
         }
     }
 }

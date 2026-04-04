@@ -31,8 +31,6 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.cityflux.model.*
 import com.example.cityflux.service.PricingService
 import com.example.cityflux.ui.theme.*
-import com.google.zxing.BarcodeFormat
-import com.google.zxing.qrcode.QRCodeWriter
 import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
 import java.util.*
@@ -54,7 +52,7 @@ fun MyBookingsScreen(
     
     // Dialog states
     var showExtendDialog by remember { mutableStateOf(false) }
-    var showQRDialog by remember { mutableStateOf(false) }
+    var showBookingDetailsDialog by remember { mutableStateOf(false) }
     var selectedBookingForAction by remember { mutableStateOf<ParkingBooking?>(null) }
     
     // Pull to refresh state
@@ -160,7 +158,10 @@ fun MyBookingsScreen(
                 when (selectedTab) {
                     0 -> ActiveBookingsTab(
                         bookings = uiState.activeBookings,
-                        onBookingClick = onBookingClick,
+                        onBookingClick = { booking ->
+                            selectedBookingForAction = booking
+                            showBookingDetailsDialog = true
+                        },
                         onCancelClick = { booking ->
                             viewModel.cancelBooking(booking.id, "User cancelled")
                         },
@@ -168,15 +169,14 @@ fun MyBookingsScreen(
                             selectedBookingForAction = booking
                             showExtendDialog = true
                         },
-                        onShowQRClick = { booking ->
-                            selectedBookingForAction = booking
-                            showQRDialog = true
-                        },
                         colors = colors
                     )
                     1 -> UpcomingBookingsTab(
                         bookings = uiState.upcomingBookings,
-                        onBookingClick = onBookingClick,
+                        onBookingClick = { booking ->
+                            selectedBookingForAction = booking
+                            showBookingDetailsDialog = true
+                        },
                         onCancelClick = { booking ->
                             viewModel.cancelBooking(booking.id, "User cancelled")
                         },
@@ -187,7 +187,10 @@ fun MyBookingsScreen(
                     )
                     2 -> HistoryTab(
                         bookings = uiState.pastBookings,
-                        onBookingClick = onBookingClick,
+                        onBookingClick = { booking ->
+                            selectedBookingForAction = booking
+                            showBookingDetailsDialog = true
+                        },
                         colors = colors
                     )
                 }
@@ -197,6 +200,18 @@ fun MyBookingsScreen(
                     state = pullToRefreshState,
                 )
             }
+        }
+        
+        // Booking Details Dialog
+        if (showBookingDetailsDialog && selectedBookingForAction != null) {
+            BookingDetailsDialog(
+                booking = selectedBookingForAction!!,
+                onDismiss = {
+                    showBookingDetailsDialog = false
+                    selectedBookingForAction = null
+                },
+                colors = colors
+            )
         }
         
         // Extend Booking Dialog
@@ -210,18 +225,6 @@ fun MyBookingsScreen(
                 onConfirm = { hours ->
                     viewModel.extendBooking(selectedBookingForAction!!.id, hours)
                     showExtendDialog = false
-                    selectedBookingForAction = null
-                },
-                colors = colors
-            )
-        }
-        
-        // QR Code Dialog
-        if (showQRDialog && selectedBookingForAction != null) {
-            QRCodeDialog(
-                booking = selectedBookingForAction!!,
-                onDismiss = { 
-                    showQRDialog = false
                     selectedBookingForAction = null
                 },
                 colors = colors
@@ -246,7 +249,6 @@ fun MyBookingsContentEnhanced(
     
     // Dialog states
     var showExtendDialog by remember { mutableStateOf(false) }
-    var showQRDialog by remember { mutableStateOf(false) }
     var selectedBookingForAction by remember { mutableStateOf<ParkingBooking?>(null) }
     
     Box(modifier = Modifier.fillMaxSize()) {
@@ -323,10 +325,6 @@ fun MyBookingsContentEnhanced(
                             selectedBookingForAction = booking
                             showExtendDialog = true
                         },
-                        onShowQRClick = { booking ->
-                            selectedBookingForAction = booking
-                            showQRDialog = true
-                        },
                         colors = colors
                     )
                     1 -> UpcomingBookingsTab(
@@ -365,18 +363,6 @@ fun MyBookingsContentEnhanced(
                 colors = colors
             )
         }
-        
-        // QR Code Dialog
-        if (showQRDialog && selectedBookingForAction != null) {
-            QRCodeDialog(
-                booking = selectedBookingForAction!!,
-                onDismiss = { 
-                    showQRDialog = false
-                    selectedBookingForAction = null
-                },
-                colors = colors
-            )
-        }
     }
 }
 
@@ -396,7 +382,6 @@ fun MyBookingsContent(
     
     // Dialog states for this component
     var showExtendDialog by remember { mutableStateOf(false) }
-    var showQRDialog by remember { mutableStateOf(false) }
     var selectedBookingForAction by remember { mutableStateOf<ParkingBooking?>(null) }
     
     // Pull to refresh state
@@ -485,10 +470,6 @@ fun MyBookingsContent(
                         selectedBookingForAction = booking
                         showExtendDialog = true
                     },
-                    onShowQRClick = { booking ->
-                        selectedBookingForAction = booking
-                        showQRDialog = true
-                    },
                     colors = colors
                 )
                 1 -> UpcomingBookingsTab(
@@ -534,18 +515,6 @@ fun MyBookingsContent(
             colors = colors
         )
     }
-    
-    // QR Code Dialog
-    if (showQRDialog && selectedBookingForAction != null) {
-        QRCodeDialog(
-            booking = selectedBookingForAction!!,
-            onDismiss = {
-                showQRDialog = false
-                selectedBookingForAction = null
-            },
-            colors = colors
-        )
-    }
 }
 
 @Composable
@@ -554,7 +523,6 @@ private fun ActiveBookingsTab(
     onBookingClick: (ParkingBooking) -> Unit,
     onCancelClick: (ParkingBooking) -> Unit,
     onExtendClick: (ParkingBooking) -> Unit,
-    onShowQRClick: (ParkingBooking) -> Unit,
     colors: CityFluxColors
 ) {
     if (bookings.isEmpty()) {
@@ -576,7 +544,6 @@ private fun ActiveBookingsTab(
                     onClick = { onBookingClick(booking) },
                     onCancel = { onCancelClick(booking) },
                     onExtend = { onExtendClick(booking) },
-                    onShowQR = { onShowQRClick(booking) },
                     colors = colors
                 )
             }
@@ -654,7 +621,6 @@ private fun ActiveBookingCard(
     onClick: () -> Unit,
     onCancel: () -> Unit,
     onExtend: () -> Unit,
-    onShowQR: () -> Unit,
     colors: CityFluxColors
 ) {
     var showActions by remember { mutableStateOf(false) }
@@ -746,18 +712,6 @@ private fun ActiveBookingCard(
                     Icon(Icons.Default.Add, null, Modifier.size(18.dp))
                     Spacer(Modifier.width(4.dp))
                     Text("Extend")
-                }
-                
-                Button(
-                    onClick = onShowQR,
-                    modifier = Modifier.weight(1f),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = PrimaryBlue
-                    )
-                ) {
-                    Icon(Icons.Default.QrCode2, null, Modifier.size(18.dp))
-                    Spacer(Modifier.width(4.dp))
-                    Text("Show QR")
                 }
                 
                 if (booking.status.canBeCancelled()) {
@@ -1440,26 +1394,12 @@ private fun ExtendBookingDialog(
     }
 }
 
-// ═══════════════════════════════════════════════════════
-// QR Code Dialog
-// ═══════════════════════════════════════════════════════
-
 @Composable
-private fun QRCodeDialog(
+private fun BookingDetailsDialog(
     booking: ParkingBooking,
     onDismiss: () -> Unit,
     colors: CityFluxColors
 ) {
-    // Generate QR code content
-    val qrContent = remember(booking) {
-        "CITYFLUX:${booking.id}:${booking.parkingSpotId}:${booking.userId}"
-    }
-    
-    // Generate QR bitmap
-    val qrBitmap = remember(qrContent) {
-        generateQRCode(qrContent, 512)
-    }
-    
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false)
@@ -1473,8 +1413,7 @@ private fun QRCodeDialog(
             shadowElevation = 8.dp
         ) {
             Column(
-                modifier = Modifier.padding(Spacing.Large),
-                horizontalAlignment = Alignment.CenterHorizontally
+                modifier = Modifier.padding(Spacing.Large)
             ) {
                 // Header
                 Row(
@@ -1483,7 +1422,7 @@ private fun QRCodeDialog(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "Parking QR Code",
+                        text = "Booking Details",
                         style = MaterialTheme.typography.titleLarge,
                         color = colors.textPrimary,
                         fontWeight = FontWeight.Bold
@@ -1499,80 +1438,101 @@ private fun QRCodeDialog(
                 
                 Spacer(Modifier.height(Spacing.Medium))
                 
-                // QR Code
-                Surface(
-                    modifier = Modifier.size(250.dp),
-                    shape = RoundedCornerShape(CornerRadius.Medium),
-                    color = Color.White,
-                    shadowElevation = 4.dp
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(Spacing.Medium),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        qrBitmap?.let { bitmap ->
-                            Image(
-                                bitmap = bitmap.asImageBitmap(),
-                                contentDescription = "Booking QR Code",
-                                modifier = Modifier.fillMaxSize()
-                            )
-                        } ?: run {
-                            CircularProgressIndicator(color = PrimaryBlue)
-                        }
-                    }
-                }
-                
-                Spacer(Modifier.height(Spacing.Large))
-                
-                // Booking details
+                // Booking ID Card
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(CornerRadius.Medium),
-                    color = colors.surfaceVariant
+                    color = PrimaryBlue.copy(alpha = 0.1f)
                 ) {
-                    Column(
-                        modifier = Modifier.padding(Spacing.Medium)
+                    Row(
+                        modifier = Modifier.padding(Spacing.Medium),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        QRDetailRow(
-                            label = "Location",
-                            value = booking.parkingSpotName,
-                            colors = colors
+                        Icon(
+                            Icons.Default.ConfirmationNumber,
+                            contentDescription = null,
+                            tint = PrimaryBlue,
+                            modifier = Modifier.size(24.dp)
                         )
-                        QRDetailRow(
-                            label = "Vehicle",
-                            value = booking.vehicleNumber,
-                            colors = colors
-                        )
-                        QRDetailRow(
-                            label = "Valid Until",
-                            value = booking.bookingEndTime?.toDate()?.let {
-                                SimpleDateFormat("dd MMM, hh:mm a", Locale.getDefault()).format(it)
-                            } ?: "N/A",
-                            colors = colors
-                        )
-                        QRDetailRow(
-                            label = "Booking ID",
-                            value = booking.id.takeLast(8).uppercase(),
-                            colors = colors
-                        )
+                        Spacer(Modifier.width(Spacing.Small))
+                        Column {
+                            Text(
+                                text = "Booking ID",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = colors.textSecondary
+                            )
+                            Text(
+                                text = booking.id.take(12).uppercase(),
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = colors.textPrimary,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
                     }
                 }
                 
                 Spacer(Modifier.height(Spacing.Medium))
                 
-                // Instructions
-                Text(
-                    text = "Show this QR code to the parking attendant",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = colors.textSecondary,
-                    textAlign = TextAlign.Center
-                )
+                // Details Grid
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(Spacing.Small)
+                ) {
+                    BookingDetailRow(
+                        icon = Icons.Default.LocalParking,
+                        label = "Parking Spot",
+                        value = booking.parkingSpotName,
+                        colors = colors
+                    )
+                    BookingDetailRow(
+                        icon = Icons.Default.DirectionsCar,
+                        label = "Vehicle Number",
+                        value = booking.vehicleNumber,
+                        colors = colors
+                    )
+                    BookingDetailRow(
+                        icon = Icons.Default.Schedule,
+                        label = "Duration",
+                        value = "${booking.durationHours} hours",
+                        colors = colors
+                    )
+                    BookingDetailRow(
+                        icon = Icons.Default.CalendarToday,
+                        label = "Start Time",
+                        value = java.text.SimpleDateFormat("dd MMM yyyy, hh:mm a", java.util.Locale.getDefault()).format(booking.startTime.toDate()),
+                        colors = colors
+                    )
+                    BookingDetailRow(
+                        icon = Icons.Default.EventAvailable,
+                        label = "End Time",
+                        value = java.text.SimpleDateFormat("dd MMM yyyy, hh:mm a", java.util.Locale.getDefault()).format(booking.endTime.toDate()),
+                        colors = colors
+                    )
+                    BookingDetailRow(
+                        icon = Icons.Default.Payment,
+                        label = "Amount Paid",
+                        value = "₹${booking.totalAmount}",
+                        colors = colors,
+                        valueColor = AccentGreen
+                    )
+                    BookingDetailRow(
+                        icon = Icons.Default.Info,
+                        label = "Status",
+                        value = booking.status.name.replace("_", " ").uppercase(),
+                        colors = colors,
+                        valueColor = when(booking.status) {
+                            BookingStatus.ACTIVE -> AccentGreen
+                            BookingStatus.UPCOMING -> PrimaryBlue
+                            BookingStatus.COMPLETED -> colors.textSecondary
+                            BookingStatus.CANCELLED -> AccentRed
+                            else -> colors.textPrimary
+                        }
+                    )
+                }
                 
                 Spacer(Modifier.height(Spacing.Large))
                 
-                // Close button
+                // Close Button
                 Button(
                     onClick = onDismiss,
                     modifier = Modifier.fillMaxWidth(),
@@ -1580,7 +1540,7 @@ private fun QRCodeDialog(
                         containerColor = PrimaryBlue
                     )
                 ) {
-                    Text("Done")
+                    Text("Close")
                 }
             }
         }
@@ -1588,48 +1548,42 @@ private fun QRCodeDialog(
 }
 
 @Composable
-private fun QRDetailRow(
+private fun BookingDetailRow(
+    icon: ImageVector,
     label: String,
     value: String,
-    colors: CityFluxColors
+    colors: CityFluxColors,
+    valueColor: Color = Color.Unspecified
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 4.dp),
-        horizontalArrangement = Arrangement.SpaceBetween
+            .padding(vertical = 8.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.bodySmall,
-            color = colors.textSecondary
-        )
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.weight(1f)
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = colors.textSecondary,
+                modifier = Modifier.size(20.dp)
+            )
+            Spacer(Modifier.width(Spacing.Small))
+            Text(
+                text = label,
+                style = MaterialTheme.typography.bodyMedium,
+                color = colors.textSecondary
+            )
+        }
         Text(
             text = value,
             style = MaterialTheme.typography.bodyMedium,
-            color = colors.textPrimary,
+            color = if (valueColor != Color.Unspecified) valueColor else colors.textPrimary,
             fontWeight = FontWeight.Medium
         )
-    }
-}
-
-/**
- * Generate QR code bitmap using ZXing
- */
-private fun generateQRCode(content: String, size: Int): Bitmap? {
-    return try {
-        val writer = QRCodeWriter()
-        val bitMatrix = writer.encode(content, BarcodeFormat.QR_CODE, size, size)
-        val width = bitMatrix.width
-        val height = bitMatrix.height
-        val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.RGB_565)
-        for (x in 0 until width) {
-            for (y in 0 until height) {
-                bitmap.setPixel(x, y, if (bitMatrix[x, y]) Color.Black.toArgb() else Color.White.toArgb())
-            }
-        }
-        bitmap
-    } catch (e: Exception) {
-        null
     }
 }

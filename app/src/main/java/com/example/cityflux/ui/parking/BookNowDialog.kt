@@ -615,6 +615,10 @@ private fun VehicleDetailsStep(
             else null
         }
         
+        // Check if vehicle number is valid for enabling continue button
+        val isVehicleNumberValid = bookingForm.vehicleNumber.isNotBlank() && 
+            isValidVehicleNumber(bookingForm.vehicleNumber)
+        
         OutlinedTextField(
             value = bookingForm.vehicleNumber,
             onValueChange = { 
@@ -696,7 +700,7 @@ private fun VehicleDetailsStep(
             Button(
                 onClick = onContinue,
                 modifier = Modifier.weight(2f).height(50.dp),
-                enabled = bookingForm.vehicleNumber.isNotBlank(),
+                enabled = isVehicleNumberValid,
                 colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue)
             ) {
                 Icon(Icons.Default.Payment, contentDescription = null, modifier = Modifier.size(18.dp))
@@ -921,9 +925,9 @@ private fun BookingConfirmationStep(
                 modifier = Modifier.weight(1f),
                 colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue)
             ) {
-                Icon(Icons.Default.QrCode, contentDescription = null)
+                Icon(Icons.Default.Receipt, contentDescription = null)
                 Spacer(Modifier.width(8.dp))
-                Text("View QR Code")
+                Text("View Booking")
             }
         }
     }
@@ -1728,16 +1732,6 @@ private fun ConfirmationDetailsCard(
             val timing = SimpleDateFormat("MMM dd, yyyy 'at' hh:mm a", Locale.getDefault())
                 .format(Date())
             ConfirmationRow("Start Time", timing, colors)
-            
-            // QR code hint
-            Spacer(Modifier.height(8.dp))
-            Text(
-                text = "💡 Show QR code at parking entry",
-                style = MaterialTheme.typography.bodySmall,
-                color = colors.textSecondary,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth()
-            )
         }
     }
 }

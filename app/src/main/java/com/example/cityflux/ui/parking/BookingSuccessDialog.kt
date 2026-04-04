@@ -42,8 +42,6 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.example.cityflux.model.ParkingBooking
 import com.example.cityflux.ui.theme.*
-import com.google.zxing.BarcodeFormat
-import com.google.zxing.qrcode.QRCodeWriter
 import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
 import java.util.*
@@ -76,15 +74,6 @@ fun BookingSuccessDialog(
     var showConfetti by remember { mutableStateOf(false) }
     var remainingTime by remember { mutableStateOf(calculateRemainingTime(booking)) }
     var reminderSet by remember { mutableStateOf(false) }
-    var showQrFullscreen by remember { mutableStateOf(false) }
-    
-    // Generate QR Code
-    val qrBitmap = remember(booking.id) {
-        generateQRCode(
-            data = "CITYFLUX:${booking.id}:${booking.vehicleNumber}:${booking.parkingSpotId}",
-            size = 512
-        )
-    }
     
     // Trigger animations
     LaunchedEffect(Unit) {
@@ -213,20 +202,6 @@ fun BookingSuccessDialog(
                     
                     Spacer(Modifier.height(16.dp))
                     
-                    // ═══════════════ QR Code Section ═══════════════
-                    QRCodeCard(
-                        qrBitmap = qrBitmap,
-                        bookingId = booking.id,
-                        onSaveQR = { 
-                            qrBitmap?.let { 
-                                saveQRToGallery(context, it, booking.id)
-                            }
-                        },
-                        onExpandQR = { showQrFullscreen = true }
-                    )
-                    
-                    Spacer(Modifier.height(16.dp))
-                    
                     // ═══════════════ Quick Actions Row ═══════════════
                     QuickActionsRow(
                         onNavigate = { navigateToParking(context, booking) },
@@ -275,14 +250,6 @@ fun BookingSuccessDialog(
         }
     }
     
-    // QR Fullscreen Dialog
-    if (showQrFullscreen) {
-        QRFullscreenDialog(
-            qrBitmap = qrBitmap,
-            bookingId = booking.id,
-            onDismiss = { showQrFullscreen = false }
-        )
-    }
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -649,198 +616,6 @@ private fun DetailRow(
 }
 
 // ═══════════════════════════════════════════════════════════════
-// QR CODE CARD
-// ═══════════════════════════════════════════════════════════════
-@Composable
-private fun QRCodeCard(
-    qrBitmap: ImageBitmap?,
-    bookingId: String,
-    onSaveQR: () -> Unit,
-    onExpandQR: () -> Unit
-) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = Color.White),
-        shape = RoundedCornerShape(16.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(
-                    Icons.Default.QrCode2,
-                    contentDescription = null,
-                    tint = PremiumBlue,
-                    modifier = Modifier.size(24.dp)
-                )
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    text = "Entry/Exit QR Code",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = Color(0xFF1E293B)
-                )
-            }
-            
-            Spacer(Modifier.height(12.dp))
-            
-            Text(
-                text = "Show this QR code at entry & exit gate",
-                style = MaterialTheme.typography.bodySmall,
-                color = SoftGray,
-                textAlign = TextAlign.Center
-            )
-            
-            Spacer(Modifier.height(16.dp))
-            
-            // QR Code
-            Surface(
-                onClick = onExpandQR,
-                modifier = Modifier.size(160.dp),
-                shape = RoundedCornerShape(12.dp),
-                color = Color.White,
-                border = androidx.compose.foundation.BorderStroke(2.dp, Color(0xFFE2E8F0))
-            ) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(8.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    if (qrBitmap != null) {
-                        androidx.compose.foundation.Image(
-                            bitmap = qrBitmap,
-                            contentDescription = "QR Code",
-                            modifier = Modifier.fillMaxSize()
-                        )
-                    } else {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(40.dp),
-                            color = PremiumBlue
-                        )
-                    }
-                }
-            }
-            
-            Spacer(Modifier.height(12.dp))
-            
-            // QR Actions
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                OutlinedButton(
-                    onClick = onSaveQR,
-                    modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(10.dp),
-                    colors = ButtonDefaults.outlinedButtonColors(contentColor = PremiumBlue)
-                ) {
-                    Icon(Icons.Default.Download, null, Modifier.size(18.dp))
-                    Spacer(Modifier.width(4.dp))
-                    Text("Save QR", fontSize = 13.sp)
-                }
-                
-                OutlinedButton(
-                    onClick = onExpandQR,
-                    modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(10.dp),
-                    colors = ButtonDefaults.outlinedButtonColors(contentColor = PremiumBlue)
-                ) {
-                    Icon(Icons.Default.Fullscreen, null, Modifier.size(18.dp))
-                    Spacer(Modifier.width(4.dp))
-                    Text("Expand", fontSize = 13.sp)
-                }
-            }
-        }
-    }
-}
-
-// ═══════════════════════════════════════════════════════════════
-// QR FULLSCREEN DIALOG
-// ═══════════════════════════════════════════════════════════════
-@Composable
-private fun QRFullscreenDialog(
-    qrBitmap: ImageBitmap?,
-    bookingId: String,
-    onDismiss: () -> Unit
-) {
-    Dialog(
-        onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false)
-    ) {
-        Surface(
-            modifier = Modifier.fillMaxSize(),
-            color = Color.Black
-        ) {
-            Box(
-                modifier = Modifier.fillMaxSize(),
-                contentAlignment = Alignment.Center
-            ) {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Text(
-                        text = "Scan at Gate",
-                        style = MaterialTheme.typography.headlineMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White
-                    )
-                    
-                    Spacer(Modifier.height(8.dp))
-                    
-                    Text(
-                        text = formatBookingId(bookingId),
-                        style = MaterialTheme.typography.titleMedium,
-                        color = Color.White.copy(alpha = 0.7f)
-                    )
-                    
-                    Spacer(Modifier.height(32.dp))
-                    
-                    Surface(
-                        modifier = Modifier.size(280.dp),
-                        shape = RoundedCornerShape(16.dp),
-                        color = Color.White
-                    ) {
-                        if (qrBitmap != null) {
-                            androidx.compose.foundation.Image(
-                                bitmap = qrBitmap,
-                                contentDescription = "QR Code",
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .padding(16.dp)
-                            )
-                        }
-                    }
-                    
-                    Spacer(Modifier.height(32.dp))
-                    
-                    IconButton(
-                        onClick = onDismiss,
-                        modifier = Modifier
-                            .size(56.dp)
-                            .background(Color.White.copy(alpha = 0.1f), CircleShape)
-                    ) {
-                        Icon(
-                            Icons.Default.Close,
-                            contentDescription = "Close",
-                            tint = Color.White,
-                            modifier = Modifier.size(32.dp)
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
-
-// ═══════════════════════════════════════════════════════════════
 // QUICK ACTIONS ROW
 // ═══════════════════════════════════════════════════════════════
 @Composable
@@ -878,14 +653,6 @@ private fun QuickActionsRow(
             modifier = Modifier.weight(1f),
             onClick = onSetReminder,
             enabled = !reminderSet
-        )
-        
-        QuickActionButton(
-            icon = Icons.Default.Receipt,
-            label = "Details",
-            color = Color(0xFFEC4899),
-            modifier = Modifier.weight(1f),
-            onClick = onViewDetails
         )
     }
 }
@@ -1041,78 +808,6 @@ private fun formatTimeRange(booking: ParkingBooking): String {
     val startTime = booking.bookingStartTime?.toDate()?.let { sdf.format(it) } ?: "N/A"
     val endTime = booking.bookingEndTime?.toDate()?.let { sdf.format(it) } ?: "N/A"
     return "$startTime → $endTime"
-}
-
-private fun generateQRCode(data: String, size: Int): ImageBitmap? {
-    return try {
-        val writer = QRCodeWriter()
-        val bitMatrix = writer.encode(data, BarcodeFormat.QR_CODE, size, size)
-        val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.RGB_565)
-        for (x in 0 until size) {
-            for (y in 0 until size) {
-                bitmap.setPixel(x, y, if (bitMatrix[x, y]) AndroidColor.BLACK else AndroidColor.WHITE)
-            }
-        }
-        bitmap.asImageBitmap()
-    } catch (e: Exception) {
-        null
-    }
-}
-
-private fun saveQRToGallery(context: Context, qrBitmap: ImageBitmap, bookingId: String) {
-    try {
-        // Generate fresh QR bitmap for saving
-        val size = 512
-        val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
-        val canvas = android.graphics.Canvas(bitmap)
-        canvas.drawColor(AndroidColor.WHITE)
-        
-        // Draw QR code
-        val qrWriter = QRCodeWriter()
-        val bitMatrix = qrWriter.encode(
-            "CITYFLUX:$bookingId",
-            BarcodeFormat.QR_CODE,
-            size,
-            size
-        )
-        for (x in 0 until size) {
-            for (y in 0 until size) {
-                if (bitMatrix[x, y]) {
-                    bitmap.setPixel(x, y, AndroidColor.BLACK)
-                }
-            }
-        }
-        
-        // Save to gallery using MediaStore (works on all Android versions)
-        val contentValues = android.content.ContentValues().apply {
-            put(MediaStore.Images.Media.DISPLAY_NAME, "CityFlux_QR_${formatBookingId(bookingId)}.png")
-            put(MediaStore.Images.Media.MIME_TYPE, "image/png")
-            put(MediaStore.Images.Media.DATE_ADDED, System.currentTimeMillis() / 1000)
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
-                put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/CityFlux")
-                put(MediaStore.Images.Media.IS_PENDING, 1)
-            }
-        }
-        
-        val uri = context.contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, contentValues)
-        uri?.let { imageUri ->
-            context.contentResolver.openOutputStream(imageUri)?.use { outputStream ->
-                bitmap.compress(Bitmap.CompressFormat.PNG, 100, outputStream)
-            }
-            
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
-                contentValues.clear()
-                contentValues.put(MediaStore.Images.Media.IS_PENDING, 0)
-                context.contentResolver.update(imageUri, contentValues, null, null)
-            }
-            
-            Toast.makeText(context, "✅ QR saved to gallery!", Toast.LENGTH_SHORT).show()
-        } ?: run {
-            Toast.makeText(context, "Failed to save QR", Toast.LENGTH_SHORT).show()
-        }
-    } catch (e: Exception) {
-        Toast.makeText(context, "Failed to save QR: ${e.message}", Toast.LENGTH_SHORT).show()
-    }
 }
 
 private fun shareBooking(context: Context, booking: ParkingBooking) {
