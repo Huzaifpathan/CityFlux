@@ -78,6 +78,14 @@ fun BookNowDialog(
         }
     }
     
+    // Trigger onBookingCreated when success dialog is shown (booking is complete)
+    LaunchedEffect(uiState.showSuccessDialog) {
+        if (uiState.showSuccessDialog && uiState.successBooking != null) {
+            // Booking created - notify parent immediately
+            onBookingCreated(uiState.successBooking!!.id)
+        }
+    }
+    
     // Show Premium Success Dialog
     if (uiState.showSuccessDialog && uiState.successBooking != null) {
         BookingSuccessDialog(
@@ -162,6 +170,7 @@ fun BookNowDialog(
                             parkingSpot = parkingSpot,
                             onDurationSelected = { viewModel.updateDuration(it) },
                             onBookingTypeChanged = { viewModel.updateBookingType(it) },
+                            onStartTimeChanged = { viewModel.updateStartTime(it) },
                             onBack = { viewModel.moveToPreviousStep() },
                             onContinue = { viewModel.moveToNextStep() },
                             colors = colors
@@ -431,6 +440,7 @@ private fun DurationPricingStep(
     parkingSpot: ParkingSpot,
     onDurationSelected: (Int) -> Unit,
     onBookingTypeChanged: (BookingType) -> Unit,
+    onStartTimeChanged: (Long) -> Unit,
     onBack: () -> Unit,
     onContinue: () -> Unit,
     colors: CityFluxColors
@@ -511,6 +521,16 @@ private fun DurationPricingStep(
         
         Spacer(Modifier.height(16.dp))
         
+        // Start time picker for BOOK_LATER
+        if (bookingForm.bookingType == BookingType.BOOK_LATER) {
+            StartTimePicker(
+                selectedTimeMillis = bookingForm.startTime,
+                onTimeSelected = onStartTimeChanged,
+                colors = colors
+            )
+            Spacer(Modifier.height(16.dp))
+        }
+        
         // Duration selection with smart pricing - uses parking spot limits
         SmartDurationSelector(
             selectedHours = bookingForm.durationHours,
@@ -556,6 +576,109 @@ private fun DurationPricingStep(
                 Text("Continue")
                 Spacer(Modifier.width(4.dp))
                 Icon(Icons.Default.ArrowForward, contentDescription = null, modifier = Modifier.size(18.dp))
+            }
+        }
+    }
+}
+
+@Composable
+private fun StartTimePicker(
+    selectedTimeMillis: Long,
+    onTimeSelected: (Long) -> Unit,
+    colors: CityFluxColors
+) {
+    val calendar = remember { Calendar.getInstance() }
+    val now = remember { System.currentTimeMillis() }
+    
+    // Quick time selections (relative to current time)
+    val quickTimes = remember {
+        listOf(
+            "In 1 Hour" to (now + 3600000),
+            "In 2 Hours" to (now + 7200000),
+            "In 4 Hours" to (now + 14400000),
+            "Tomorrow" to (now + 86400000)
+        )
+    }
+    
+    Column {
+        Text(
+            text = "Start Time",
+            style = MaterialTheme.typography.titleMedium,
+            color = colors.textPrimary,
+            fontWeight = FontWeight.SemiBold
+        )
+        
+        Spacer(Modifier.height(8.dp))
+        
+        // Quick time selections
+        LazyRow(
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            items(quickTimes) { (label, timeMillis) ->
+                Surface(
+                    onClick = { onTimeSelected(timeMillis) },
+                    shape = RoundedCornerShape(20.dp),
+                    color = if (selectedTimeMillis == timeMillis) PrimaryBlue else colors.cardBackground,
+                    border = BorderStroke(1.dp, if (selectedTimeMillis == timeMillis) PrimaryBlue else colors.cardBorder)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            Icons.Default.Schedule,
+                            contentDescription = null,
+                            tint = if (selectedTimeMillis == timeMillis) Color.White else colors.textPrimary,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            text = label,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = if (selectedTimeMillis == timeMillis) Color.White else colors.textPrimary,
+                            fontWeight = if (selectedTimeMillis == timeMillis) FontWeight.Bold else FontWeight.Normal
+                        )
+                    }
+                }
+            }
+        }
+        
+        Spacer(Modifier.height(12.dp))
+        
+        // Selected time display
+        calendar.timeInMillis = selectedTimeMillis
+        val dateFormat = SimpleDateFormat("MMM dd, yyyy 'at' hh:mm a", Locale.getDefault())
+        
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(12.dp),
+            color = AccentBlue.copy(alpha = 0.1f),
+            border = BorderStroke(1.dp, AccentBlue.copy(alpha = 0.3f))
+        ) {
+            Row(
+                modifier = Modifier.padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    Icons.Default.Event,
+                    contentDescription = null,
+                    tint = AccentBlue,
+                    modifier = Modifier.size(24.dp)
+                )
+                Spacer(Modifier.width(12.dp))
+                Column {
+                    Text(
+                        text = "Parking Starts",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = colors.textSecondary
+                    )
+                    Text(
+                        text = dateFormat.format(Date(selectedTimeMillis)),
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = AccentBlue,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
             }
         }
     }

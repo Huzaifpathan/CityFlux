@@ -162,6 +162,7 @@ fun MyBookingsContentEnhancedLegacy(
             modifier = Modifier
                 .fillMaxSize()
                 .weight(1f)
+                .background(colors.cardBackground)
                 .nestedScroll(pullToRefreshState.nestedScrollConnection)
         ) {
             // Filter bookings by search
@@ -181,7 +182,6 @@ fun MyBookingsContentEnhancedLegacy(
                     onBookingClick = { showDetailsDialogBookingId = it.id },
                     onShowQR = { showQrDialog = it },
                     onNavigate = { navigateToParking(context, it) },
-                    onExtend = { showExtendDialog = it },
                     onCancel = { showCancelDialog = it },
                     colors = colors
                 )
@@ -318,7 +318,6 @@ private fun ActiveBookingsTabEnhanced(
     onBookingClick: (ParkingBooking) -> Unit,
     onShowQR: (ParkingBooking) -> Unit,
     onNavigate: (ParkingBooking) -> Unit,
-    onExtend: (ParkingBooking) -> Unit,
     onCancel: (ParkingBooking) -> Unit,
     colors: CityFluxColors
 ) {
@@ -343,7 +342,6 @@ private fun ActiveBookingsTabEnhanced(
                     onClick = { onBookingClick(booking) },
                     onShowQR = { onShowQR(booking) },
                     onNavigate = { onNavigate(booking) },
-                    onExtend = { onExtend(booking) },
                     onCancel = { onCancel(booking) },
                     colors = colors
                 )
@@ -358,7 +356,6 @@ private fun ActiveBookingCardEnhanced(
     onClick: () -> Unit,
     onShowQR: () -> Unit,
     onNavigate: () -> Unit,
-    onExtend: () -> Unit,
     onCancel: () -> Unit,
     colors: CityFluxColors
 ) {
@@ -539,7 +536,7 @@ private fun ActiveBookingCardEnhanced(
             
             Spacer(Modifier.height(16.dp))
             
-            // Action Buttons Row 1
+            // Action Buttons Row
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -557,35 +554,15 @@ private fun ActiveBookingCardEnhanced(
                 }
                 
                 // Navigate Button
-                OutlinedButton(
+                Button(
                     onClick = onNavigate,
                     modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = ButtonDefaults.outlinedButtonColors(contentColor = SuccessGreen)
+                    colors = ButtonDefaults.buttonColors(containerColor = SuccessGreen),
+                    shape = RoundedCornerShape(12.dp)
                 ) {
                     Icon(Icons.Default.Navigation, null, Modifier.size(18.dp))
                     Spacer(Modifier.width(4.dp))
-                    Text("Navigate")
-                }
-            }
-            
-            Spacer(Modifier.height(8.dp))
-            
-            // Action Buttons Row 2
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                // Extend Button
-                OutlinedButton(
-                    onClick = onExtend,
-                    modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = ButtonDefaults.outlinedButtonColors(contentColor = PremiumGold)
-                ) {
-                    Icon(Icons.Default.Add, null, Modifier.size(18.dp))
-                    Spacer(Modifier.width(4.dp))
-                    Text("Extend")
+                    Text("Navigate", fontWeight = FontWeight.SemiBold)
                 }
                 
                 // Cancel Button
@@ -648,7 +625,9 @@ private fun UpcomingBookingsTabEnhanced(
         )
     } else {
         LazyColumn(
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier
+                .fillMaxSize()
+                .background(colors.cardBackground),
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
@@ -1114,7 +1093,7 @@ private fun BookingDetailsDialogRealtime(
     onCall: () -> Unit
 ) {
     val colors = MaterialTheme.cityFluxColors
-    val repository = remember { com.example.cityflux.data.BookingRepository() }
+    val repository = remember { com.example.cityflux.data.BookingRepository.getInstance() }
     
     // Observe real-time booking data from Firestore
     val realtimeBooking by repository.observeBooking(bookingId)
@@ -1389,19 +1368,32 @@ private fun BookingDetailsDialogRealtime(
                             Spacer(Modifier.width(4.dp))
                             Text("QR")
                         }
-                        OutlinedButton(
+                        Button(
                             onClick = { onNavigate(booking) },
                             modifier = Modifier.weight(1f),
+                            colors = ButtonDefaults.buttonColors(containerColor = SuccessGreen),
                             shape = RoundedCornerShape(12.dp)
                         ) {
                             Icon(Icons.Default.Navigation, null, Modifier.size(18.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("Navigate")
                         }
+                    }
+                    
+                    Spacer(Modifier.height(8.dp))
+                    
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
                         OutlinedButton(
                             onClick = { onShare(booking) },
                             modifier = Modifier.weight(1f),
                             shape = RoundedCornerShape(12.dp)
                         ) {
                             Icon(Icons.Default.Share, null, Modifier.size(18.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("Share")
                         }
                         OutlinedButton(
                             onClick = onCall,
@@ -1409,6 +1401,8 @@ private fun BookingDetailsDialogRealtime(
                             shape = RoundedCornerShape(12.dp)
                         ) {
                             Icon(Icons.Default.Phone, null, Modifier.size(18.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("Help")
                         }
                     }
                 }

@@ -24,7 +24,7 @@ import java.util.*
  */
 class BookingViewModel : ViewModel() {
     
-    private val repository = BookingRepository()
+    private val repository = BookingRepository.getInstance()
     private val auth = FirebaseAuth.getInstance()
     private val firestore = Firebase.firestore
     
@@ -63,6 +63,31 @@ class BookingViewModel : ViewModel() {
     
     init {
         observeBookings()
+        observeBookingCreatedEvents()
+        observeBookingTimestamp()
+    }
+    
+    // Listen for new booking creation events
+    private fun observeBookingCreatedEvents() {
+        viewModelScope.launch {
+            repository.bookingCreatedEvent.collect { bookingId ->
+                Log.d(TAG, "New booking created event received: $bookingId")
+                // Refresh bookings immediately when a new booking is created
+                refreshBookings()
+            }
+        }
+    }
+    
+    // Listen for timestamp changes (backup trigger for refresh)
+    private fun observeBookingTimestamp() {
+        viewModelScope.launch {
+            repository.lastBookingTimestamp.collect { timestamp ->
+                if (timestamp > 0) {
+                    Log.d(TAG, "Booking timestamp changed: $timestamp - refreshing")
+                    refreshBookings()
+                }
+            }
+        }
     }
     
     // ═══════════════════════════════════════════════════════
@@ -88,13 +113,15 @@ class BookingViewModel : ViewModel() {
 
     fun refreshBookings() {
         viewModelScope.launch {
+            Log.d(TAG, "refreshBookings() called")
             _uiState.update { it.copy(isLoading = true, error = null) }
-            repository.observeUserBookings()
-                .firstOrNull()
-                ?.onSuccess { bookings: List<ParkingBooking> ->
+            repository.fetchUserBookings()
+                .onSuccess { bookings: List<ParkingBooking> ->
+                    Log.d(TAG, "refreshBookings() success - ${bookings.size} bookings found")
                     updateBookingBuckets(bookings)
                 }
-                ?.onFailure { e: Throwable ->
+                .onFailure { e: Throwable ->
+                    Log.e(TAG, "refreshBookings() failed", e)
                     _uiState.update {
                         it.copy(
                             isLoading = false,

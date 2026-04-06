@@ -82,7 +82,8 @@ import kotlin.math.*
 @Composable
 fun ParkingScreen(
     @Suppress("UNUSED_PARAMETER") onBack: () -> Unit,
-    vm: ParkingViewModel = viewModel()
+    vm: ParkingViewModel = viewModel(),
+    bookingViewModel: BookingViewModel = viewModel()
 ) {
     val context = LocalContext.current
     val colors = MaterialTheme.cityFluxColors
@@ -123,6 +124,13 @@ fun ParkingScreen(
 
     // ── View mode toggle ──
     var selectedTab by remember { mutableIntStateOf(0) } // 0=List, 1=Map, 2=My Bookings
+    
+    // Refresh bookings when My Bookings tab is selected
+    LaunchedEffect(selectedTab) {
+        if (selectedTab == 2) {
+            bookingViewModel.refreshBookings()
+        }
+    }
 
     // ── Filter sheet ──
     var showFilterSheet by remember { mutableStateOf(false) }
@@ -343,36 +351,6 @@ fun ParkingScreen(
                 totalAvailable = totalAvailable,
                 isLoading = state.isLoading
             )
-
-            // ══════════════════════ Stats Strip ══════════════════════
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = Spacing.XLarge, vertical = Spacing.Small),
-                horizontalArrangement = Arrangement.spacedBy(Spacing.Small)
-            ) {
-                ParkingStatMiniCard(
-                    label = "Total",
-                    value = "$totalSpots",
-                    icon = Icons.Outlined.LocalParking,
-                    color = PrimaryBlue,
-                    modifier = Modifier.weight(1f)
-                )
-                ParkingStatMiniCard(
-                    label = "Free",
-                    value = "$totalAvailable",
-                    icon = Icons.Outlined.CheckCircle,
-                    color = AccentGreen,
-                    modifier = Modifier.weight(1f)
-                )
-                ParkingStatMiniCard(
-                    label = "Full",
-                    value = "$totalFull",
-                    icon = Icons.Outlined.Block,
-                    color = AccentRed,
-                    modifier = Modifier.weight(1f)
-                )
-            }
 
             // ══════════════════════ Search Bar ══════════════════════
             Surface(
@@ -843,8 +821,35 @@ fun ParkingScreen(
                     2 -> {
                         // ──────── My Bookings View (Enhanced) ────────
                         MyBookingsContentEnhanced(
+                            viewModel = bookingViewModel,
                             onBookingClick = { booking ->
                                 // Handle booking click if needed
+                            },
+                            onNavigateToMap = { parkingSpotId ->
+                                // Find the parking spot by ID and start full navigation
+                                val spot = filteredSpots.find { it.id == parkingSpotId }
+                                spot?.location?.let { geo ->
+                                    // Start navigation mode with route
+                                    navigationTarget = spot
+                                    selectedTab = 1 // Switch to Map tab
+                                    isLoadingRoute = true
+                                    
+                                    // Fetch route from user location to parking
+                                    coroutineScope.launch {
+                                        userLatLng?.let { start ->
+                                            val end = LatLng(geo.latitude, geo.longitude)
+                                            val apiKey = getMapApiKey(context)
+                                            val result = fetchDirectionsRoute(start, end, apiKey)
+                                            routePoints = result.points
+                                            routeDistanceKm = result.distanceKm
+                                            routeDurationMin = result.durationMinutes
+                                            navigationSteps = result.steps
+                                            currentStepIndex = 0
+                                            isNavigating = true
+                                            isLoadingRoute = false
+                                        }
+                                    }
+                                }
                             }
                         )
                     }
@@ -1069,11 +1074,16 @@ fun ParkingScreen(
                 onDismiss = { 
                     showBookNowDialog = false
                     bookNowSpot = null
+                    // Also refresh when dialog is dismissed (might have created a booking)
+                    bookingViewModel.refreshBookings()
                 },
                 onBookingCreated = { bookingId ->
+                    // Refresh bookings to show new booking instantly
+                    bookingViewModel.refreshBookings()
+                    // Close dialog
                     showBookNowDialog = false
                     bookNowSpot = null
-                    // Navigate to QR display or booking details
+                    // Log analytics
                     try {
                         Firebase.analytics.logEvent("booking_created", null)
                     } catch (_: Exception) {}
@@ -2917,49 +2927,6 @@ private fun ParkingPulsingDot(color: Color, size: androidx.compose.ui.unit.Dp) {
 // ═══════════════════════════════════════════════════════════════════
 // Stats Strip — Glass-morphism mini stat cards
 // ═══════════════════════════════════════════════════════════════════
-
-@Composable
-private fun ParkingStatMiniCard(
-    label: String,
-    value: String,
-    icon: ImageVector,
-    color: Color,
-    modifier: Modifier = Modifier
-) {
-    val colors = MaterialTheme.cityFluxColors
-    Surface(
-        modifier = modifier,
-        shape = RoundedCornerShape(CornerRadius.Medium),
-        color = color.copy(alpha = 0.08f)
-    ) {
-        Column(
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 10.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Icon(
-                icon,
-                null,
-                tint = color,
-                modifier = Modifier.size(16.dp)
-            )
-            Spacer(Modifier.height(4.dp))
-            Text(
-                value,
-                fontSize = 16.sp,
-                fontWeight = FontWeight.Bold,
-                color = color
-            )
-            Text(
-                label,
-                fontSize = 9.sp,
-                fontWeight = FontWeight.Medium,
-                color = colors.textSecondary,
-                maxLines = 1
-            )
-        }
-    }
-}
-
 
 // ═══════════════════════════════════════════════════════════════════
 // Report Illegal Parking Dialog

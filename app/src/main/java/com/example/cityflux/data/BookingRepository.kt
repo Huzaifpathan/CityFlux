@@ -25,10 +25,28 @@ class BookingRepository {
     private val realtimeDb = Firebase.database
     private val auth = FirebaseAuth.getInstance()
     
+    // Event to notify when a new booking is created
+    private val _bookingCreatedEvent = kotlinx.coroutines.flow.MutableSharedFlow<String>(replay = 1)
+    val bookingCreatedEvent: kotlinx.coroutines.flow.SharedFlow<String> = _bookingCreatedEvent
+    
+    // Simple counter to track booking changes
+    private val _lastBookingTimestamp = kotlinx.coroutines.flow.MutableStateFlow(0L)
+    val lastBookingTimestamp: kotlinx.coroutines.flow.StateFlow<Long> = _lastBookingTimestamp
+    
     companion object {
         private const val TAG = "BookingRepository"
         private const val BOOKINGS_COLLECTION = "bookings"
         private const val PARKING_LIVE_PATH = "parking_live"
+        
+        // Singleton instance for shared event
+        @Volatile
+        private var INSTANCE: BookingRepository? = null
+        
+        fun getInstance(): BookingRepository {
+            return INSTANCE ?: synchronized(this) {
+                INSTANCE ?: BookingRepository().also { INSTANCE = it }
+            }
+        }
     }
     
     /**
@@ -51,14 +69,15 @@ class BookingRepository {
             val qrData = generateQrCodeData(booking, bookingId)
             
             // Create booking with complete data
+            // Preserve start/end times if already set by caller, otherwise calculate
             val completeBooking = booking.copy(
                 id = bookingId,
                 userId = userId,
                 qrCodeData = qrData,
                 status = BookingStatus.CONFIRMED,
                 bookingCreatedAt = Timestamp.now(),
-                bookingStartTime = calculateStartTime(booking),
-                bookingEndTime = calculateEndTime(booking)
+                bookingStartTime = booking.bookingStartTime ?: calculateStartTime(booking),
+                bookingEndTime = booking.bookingEndTime ?: calculateEndTime(booking)
             )
             
             // Atomic operation: Create booking + Update slots
@@ -77,6 +96,12 @@ class BookingRepository {
                 vehicleType = booking.vehicleType,
                 change = -1
             )
+            
+            // Emit event that booking was created
+            _bookingCreatedEvent.emit(bookingId)
+            
+            // Update timestamp to trigger UI refresh
+            _lastBookingTimestamp.value = System.currentTimeMillis()
             
             // Log successful booking
             Log.d(TAG, "Booking created successfully: $bookingId")
@@ -304,6 +329,42 @@ class BookingRepository {
             Result.success(booking)
         } catch (e: Exception) {
             Log.e(TAG, "Error getting booking", e)
+            Result.failure(e)
+        }
+    }
+    
+    /**
+     * Fetch user bookings directly from Firestore (for instant refresh)
+     */
+    suspend fun fetchUserBookings(): Result<List<ParkingBooking>> {
+        val userId = auth.currentUser?.uid
+            ?: return Result.success(emptyList())
+        
+        return try {
+            // Try with orderBy first, fallback to simple query if index missing
+            val snapshot = try {
+                firestore.collection(BOOKINGS_COLLECTION)
+                    .whereEqualTo("userId", userId)
+                    .orderBy("bookingCreatedAt", Query.Direction.DESCENDING)
+                    .get()
+                    .await()
+            } catch (e: Exception) {
+                // Fallback: simple query without ordering (if composite index missing)
+                Log.w(TAG, "Composite index may be missing, using simple query", e)
+                firestore.collection(BOOKINGS_COLLECTION)
+                    .whereEqualTo("userId", userId)
+                    .get()
+                    .await()
+            }
+            
+            val bookings = snapshot.documents.mapNotNull { doc ->
+                doc.toObject(ParkingBooking::class.java)?.copy(id = doc.id)
+            }.sortedByDescending { it.bookingCreatedAt?.toDate() }
+            
+            Log.d(TAG, "fetchUserBookings() returned ${bookings.size} bookings")
+            Result.success(bookings)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error fetching user bookings", e)
             Result.failure(e)
         }
     }

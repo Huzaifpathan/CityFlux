@@ -20,7 +20,7 @@ import kotlin.math.roundToInt
  * real-time slot tracking, and instant booking
  */
 class BookNowViewModel(
-    private val bookingRepository: BookingRepository = BookingRepository(),
+    private val bookingRepository: BookingRepository = BookingRepository.getInstance(),
     private val notificationRepository: BookingNotificationRepository = BookingNotificationRepository()
 ) : ViewModel() {
     
@@ -232,6 +232,13 @@ class BookNowViewModel(
     }
     
     /**
+     * Update start time for advanced booking
+     */
+    fun updateStartTime(startTimeMillis: Long) {
+        _bookingForm.value = _bookingForm.value.copy(startTime = startTimeMillis)
+    }
+    
+    /**
      * Select recent vehicle
      */
     fun selectRecentVehicle(vehicleNumber: String) {
@@ -272,9 +279,14 @@ class BookNowViewModel(
                     throw Exception("No slots available. Please try another parking spot.")
                 }
                 
-                // Calculate booking times
-                val startTime = com.google.firebase.Timestamp.now()
-                val endTimeMillis = System.currentTimeMillis() + (form.durationHours * 3600 * 1000)
+                // Calculate booking times based on booking type
+                val startTime = if (form.bookingType == BookingType.BOOK_NOW) {
+                    com.google.firebase.Timestamp.now()
+                } else {
+                    // BOOK_LATER - use user-selected start time
+                    com.google.firebase.Timestamp(form.startTime / 1000, 0)
+                }
+                val endTimeMillis = form.startTime + (form.durationHours * 3600 * 1000)
                 val endTime = com.google.firebase.Timestamp(endTimeMillis / 1000, 0)
                 
                 // Create booking with all details
@@ -287,7 +299,7 @@ class BookNowViewModel(
                     durationHours = form.durationHours,
                     bookingStartTime = startTime,
                     bookingEndTime = endTime,
-                    status = BookingStatus.CONFIRMED,
+                    status = if (form.bookingType == BookingType.BOOK_LATER) BookingStatus.PENDING else BookingStatus.CONFIRMED,
                     paymentStatus = PaymentStatus.PENDING, // Payment will be implemented later
                     baseAmount = pricing.baseAmount,
                     gstAmount = pricing.gst,
@@ -393,6 +405,7 @@ data class BookingFormState(
     val vehicleType: VehicleType = VehicleType.CAR,
     val durationHours: Int = 2,
     val bookingType: BookingType = BookingType.BOOK_NOW,
+    val startTime: Long = System.currentTimeMillis(), // Timestamp in millis for advanced booking
     val notes: String = "",
     val paymentMethod: PaymentMethod = PaymentMethod.UPI
 )
