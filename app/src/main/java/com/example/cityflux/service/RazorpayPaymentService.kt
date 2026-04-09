@@ -61,6 +61,10 @@ object RazorpayPaymentService {
             put("description", "Parking booking: $vehicleNumber")
             put("currency", "INR")
             put("amount", amountInPaise.toString())
+            // Keep Razorpay checkout unblocked so device-supported methods are always shown.
+            put("upi", JSONObject().apply {
+                put("flow", "intent")
+            })
             put("notes", JSONObject().apply {
                 put("booking_id", bookingId)
                 put("vehicle_number", vehicleNumber)
