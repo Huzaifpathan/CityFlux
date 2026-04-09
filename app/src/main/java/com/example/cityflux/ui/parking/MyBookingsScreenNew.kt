@@ -1093,7 +1093,7 @@ private fun BookingDetailsDialogRealtime(
     onCall: () -> Unit
 ) {
     val colors = MaterialTheme.cityFluxColors
-    val repository = remember { com.example.cityflux.data.BookingRepository.getInstance() }
+    val repository = remember { com.example.cityflux.data.BookingRepository() }
     
     // Observe real-time booking data from Firestore
     val realtimeBooking by repository.observeBooking(bookingId)
