@@ -4,6 +4,8 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
+import java.math.BigDecimal
+import java.math.RoundingMode
 import java.util.Locale
 
 /**
@@ -25,30 +27,30 @@ object UpiPaymentService {
     
     /**
      * Create UPI payment intent
-     * @param context Android context
      * @param amount Payment amount in INR
      * @param note Transaction note/description
      * @param upiId UPI ID of the parking zone (optional, uses default if not provided)
-     * @param transactionRef Unique transaction reference
      */
     fun createPaymentIntent(
         amount: Double,
         note: String,
         upiId: String = DEFAULT_UPI_ID,
-        merchantName: String = MERCHANT_NAME,
-        transactionRef: String = generateTransactionRef()
+        merchantName: String = MERCHANT_NAME
     ): Intent {
+        val upiAmount = formatUpiAmount(amount)
+        val payeeUpiId = sanitizeUpiId(upiId)
+        val compactNote = compactUpiNote(note)
+
         // Build UPI URI
-        // Format: upi://pay?pa=<UPI_ID>&pn=<PAYEE_NAME>&am=<AMOUNT>&cu=INR&tn=<NOTE>&tr=<REF>
+        // Format: upi://pay?pa=<UPI_ID>&pn=<PAYEE_NAME>&am=<AMOUNT>&cu=INR&tn=<NOTE>
         val upiUri = Uri.Builder()
             .scheme("upi")
             .authority("pay")
-            .appendQueryParameter("pa", upiId)           // Payee UPI ID
+            .appendQueryParameter("pa", payeeUpiId)       // Payee UPI ID
             .appendQueryParameter("pn", merchantName)     // Payee Name
-            .appendQueryParameter("am", String.format("%.2f", amount))  // Amount
+            .appendQueryParameter("am", upiAmount)        // Amount in UPI-safe format
             .appendQueryParameter("cu", "INR")            // Currency
-            .appendQueryParameter("tn", note)             // Transaction Note
-            .appendQueryParameter("tr", transactionRef)   // Transaction Reference
+            .appendQueryParameter("tn", compactNote)      // Transaction Note
             .build()
         
         return Intent(Intent.ACTION_VIEW).apply {
@@ -66,14 +68,14 @@ object UpiPaymentService {
         vehicleNumber: String,
         upiId: String = DEFAULT_UPI_ID
     ): Intent {
-        val note = "Parking: $parkingName | Vehicle: $vehicleNumber | Booking: $bookingId"
+        val note = "CityFlux Parking | $vehicleNumber | $bookingId"
+        val upiAmount = formatUpiAmount(amount)
         val paymentIntent = createPaymentIntent(
             amount = amount,
             note = note,
-            upiId = upiId,
-            transactionRef = bookingId
+            upiId = upiId
         )
-        return Intent.createChooser(paymentIntent, "Pay ₹${amount.toInt()} via UPI")
+        return Intent.createChooser(paymentIntent, "Pay ₹$upiAmount via UPI")
     }
     
     /**
@@ -88,18 +90,18 @@ object UpiPaymentService {
         vehicleNumber: String,
         upiId: String = DEFAULT_UPI_ID
     ): Boolean {
-        val note = "Parking: $parkingName | Vehicle: $vehicleNumber | Booking: $bookingId"
+        val note = "CityFlux Parking | $vehicleNumber | $bookingId"
+        val upiAmount = formatUpiAmount(amount)
         
         val intent = createPaymentIntent(
             amount = amount,
             note = note,
-            upiId = upiId,
-            transactionRef = bookingId
+            upiId = upiId
         )
         
         return try {
             // Create chooser to show all available UPI apps
-            val chooser = Intent.createChooser(intent, "Pay ₹${amount.toInt()} via UPI")
+            val chooser = Intent.createChooser(intent, "Pay ₹$upiAmount via UPI")
             chooser.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             context.startActivity(chooser)
             true
@@ -133,13 +135,35 @@ object UpiPaymentService {
         }
     }
     
-    /**
-     * Generate unique transaction reference
-     */
-    private fun generateTransactionRef(): String {
-        return "CF${System.currentTimeMillis()}${(1000..9999).random()}"
+    private fun formatUpiAmount(amount: Double): String {
+        val normalized = amount
+            .takeIf { it.isFinite() && it > 0.0 }
+            ?.let { BigDecimal.valueOf(it).setScale(2, RoundingMode.HALF_UP) }
+            ?: BigDecimal("1.00")
+        return normalized.toPlainString()
     }
-    
+
+    private fun sanitizeUpiId(upiId: String): String {
+        val trimmed = upiId.trim()
+        if (!trimmed.contains("@")) return DEFAULT_UPI_ID
+        val parts = trimmed.split("@")
+        if (parts.size != 2) return DEFAULT_UPI_ID
+        val username = parts[0]
+        val handle = parts[1]
+        val isValid = username.matches(Regex("[A-Za-z0-9._-]{2,}")) &&
+            handle.matches(Regex("[A-Za-z0-9.-]{2,}"))
+        return if (isValid) trimmed else DEFAULT_UPI_ID
+    }
+
+    private fun compactUpiNote(note: String): String {
+        return note
+            .replace(Regex("[^A-Za-z0-9 _-]"), " ")
+            .replace(Regex("\\s+"), " ")
+            .trim()
+            .take(60)
+            .ifBlank { "CityFlux Parking" }
+    }
+
     /**
      * Get UPI ID for specific parking zone
      * In production, this would fetch from database

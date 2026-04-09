@@ -30,6 +30,9 @@ android {
         buildConfigField("String", "GROQ_API_KEY", "\"${localProperties.getProperty("GROQ_API_KEY", "")}\"")
         // Keep Gemini for backward compatibility
         buildConfigField("String", "GEMINI_API_KEY", "\"${localProperties.getProperty("GEMINI_API_KEY", "")}\"")
+        // Razorpay Key ID (test/live) from local.properties
+        buildConfigField("String", "RAZORPAY_KEY_ID", "\"${localProperties.getProperty("RAZORPAY_KEY_ID", "")}\"")
+        manifestPlaceholders["RAZORPAY_KEY_ID"] = localProperties.getProperty("RAZORPAY_KEY_ID", "")
     }
 
     buildTypes {
@@ -82,6 +85,7 @@ dependencies {
     // 🚀 Groq AI (Free, Fast Llama 3)
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("org.json:json:20231013")
+    implementation("com.razorpay:checkout:1.6.41")
 
     // 🎨 Material
     implementation("com.google.android.material:material:1.11.0")

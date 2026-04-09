@@ -67,6 +67,11 @@
             android:name="com.google.android.geo.API_KEY"
             android:value="AIzaSyAxVcsdFxHgsTjVWXg9OnBsbFfIfsY3Ktg" />
 
+        <!-- Razorpay Key ID -->
+        <meta-data
+            android:name="com.razorpay.ApiKey"
+            android:value="${RAZORPAY_KEY_ID}" />
+
         <!-- 📷 FileProvider for camera capture -->
         <provider
             android:name="androidx.core.content.FileProvider"

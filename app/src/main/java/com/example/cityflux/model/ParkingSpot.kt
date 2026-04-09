@@ -17,6 +17,7 @@ data class ParkingSpot(
     val isLegal: Boolean = true,
     val parkingType: String = "free", // "free" or "paid"
     val ratePerHour: Int = 0,
+    val upiId: String? = null,
     val minDuration: Int = 0,
     val maxDuration: Int = 0,
     val vehicleTypes: List<String> = emptyList(), // ["car", "bike", "truck"]
@@ -44,6 +45,7 @@ fun DocumentSnapshot.toParkingSpot(): ParkingSpot? {
         val isLegal = getBoolean("isLegal") ?: true
         val parkingType = getString("parkingType") ?: "free"
         val ratePerHour = getLong("ratePerHour")?.toInt() ?: 0
+        val upiId = getString("upiId")
         val minDuration = getLong("minDuration")?.toInt() ?: 0
         val maxDuration = getLong("maxDuration")?.toInt() ?: 0
         val vehicleTypes = get("vehicleTypes") as? List<String> ?: emptyList()
@@ -74,6 +76,7 @@ fun DocumentSnapshot.toParkingSpot(): ParkingSpot? {
             isLegal = isLegal,
             parkingType = parkingType,
             ratePerHour = ratePerHour,
+            upiId = upiId,
             minDuration = minDuration,
             maxDuration = maxDuration,
             vehicleTypes = vehicleTypes,

@@ -1,9 +1,7 @@
 package com.example.cityflux.ui.parking
 
-import android.app.Activity
 import android.location.Location
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.ComponentActivity
 import androidx.compose.animation.*
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
@@ -30,7 +28,8 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.cityflux.model.*
 import com.example.cityflux.service.PricingBreakdown
 import com.example.cityflux.service.PricingService
-import com.example.cityflux.service.UpiPaymentService
+import com.example.cityflux.service.RazorpayPaymentBridge
+import com.example.cityflux.service.RazorpayPaymentService
 import com.example.cityflux.ui.theme.*
 import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
@@ -82,25 +81,24 @@ fun BookNowDialog(
         }
     }
 
-    val upiPaymentLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.StartActivityForResult()
-    ) { result ->
-        val response = result.data?.getStringExtra("response")
-            ?: result.data?.getStringExtra("txnResponse")
-        val paymentResult = UpiPaymentService.parsePaymentResponse(response)
-        when {
-            paymentResult.isSuccess -> {
+    DisposableEffect(Unit) {
+        RazorpayPaymentBridge.registerCallback { result ->
+            if (result.isSuccess) {
                 viewModel.createBooking(
-                    paymentTransactionId = paymentResult.transactionId,
-                    paymentTransactionRef = paymentResult.transactionRef
+                    paymentTransactionId = result.paymentId,
+                    paymentTransactionRef = result.orderId ?: result.paymentId
                 )
+            } else {
+                val message = when {
+                    result.errorCode == 2 -> "Payment cancelled. Please complete payment to confirm booking."
+                    !result.errorMessage.isNullOrBlank() -> result.errorMessage
+                    else -> "Payment failed. Please try again."
+                }
+                viewModel.setError(message)
             }
-            result.resultCode == Activity.RESULT_CANCELED || paymentResult.isCancelled -> {
-                viewModel.setError("Payment cancelled. Please complete payment to confirm booking.")
-            }
-            else -> {
-                viewModel.setError(paymentResult.message)
-            }
+        }
+        onDispose {
+            RazorpayPaymentBridge.clearCallback()
         }
     }
     
@@ -216,18 +214,21 @@ fun BookNowDialog(
                             onPaymentMethodSelected = { viewModel.selectPaymentMethod(it) },
                             onBack = { viewModel.moveToPreviousStep() },
                             onConfirmBooking = { pricing ->
-                                val bookingRef = "CF${System.currentTimeMillis()}"
-                                val upiIntent = UpiPaymentService.createPaymentChooserIntent(
-                                    amount = pricing.totalAmount,
-                                    parkingName = parkingSpot.address,
-                                    bookingId = bookingRef,
-                                    vehicleNumber = bookingForm.vehicleNumber,
-                                    upiId = UpiPaymentService.getUpiIdForParking(parkingSpot.id)
-                                )
-                                try {
-                                    upiPaymentLauncher.launch(upiIntent)
-                                } catch (_: Exception) {
-                                    viewModel.setError("No UPI app found. Please install Google Pay, PhonePe, or Paytm.")
+                                val activity = context as? ComponentActivity
+                                if (activity == null) {
+                                    viewModel.setError("Unable to start payment. Please reopen the app and try again.")
+                                } else {
+                                    val bookingRef = "CF${System.currentTimeMillis()}"
+                                    val result = RazorpayPaymentService.startPayment(
+                                        activity = activity,
+                                        amountInRupees = pricing.totalAmount,
+                                        parkingName = parkingSpot.address,
+                                        bookingId = bookingRef,
+                                        vehicleNumber = bookingForm.vehicleNumber
+                                    )
+                                    result.onFailure {
+                                        viewModel.setError(it.message ?: "Unable to start Razorpay payment.")
+                                    }
                                 }
                             },
                             onUpdatePricing = { viewModel.updatePricing(it) },
