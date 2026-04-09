@@ -216,23 +216,18 @@ fun BookNowDialog(
                             onPaymentMethodSelected = { viewModel.selectPaymentMethod(it) },
                             onBack = { viewModel.moveToPreviousStep() },
                             onConfirmBooking = { pricing ->
-                                when (bookingForm.paymentMethod) {
-                                    PaymentMethod.UPI -> {
-                                        val bookingRef = "CF${System.currentTimeMillis()}"
-                                        val upiIntent = UpiPaymentService.createPaymentChooserIntent(
-                                            amount = pricing.totalAmount,
-                                            parkingName = parkingSpot.address,
-                                            bookingId = bookingRef,
-                                            vehicleNumber = bookingForm.vehicleNumber,
-                                            upiId = UpiPaymentService.getUpiIdForParking(parkingSpot.id)
-                                        )
-                                        try {
-                                            upiPaymentLauncher.launch(upiIntent)
-                                        } catch (_: Exception) {
-                                            viewModel.setError("No UPI app found. Please install Google Pay, PhonePe, or Paytm.")
-                                        }
-                                    }
-                                    else -> viewModel.setError("Selected payment method is not available yet. Please choose UPI.")
+                                val bookingRef = "CF${System.currentTimeMillis()}"
+                                val upiIntent = UpiPaymentService.createPaymentChooserIntent(
+                                    amount = pricing.totalAmount,
+                                    parkingName = parkingSpot.address,
+                                    bookingId = bookingRef,
+                                    vehicleNumber = bookingForm.vehicleNumber,
+                                    upiId = UpiPaymentService.getUpiIdForParking(parkingSpot.id)
+                                )
+                                try {
+                                    upiPaymentLauncher.launch(upiIntent)
+                                } catch (_: Exception) {
+                                    viewModel.setError("No UPI app found. Please install Google Pay, PhonePe, or Paytm.")
                                 }
                             },
                             onUpdatePricing = { viewModel.updatePricing(it) },
@@ -1758,7 +1753,7 @@ private fun PaymentMethodSelector(
 ) {
     Column {
         Text(
-            text = "Select Payment Method",
+            text = "Payment Method",
             style = MaterialTheme.typography.titleSmall,
             color = colors.textPrimary,
             fontWeight = FontWeight.Bold
@@ -1802,9 +1797,6 @@ private fun PaymentMethodItem(
             Icon(
                 imageVector = when (method) {
                     PaymentMethod.UPI -> Icons.Default.Payment
-                    PaymentMethod.CARD -> Icons.Default.CreditCard
-                    PaymentMethod.WALLET -> Icons.Default.Wallet
-                    PaymentMethod.NET_BANKING -> Icons.Default.AccountBalance
                 },
                 contentDescription = null,
                 tint = if (isSelected) PrimaryBlue else colors.textSecondary,

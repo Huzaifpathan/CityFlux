@@ -470,8 +470,5 @@ enum class BookingType(val displayName: String) {
  * Payment methods
  */
 enum class PaymentMethod(val displayName: String, val description: String) {
-    UPI("UPI Payment", "Pay using UPI apps"),
-    CARD("Credit/Debit Card", "Visa, Mastercard, RuPay"),
-    WALLET("Digital Wallet", "Paytm, PhonePe, etc."),
-    NET_BANKING("Net Banking", "Direct bank transfer")
+    UPI("UPI Payment", "Pay using UPI apps")
 }
