@@ -78,14 +78,6 @@ fun BookNowDialog(
         }
     }
     
-    // Trigger onBookingCreated when success dialog is shown (booking is complete)
-    LaunchedEffect(uiState.showSuccessDialog) {
-        if (uiState.showSuccessDialog && uiState.successBooking != null) {
-            // Booking created - notify parent immediately
-            onBookingCreated(uiState.successBooking!!.id)
-        }
-    }
-    
     // Show Premium Success Dialog
     if (uiState.showSuccessDialog && uiState.successBooking != null) {
         BookingSuccessDialog(
