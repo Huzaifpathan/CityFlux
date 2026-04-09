@@ -1,6 +1,9 @@
 package com.example.cityflux.ui.parking
 
+import android.app.Activity
 import android.location.Location
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
@@ -27,6 +30,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.cityflux.model.*
 import com.example.cityflux.service.PricingBreakdown
 import com.example.cityflux.service.PricingService
+import com.example.cityflux.service.UpiPaymentService
 import com.example.cityflux.ui.theme.*
 import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
@@ -75,6 +79,28 @@ fun BookNowDialog(
         uiState.successMessage?.let { message ->
             onBookingCreated(message)
             viewModel.clearMessages()
+        }
+    }
+
+    val upiPaymentLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        val response = result.data?.getStringExtra("response")
+            ?: result.data?.getStringExtra("txnResponse")
+        val paymentResult = UpiPaymentService.parsePaymentResponse(response)
+        when {
+            paymentResult.isSuccess -> {
+                viewModel.createBooking(
+                    paymentTransactionId = paymentResult.transactionId,
+                    paymentTransactionRef = paymentResult.transactionRef
+                )
+            }
+            result.resultCode == Activity.RESULT_CANCELED || paymentResult.isCancelled -> {
+                viewModel.setError("Payment cancelled. Please complete payment to confirm booking.")
+            }
+            else -> {
+                viewModel.setError(paymentResult.message)
+            }
         }
     }
     
@@ -189,7 +215,26 @@ fun BookNowDialog(
                             uiState = uiState,
                             onPaymentMethodSelected = { viewModel.selectPaymentMethod(it) },
                             onBack = { viewModel.moveToPreviousStep() },
-                            onConfirmBooking = { viewModel.createBooking() },
+                            onConfirmBooking = { pricing ->
+                                when (bookingForm.paymentMethod) {
+                                    PaymentMethod.UPI -> {
+                                        val bookingRef = "CF${System.currentTimeMillis()}"
+                                        val upiIntent = UpiPaymentService.createPaymentChooserIntent(
+                                            amount = pricing.totalAmount,
+                                            parkingName = parkingSpot.address,
+                                            bookingId = bookingRef,
+                                            vehicleNumber = bookingForm.vehicleNumber,
+                                            upiId = UpiPaymentService.getUpiIdForParking(parkingSpot.id)
+                                        )
+                                        try {
+                                            upiPaymentLauncher.launch(upiIntent)
+                                        } catch (_: Exception) {
+                                            viewModel.setError("No UPI app found. Please install Google Pay, PhonePe, or Paytm.")
+                                        }
+                                    }
+                                    else -> viewModel.setError("Selected payment method is not available yet. Please choose UPI.")
+                                }
+                            },
                             onUpdatePricing = { viewModel.updatePricing(it) },
                             colors = colors
                         )
@@ -833,7 +878,7 @@ private fun PaymentStep(
     uiState: BookNowUiState,
     onPaymentMethodSelected: (PaymentMethod) -> Unit,
     onBack: () -> Unit,
-    onConfirmBooking: () -> Unit,
+    onConfirmBooking: (PricingBreakdown) -> Unit,
     onUpdatePricing: (PricingBreakdown) -> Unit,
     colors: CityFluxColors
 ) {
@@ -897,38 +942,11 @@ private fun PaymentStep(
         
         Spacer(Modifier.height(16.dp))
         
-        // Payment method info (coming soon)
-        Surface(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(12.dp),
-            color = AccentOrange.copy(alpha = 0.1f)
-        ) {
-            Row(
-                modifier = Modifier.padding(16.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Info,
-                    contentDescription = null,
-                    tint = AccentOrange,
-                    modifier = Modifier.size(24.dp)
-                )
-                Spacer(Modifier.width(12.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "Payment Coming Soon",
-                        style = MaterialTheme.typography.titleSmall,
-                        color = colors.textPrimary,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                    Text(
-                        text = "UPI payment will be enabled shortly. For now, bookings are free!",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = colors.textSecondary
-                    )
-                }
-            }
-        }
+        PaymentMethodSelector(
+            selectedMethod = bookingForm.paymentMethod,
+            onMethodSelected = onPaymentMethodSelected,
+            colors = colors
+        )
         
         Spacer(Modifier.height(24.dp))
         
@@ -949,7 +967,7 @@ private fun PaymentStep(
             }
             
             Button(
-                onClick = onConfirmBooking,
+                onClick = { onConfirmBooking(pricing) },
                 modifier = Modifier.weight(2f).height(56.dp),
                 enabled = !uiState.isLoading && bookingForm.vehicleNumber.isNotBlank(),
                 colors = ButtonDefaults.buttonColors(containerColor = AccentGreen)
@@ -963,7 +981,7 @@ private fun PaymentStep(
                     Icon(Icons.Default.CheckCircle, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(8.dp))
                     Text(
-                        text = "Confirm Booking",
+                        text = "Pay & Confirm",
                         fontSize = 16.sp,
                         fontWeight = FontWeight.Bold
                     )

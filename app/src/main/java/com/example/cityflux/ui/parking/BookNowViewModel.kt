@@ -8,6 +8,7 @@ import com.example.cityflux.data.BookingRepository
 import com.example.cityflux.model.*
 import com.example.cityflux.service.PricingBreakdown
 import com.example.cityflux.service.PricingService
+import com.google.firebase.Timestamp
 import com.google.firebase.database.ktx.database
 import com.google.firebase.ktx.Firebase
 import kotlinx.coroutines.flow.*
@@ -255,7 +256,7 @@ class BookNowViewModel(
     /**
      * Create parking booking
      */
-    fun createBooking() {
+    fun createBooking(paymentTransactionId: String? = null, paymentTransactionRef: String? = null) {
         val form = _bookingForm.value
         val pricing = _uiState.value.pricingBreakdown
         
@@ -281,13 +282,15 @@ class BookNowViewModel(
                 
                 // Calculate booking times based on booking type
                 val startTime = if (form.bookingType == BookingType.BOOK_NOW) {
-                    com.google.firebase.Timestamp.now()
+                    Timestamp.now()
                 } else {
                     // BOOK_LATER - use user-selected start time
-                    com.google.firebase.Timestamp(form.startTime / 1000, 0)
+                    Timestamp(form.startTime / 1000, 0)
                 }
                 val endTimeMillis = form.startTime + (form.durationHours * 3600 * 1000)
-                val endTime = com.google.firebase.Timestamp(endTimeMillis / 1000, 0)
+                val endTime = Timestamp(endTimeMillis / 1000, 0)
+
+                val paymentCompleted = !paymentTransactionId.isNullOrBlank() || !paymentTransactionRef.isNullOrBlank()
                 
                 // Create booking with all details
                 val booking = ParkingBooking(
@@ -299,15 +302,21 @@ class BookNowViewModel(
                     durationHours = form.durationHours,
                     bookingStartTime = startTime,
                     bookingEndTime = endTime,
-                    status = if (form.bookingType == BookingType.BOOK_LATER) BookingStatus.PENDING else BookingStatus.CONFIRMED,
-                    paymentStatus = PaymentStatus.PENDING, // Payment will be implemented later
+                    status = when {
+                        form.bookingType == BookingType.BOOK_LATER -> BookingStatus.PENDING
+                        paymentCompleted -> BookingStatus.CONFIRMED
+                        else -> BookingStatus.PENDING
+                    },
+                    paymentStatus = if (paymentCompleted) PaymentStatus.COMPLETED else PaymentStatus.PENDING,
                     baseAmount = pricing.baseAmount,
                     gstAmount = pricing.gst,
                     totalAmount = pricing.totalAmount,
                     amount = pricing.totalAmount,
-                    isPaid = false, // Payment pending
+                    isPaid = paymentCompleted,
                     paymentMethod = form.paymentMethod.name,
-                    paymentTimestamp = null, // No payment yet
+                    paymentId = paymentTransactionId,
+                    transactionId = paymentTransactionRef ?: paymentTransactionId,
+                    paymentTimestamp = if (paymentCompleted) Timestamp.now() else null,
                     notes = form.notes
                 )
                 
@@ -368,6 +377,10 @@ class BookNowViewModel(
      */
     fun clearMessages() {
         _uiState.value = _uiState.value.copy(error = null, successMessage = null)
+    }
+
+    fun setError(message: String) {
+        _uiState.value = _uiState.value.copy(isLoading = false, error = message)
     }
     
     /**

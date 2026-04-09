@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
+import java.util.Locale
 
 /**
  * UPI Payment Service
@@ -53,6 +54,26 @@ object UpiPaymentService {
         return Intent(Intent.ACTION_VIEW).apply {
             data = upiUri
         }
+    }
+
+    /**
+     * Create chooser intent so caller can launch UPI and receive activity result
+     */
+    fun createPaymentChooserIntent(
+        amount: Double,
+        parkingName: String,
+        bookingId: String,
+        vehicleNumber: String,
+        upiId: String = DEFAULT_UPI_ID
+    ): Intent {
+        val note = "Parking: $parkingName | Vehicle: $vehicleNumber | Booking: $bookingId"
+        val paymentIntent = createPaymentIntent(
+            amount = amount,
+            note = note,
+            upiId = upiId,
+            transactionRef = bookingId
+        )
+        return Intent.createChooser(paymentIntent, "Pay ₹${amount.toInt()} via UPI")
     }
     
     /**
@@ -128,6 +149,67 @@ object UpiPaymentService {
         // For now, return default
         return DEFAULT_UPI_ID
     }
+
+    /**
+     * Parse UPI app response string into structured result.
+     * Typical format: "Status=SUCCESS&txnId=123&txnRef=ABC&ApprovalRefNo=XYZ"
+     */
+    fun parsePaymentResponse(response: String?): UpiPaymentResult {
+        if (response.isNullOrBlank()) {
+            return UpiPaymentResult(
+                isSuccess = false,
+                isCancelled = true,
+                message = "Payment cancelled by user."
+            )
+        }
+
+        val params = response
+            .split("&")
+            .mapNotNull { item ->
+                val idx = item.indexOf("=")
+                if (idx <= 0) null else {
+                    val key = item.substring(0, idx).trim().lowercase(Locale.ROOT)
+                    val value = item.substring(idx + 1).trim()
+                    key to value
+                }
+            }
+            .toMap()
+
+        val status = params["status"]?.lowercase(Locale.ROOT).orEmpty()
+        val transactionId = params["txnid"] ?: params["approvalrefno"] ?: params["approvalref"]
+        val transactionRef = params["txnref"] ?: params["tr"]
+
+        return when {
+            status == "success" || status == "submitted" -> UpiPaymentResult(
+                isSuccess = true,
+                isCancelled = false,
+                message = "Payment successful.",
+                transactionId = transactionId,
+                transactionRef = transactionRef
+            )
+            status == "failure" || status == "failed" -> UpiPaymentResult(
+                isSuccess = false,
+                isCancelled = false,
+                message = params["responsecode"]?.let { "Payment failed (code: $it)." } ?: "Payment failed.",
+                transactionId = transactionId,
+                transactionRef = transactionRef
+            )
+            response.contains("success", ignoreCase = true) -> UpiPaymentResult(
+                isSuccess = true,
+                isCancelled = false,
+                message = "Payment successful.",
+                transactionId = transactionId,
+                transactionRef = transactionRef
+            )
+            else -> UpiPaymentResult(
+                isSuccess = false,
+                isCancelled = true,
+                message = "Payment cancelled or not completed.",
+                transactionId = transactionId,
+                transactionRef = transactionRef
+            )
+        }
+    }
 }
 
 /**
@@ -137,4 +219,12 @@ data class UpiAppInfo(
     val appName: String,
     val packageName: String,
     val icon: android.graphics.drawable.Drawable
+)
+
+data class UpiPaymentResult(
+    val isSuccess: Boolean,
+    val isCancelled: Boolean,
+    val message: String,
+    val transactionId: String? = null,
+    val transactionRef: String? = null
 )
