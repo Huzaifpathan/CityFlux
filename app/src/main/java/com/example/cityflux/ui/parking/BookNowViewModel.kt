@@ -382,6 +382,22 @@ class BookNowViewModel(
     fun setError(message: String) {
         _uiState.value = _uiState.value.copy(isLoading = false, error = message)
     }
+
+    fun setPaymentCancelled(message: String = "Payment was cancelled. Please try again to complete your booking.") {
+        _uiState.value = _uiState.value.copy(
+            isLoading = false,
+            error = null,
+            showPaymentCancelledDialog = true,
+            paymentCancelledMessage = message
+        )
+    }
+
+    fun dismissPaymentCancelledDialog() {
+        _uiState.value = _uiState.value.copy(
+            showPaymentCancelledDialog = false,
+            paymentCancelledMessage = null
+        )
+    }
     
     /**
      * Dismiss success dialog
@@ -432,7 +448,9 @@ data class BookNowUiState(
     val successMessage: String? = null,
     val pricingBreakdown: PricingBreakdown? = null,
     val showSuccessDialog: Boolean = false,
-    val successBooking: ParkingBooking? = null
+    val successBooking: ParkingBooking? = null,
+    val showPaymentCancelledDialog: Boolean = false,
+    val paymentCancelledMessage: String? = null
 )
 
 /**

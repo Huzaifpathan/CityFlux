@@ -1,7 +1,9 @@
 package com.example.cityflux.ui.parking
 
+import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
 import android.location.Location
-import androidx.activity.ComponentActivity
 import androidx.compose.animation.*
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
@@ -89,19 +91,20 @@ fun BookNowDialog(
                     paymentTransactionRef = result.orderId ?: result.paymentId
                 )
             } else {
-                val message = when {
-                    result.errorCode == 2 -> "Payment cancelled. Please complete payment to confirm booking."
-                    !result.errorMessage.isNullOrBlank() -> result.errorMessage
-                    else -> "Payment failed. Please try again."
+                val isCancelled = result.errorCode == 2 || isPaymentCancelledResponse(result.errorMessage)
+                if (isCancelled) {
+                    viewModel.setPaymentCancelled()
+                } else {
+                    val message = result.errorMessage?.takeIf { it.isNotBlank() } ?: "Payment failed. Please try again."
+                    viewModel.setError(message)
                 }
-                viewModel.setError(message)
             }
         }
         onDispose {
             RazorpayPaymentBridge.clearCallback()
         }
     }
-    
+
     // Show Premium Success Dialog
     if (uiState.showSuccessDialog && uiState.successBooking != null) {
         BookingSuccessDialog(
@@ -121,6 +124,14 @@ fun BookNowDialog(
             onShare = { /* Share handled inside dialog */ }
         )
         return // Don't show main dialog when success dialog is showing
+    }
+
+    if (uiState.showPaymentCancelledDialog) {
+        PaymentCancelledDialog(
+            message = uiState.paymentCancelledMessage ?: "Payment was cancelled. Please try again to complete your booking.",
+            onDismiss = { viewModel.dismissPaymentCancelledDialog() },
+            colors = colors
+        )
     }
 
     Dialog(
@@ -211,10 +222,9 @@ fun BookNowDialog(
                             bookingForm = bookingForm,
                             parkingSpot = parkingSpot,
                             uiState = uiState,
-                            onPaymentMethodSelected = { viewModel.selectPaymentMethod(it) },
                             onBack = { viewModel.moveToPreviousStep() },
                             onConfirmBooking = { pricing ->
-                                val activity = context as? ComponentActivity
+                                val activity = context.findActivity()
                                 if (activity == null) {
                                     viewModel.setError("Unable to start payment. Please reopen the app and try again.")
                                 } else {
@@ -456,7 +466,7 @@ private fun SlotSelectionStep(
             Button(
                 onClick = onContinue,
                 modifier = Modifier.weight(2f).height(50.dp),
-                enabled = parkingLive?.availableSlots ?: 0 > 0,
+                enabled = (parkingLive?.availableSlots ?: parkingSpot.availableSlots) > 0,
                 colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue)
             ) {
                 Text("Continue")
@@ -872,7 +882,6 @@ private fun PaymentStep(
     bookingForm: BookingFormState,
     parkingSpot: ParkingSpot,
     uiState: BookNowUiState,
-    onPaymentMethodSelected: (PaymentMethod) -> Unit,
     onBack: () -> Unit,
     onConfirmBooking: (PricingBreakdown) -> Unit,
     onUpdatePricing: (PricingBreakdown) -> Unit,
@@ -937,12 +946,6 @@ private fun PaymentStep(
         }
         
         Spacer(Modifier.height(16.dp))
-        
-        PaymentMethodSelector(
-            selectedMethod = bookingForm.paymentMethod,
-            onMethodSelected = onPaymentMethodSelected,
-            colors = colors
-        )
         
         Spacer(Modifier.height(24.dp))
         
@@ -1916,6 +1919,63 @@ private fun ErrorMessage(
                 color = AccentRed
             )
         }
+    }
+}
+
+@Composable
+private fun PaymentCancelledDialog(
+    message: String,
+    onDismiss: () -> Unit,
+    colors: CityFluxColors
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = {
+            Icon(
+                imageVector = Icons.Default.Cancel,
+                contentDescription = null,
+                tint = AccentOrange
+            )
+        },
+        title = {
+            Text(
+                text = "Payment Cancelled",
+                color = colors.textPrimary,
+                fontWeight = FontWeight.Bold
+            )
+        },
+        text = {
+            Text(
+                text = message,
+                color = colors.textSecondary
+            )
+        },
+        confirmButton = {
+            Button(
+                onClick = onDismiss,
+                colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue)
+            ) {
+                Text("OK")
+            }
+        }
+    )
+}
+
+private fun isPaymentCancelledResponse(errorMessage: String?): Boolean {
+    if (errorMessage.isNullOrBlank()) return false
+    val normalized = errorMessage.lowercase(Locale.getDefault())
+    return normalized.contains("payment cancelled") ||
+        normalized.contains("payment canceled") ||
+        normalized.contains("\"step\":\"payment_authentication\"") ||
+        normalized.contains("\"reason\":\"payment_error\"") ||
+        normalized.contains("\"code\":\"bad_request_error\"")
+}
+
+private tailrec fun Context.findActivity(): Activity? {
+    return when (this) {
+        is Activity -> this
+        is ContextWrapper -> baseContext.findActivity()
+        else -> null
     }
 }
 

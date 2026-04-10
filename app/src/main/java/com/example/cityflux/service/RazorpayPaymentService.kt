@@ -3,6 +3,7 @@ package com.example.cityflux.service
 import android.app.Activity
 import com.example.cityflux.BuildConfig
 import com.razorpay.Checkout
+import org.json.JSONArray
 import org.json.JSONObject
 import java.math.BigDecimal
 import java.math.RoundingMode
@@ -61,9 +62,32 @@ object RazorpayPaymentService {
             put("description", "Parking booking: $vehicleNumber")
             put("currency", "INR")
             put("amount", amountInPaise.toString())
-            // Keep Razorpay checkout unblocked so device-supported methods are always shown.
+            // Force UPI selection in checkout and keep intent flow enabled.
+            put("method", "upi")
             put("upi", JSONObject().apply {
                 put("flow", "intent")
+            })
+            put("config", JSONObject().apply {
+                put("display", JSONObject().apply {
+                    put("hide", JSONArray().apply {
+                        put("cards")
+                        put("netbanking")
+                        put("wallet")
+                        put("emi")
+                        put("paylater")
+                    })
+                    put("sequence", JSONArray().apply {
+                        put("block.upi")
+                    })
+                    put("blocks", JSONObject().apply {
+                        put("upi", JSONObject().apply {
+                            put("name", "Pay using UPI")
+                            put("instruments", JSONArray().apply {
+                                put(JSONObject().apply { put("method", "upi") })
+                            })
+                        })
+                    })
+                })
             })
             put("notes", JSONObject().apply {
                 put("booking_id", bookingId)
