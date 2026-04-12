@@ -10,7 +10,14 @@ import com.example.cityflux.model.ParkingSpot
 import com.example.cityflux.model.toParkingSpot
 import com.example.cityflux.model.Report
 import com.example.cityflux.model.SolapurDummyData
+import com.example.cityflux.model.TrafficCamera
+import com.example.cityflux.model.CameraSample
+import com.example.cityflux.model.computePeakVehicles
+import com.example.cityflux.model.computeCameraTrend
+import com.example.cityflux.model.isHighCongestionForFiveMinutes
 import com.example.cityflux.model.TrafficStatus
+import com.example.cityflux.model.debugTrafficCameraParse
+import com.example.cityflux.model.toTrafficCamera
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
@@ -36,10 +43,12 @@ class MapViewModel : ViewModel() {
     data class MapUiState(
         val isLoading: Boolean = true,
         val trafficMap: Map<String, TrafficStatus> = emptyMap(),
+        val trafficCameras: List<TrafficCamera> = emptyList(),
         val parkingSpots: List<ParkingSpot> = emptyList(),
         val parkingLive: Map<String, ParkingLive> = emptyMap(),
         val incidents: List<Report> = emptyList(),
         val liveLocations: Map<String, LiveUserLocation> = emptyMap(),
+        val cameraHistory: Map<String, List<CameraSample>> = emptyMap(),
         val isOffline: Boolean = false,
         val error: String? = null
     ) {
@@ -49,6 +58,10 @@ class MapViewModel : ViewModel() {
         val lowCount get() = trafficMap.count { it.value.congestionLevel.equals("LOW", true) }
         val totalZones get() = trafficMap.size
         val liveUsersCount get() = liveLocations.size
+        val cameraHighCount get() = trafficCameras.count { it.congestionLevel == "HIGH" }
+        val cameraMediumCount get() = trafficCameras.count { it.congestionLevel == "MEDIUM" }
+        val cameraLowCount get() = trafficCameras.count { it.congestionLevel == "LOW" }
+        val highFor5MinCameras get() = cameraHistory.count { (_, history) -> isHighCongestionForFiveMinutes(history) }
     }
 
     private val _uiState = MutableStateFlow(MapUiState())
@@ -65,6 +78,7 @@ class MapViewModel : ViewModel() {
 
     init {
         observeTraffic()
+        observeTrafficCameras()
         observeParkingLive()
         observeLiveLocations()
         fetchParkingSpots()
@@ -121,6 +135,137 @@ class MapViewModel : ViewModel() {
                     }
                 }
         }
+    }
+
+    private fun observeTrafficCameras() {
+        var singularCameras: List<TrafficCamera> = emptyList()
+        var pluralCameras: List<TrafficCamera> = emptyList()
+        var hyphenCameras: List<TrafficCamera> = emptyList()
+
+        fun publishMerged() {
+            val mergedById = linkedMapOf<String, TrafficCamera>()
+            (singularCameras + pluralCameras + hyphenCameras).forEach { cam ->
+                val existing = mergedById[cam.id]
+                if (existing == null || cam.lastUpdated >= existing.lastUpdated) {
+                    mergedById[cam.id] = cam
+                }
+            }
+            val cameras = mergedById.values.toList()
+            Log.d(
+                TAG,
+                "Camera merge: singular=${singularCameras.size}, plural=${pluralCameras.size}, hyphen=${hyphenCameras.size}, merged=${cameras.size}"
+            )
+
+            val now = System.currentTimeMillis()
+            val previousHistory = _uiState.value.cameraHistory
+            val nextHistory = buildMap<String, List<CameraSample>> {
+                cameras.forEach { camera ->
+                    val existing = previousHistory[camera.id].orEmpty()
+                    val updated = (existing + CameraSample(now, camera.vehicleCount))
+                        .filter { now - it.timestamp <= 60 * 60_000L }
+                    put(camera.id, updated)
+                }
+            }
+
+            _uiState.update {
+                it.copy(
+                    trafficCameras = cameras,
+                    cameraHistory = nextHistory,
+                    isLoading = false
+                )
+            }
+        }
+
+        firestore.collection("traffic camera")
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    Log.e(TAG, "Traffic camera (singular) error", error)
+                    singularCameras = emptyList()
+                    publishMerged()
+                    return@addSnapshotListener
+                }
+                singularCameras = snapshot?.documents
+                    ?.mapNotNull { doc ->
+                        val camera = doc.toTrafficCamera()
+                        if (camera == null) {
+                            Log.w(TAG, "Skip singular camera doc: ${doc.debugTrafficCameraParse()}")
+                            null
+                        } else {
+                            camera
+                        }
+                    }
+                    ?.filter { cam ->
+                        val valid = cam.hasValidLocation()
+                        if (!valid) Log.w(TAG, "Invalid singular camera lat/lng: id=${cam.id} lat=${cam.latitude} lng=${cam.longitude}")
+                        valid
+                    }
+                    .orEmpty()
+                publishMerged()
+            }
+
+        firestore.collection("traffic cameras")
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    Log.e(TAG, "Traffic cameras (plural) error", error)
+                    pluralCameras = emptyList()
+                    publishMerged()
+                    return@addSnapshotListener
+                }
+                pluralCameras = snapshot?.documents
+                    ?.mapNotNull { doc ->
+                        val camera = doc.toTrafficCamera()
+                        if (camera == null) {
+                            Log.w(TAG, "Skip plural camera doc: ${doc.debugTrafficCameraParse()}")
+                            null
+                        } else {
+                            camera
+                        }
+                    }
+                    ?.filter { cam ->
+                        val valid = cam.hasValidLocation()
+                        if (!valid) Log.w(TAG, "Invalid plural camera lat/lng: id=${cam.id} lat=${cam.latitude} lng=${cam.longitude}")
+                        valid
+                    }
+                    .orEmpty()
+                publishMerged()
+            }
+
+        firestore.collection("traffic-cameras")
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    Log.e(TAG, "Traffic cameras (hyphen) error", error)
+                    hyphenCameras = emptyList()
+                    publishMerged()
+                    return@addSnapshotListener
+                }
+                hyphenCameras = snapshot?.documents
+                    ?.mapNotNull { doc ->
+                        val camera = doc.toTrafficCamera()
+                        if (camera == null) {
+                            Log.w(TAG, "Skip hyphen camera doc: ${doc.debugTrafficCameraParse()}")
+                            null
+                        } else {
+                            camera
+                        }
+                    }
+                    ?.filter { cam ->
+                        val valid = cam.hasValidLocation()
+                        if (!valid) Log.w(TAG, "Invalid hyphen camera lat/lng: id=${cam.id} lat=${cam.latitude} lng=${cam.longitude}")
+                        valid
+                    }
+                    .orEmpty()
+                publishMerged()
+            }
+    }
+
+    fun getCameraTrend(cameraId: String, windowMinutes: Int): Int {
+        val history = _uiState.value.cameraHistory[cameraId].orEmpty()
+        return computeCameraTrend(history, windowMinutes)
+    }
+
+    fun getCameraPeak(cameraId: String, windowHours: Int): Int {
+        val history = _uiState.value.cameraHistory[cameraId].orEmpty()
+        return computePeakVehicles(history, windowHours * 60L * 60_000L)
     }
 
     private fun observeParkingLive() {
@@ -207,6 +352,7 @@ class MapViewModel : ViewModel() {
     fun retry() {
         _uiState.update { it.copy(isLoading = true, error = null, isOffline = false) }
         observeTraffic()
+        observeTrafficCameras()
         observeParkingLive()
         observeLiveLocations()
         fetchParkingSpots()

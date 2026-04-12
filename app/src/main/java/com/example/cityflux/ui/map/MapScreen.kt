@@ -2,6 +2,8 @@ package com.example.cityflux.ui.map
 
 import android.Manifest
 import android.annotation.SuppressLint
+import android.app.NotificationChannel
+import android.app.NotificationManager
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
@@ -12,10 +14,12 @@ import android.location.Location
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.net.Uri
+import android.os.Build
 import android.text.format.DateUtils
 import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.app.NotificationCompat
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.*
@@ -53,6 +57,11 @@ import coil.request.ImageRequest
 import com.example.cityflux.model.ParkingSpot
 import com.example.cityflux.model.Report
 import com.example.cityflux.model.LiveUserLocation
+import com.example.cityflux.model.CameraHealthStatus
+import com.example.cityflux.model.TrafficCamera
+import com.example.cityflux.model.buildTrafficCameraHeatCells
+import com.example.cityflux.model.getCameraHealthStatus
+import com.example.cityflux.model.isHighCongestionForFiveMinutes
 import com.example.cityflux.ui.theme.*
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.maps.CameraUpdateFactory
@@ -85,6 +94,11 @@ fun MapScreen(
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
     val state by vm.uiState.collectAsState()
+    val cameraDebugText = remember(state.trafficCameras) {
+        state.trafficCameras.firstOrNull()?.let {
+            "Cameras: ${state.trafficCameras.size} | First: ${it.name} (${String.format("%.4f", it.latitude)}, ${String.format("%.4f", it.longitude)})"
+        } ?: "Cameras: 0"
+    }
 
     // ── Initialize Maps renderer (ensures latest renderer is used) ──
     var mapLoaded by remember { mutableStateOf(false) }
@@ -177,6 +191,9 @@ fun MapScreen(
     var selectedParking by remember { mutableStateOf<ParkingSpot?>(null) }
     var selectedIncident by remember { mutableStateOf<Report?>(null) }
     var selectedLiveUser by remember { mutableStateOf<Pair<String, LiveUserLocation>?>(null) }
+    var selectedCamera by remember { mutableStateOf<TrafficCamera?>(null) }
+    var ignoreNextMapTap by remember { mutableStateOf(false) }
+    val alertedHighCameraIds = remember { mutableStateListOf<String>() }
 
     // ── Connectivity Check ──
     val isOffline = remember { !isNetworkAvailable(context) }
@@ -185,6 +202,8 @@ fun MapScreen(
     var showParking by remember { mutableStateOf(true) }
     var showIncidents by remember { mutableStateOf(true) }
     var showZones by remember { mutableStateOf(true) }
+    var showCameras by remember { mutableStateOf(true) }
+    var showCameraHeatmap by remember { mutableStateOf(false) }
 
     // ── Stats Panel Toggle ──
     var showStatsPanel by remember { mutableStateOf(false) }
@@ -214,6 +233,8 @@ fun MapScreen(
         ),
         label = "pulse_alpha"
     )
+    val featureSuggestions = remember { getCameraFeatureSuggestions() }
+    val improvementIdeas = remember { getCameraImprovementIdeas() }
 
     // ── Search Location State ──
     var searchQuery by remember { mutableStateOf("") }
@@ -261,6 +282,9 @@ fun MapScreen(
     val incidentParkingBitmap = remember { createCircleMarkerBitmap(AccentAlerts.toArgb(), 36) }
     val incidentHawkerBitmap = remember { createCircleMarkerBitmap(AccentOrange.toArgb(), 36) }
     val incidentDefaultBitmap = remember { createCircleMarkerBitmap(PrimaryBlue.toArgb(), 36) }
+    val cameraHighBitmap = remember { createCameraMarkerBitmap(0xFFB91C1C.toInt(), 42) }
+    val cameraMediumBitmap = remember { createCameraMarkerBitmap(0xFFF59E0B.toInt(), 42) }
+    val cameraLowBitmap = remember { createCameraMarkerBitmap(0xFF10B981.toInt(), 42) }
     
     // ── Pre-cached Live User Bitmaps by speed category (performance optimization) ──
     val liveUserBitmapFast = remember { createLiveUserMarkerBitmap(50, 0f, false) }
@@ -268,6 +292,20 @@ fun MapScreen(
     val liveUserBitmapSlow = remember { createLiveUserMarkerBitmap(5, 0f, false) }
     val liveUserBitmapStopped = remember { createLiveUserMarkerBitmap(0, 0f, false) }
     val liveUserBitmapMe = remember { createLiveUserMarkerBitmap(25, 0f, true) }
+
+    LaunchedEffect(state.cameraHistory, state.trafficCameras) {
+        state.trafficCameras.forEach { camera ->
+            val history = state.cameraHistory[camera.id].orEmpty()
+            if (isHighCongestionForFiveMinutes(history) && !alertedHighCameraIds.contains(camera.id)) {
+                alertedHighCameraIds.add(camera.id)
+                showCameraAlertNotification(
+                    context = context,
+                    title = "High congestion alert",
+                    body = "${camera.name} is HIGH for 5+ minutes (${camera.vehicleCount} vehicles)"
+                )
+            }
+        }
+    }
 
     // ── Map load timeout diagnostic ──
     var mapLoadTimedOut by remember { mutableStateOf(false) }
@@ -292,9 +330,14 @@ fun MapScreen(
                 Log.d("MapScreen", "Google Map loaded successfully")
             },
             onMapClick = { latLng ->
+                if (ignoreNextMapTap) {
+                    ignoreNextMapTap = false
+                    return@GoogleMap
+                }
                 selectedParking = null
                 selectedIncident = null
                 selectedLiveUser = null
+                selectedCamera = null
                 // Route planner tap handling
                 if (routeMode) {
                     if (routeStart == null) {
@@ -392,6 +435,59 @@ fun MapScreen(
                 }
             }
 
+            // ──────── Traffic Camera Markers ────────
+            if (showCameras) {
+                state.trafficCameras.forEach { camera ->
+                    if (!camera.hasValidLocation()) return@forEach
+                    val markerBitmap = when (camera.congestionLevel) {
+                        "HIGH" -> cameraHighBitmap
+                        "MEDIUM" -> cameraMediumBitmap
+                        else -> cameraLowBitmap
+                    }
+                    val health = getCameraHealthStatus(camera.lastUpdated)
+                    val healthLabel = when (health) {
+                        CameraHealthStatus.ONLINE -> "online"
+                        CameraHealthStatus.NO_FEED -> "no feed"
+                        CameraHealthStatus.OFFLINE -> "offline"
+                    }
+                    Marker(
+                        state = MarkerState(position = LatLng(camera.latitude, camera.longitude)),
+                        title = camera.name,
+                        snippet = "Live vehicles: ${camera.vehicleCount} · ${camera.congestionLevel} · $healthLabel",
+                        icon = BitmapDescriptorFactory.fromBitmap(markerBitmap),
+                        zIndex = 25f,
+                        onClick = {
+                            ignoreNextMapTap = true
+                            selectedParking = null
+                            selectedIncident = null
+                            selectedLiveUser = null
+                            selectedCamera = camera
+                            true
+                        }
+                    )
+                }
+            }
+
+            if (showCameraHeatmap) {
+                val cameraHeatCells = remember(state.trafficCameras, state.incidents) {
+                    buildTrafficCameraHeatCells(state.trafficCameras, state.incidents)
+                }
+                cameraHeatCells.forEach { cell ->
+                    val heatColor = when {
+                        cell.intensity >= 0.55f -> Color(0xFFDC2626)
+                        cell.intensity >= 0.35f -> Color(0xFFF97316)
+                        else -> Color(0xFF22C55E)
+                    }
+                    Circle(
+                        center = LatLng(cell.latitude, cell.longitude),
+                        radius = cell.radiusMeters,
+                        fillColor = heatColor.copy(alpha = cell.intensity),
+                        strokeColor = Color.Transparent,
+                        strokeWidth = 0f
+                    )
+                }
+            }
+
             // ──────── Congestion Zone Circles ────────
             if (showZones) {
                 state.trafficMap.forEach { (roadId, traffic) ->
@@ -417,15 +513,7 @@ fun MapScreen(
                             fillColor = zoneColor.copy(alpha = alpha),
                             strokeColor = zoneColor.copy(alpha = 0.6f),
                             strokeWidth = 2f,
-                            clickable = true,
-                            onClick = {
-                                scope.launch {
-                                    cameraPositionState.animate(
-                                        CameraUpdateFactory.newLatLngZoom(latLng, 16f),
-                                        durationMs = 600
-                                    )
-                                }
-                            }
+                            clickable = false
                         )
                     }
                 }
@@ -761,6 +849,14 @@ fun MapScreen(
                     badge = state.incidents.size.let { if (it > 0) "$it" else null },
                     onClick = { showIncidents = !showIncidents }
                 )
+                LayerChipWithBadge(
+                    label = "Cameras",
+                    icon = Icons.Outlined.Videocam,
+                    isActive = showCameras,
+                    activeColor = PrimaryBlue,
+                    badge = state.trafficCameras.size.let { if (it > 0) "$it" else null },
+                    onClick = { showCameras = !showCameras }
+                )
             }
 
             Spacer(modifier = Modifier.height(Spacing.Small))
@@ -789,10 +885,13 @@ fun MapScreen(
                 LayerChipWithBadge(
                     label = "Heat",
                     icon = Icons.Outlined.Whatshot,
-                    isActive = showHeatmap,
+                    isActive = showHeatmap || showCameraHeatmap,
                     activeColor = AccentRed,
                     badge = null,
-                    onClick = { showHeatmap = !showHeatmap }
+                    onClick = {
+                        showHeatmap = !showHeatmap
+                        showCameraHeatmap = !showCameraHeatmap
+                    }
                 )
                 LayerChipWithBadge(
                     label = "Live",
@@ -1669,6 +1768,85 @@ fun MapScreen(
             }
         }
 
+        if (showCameras && state.trafficCameras.isNotEmpty()) {
+            Surface(
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .padding(start = Spacing.Large, bottom = 196.dp),
+                shape = RoundedCornerShape(CornerRadius.Round),
+                color = PrimaryBlue,
+                shadowElevation = 4.dp
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Text(
+                        "${state.trafficCameras.size} cameras",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White,
+                        fontSize = 10.sp
+                    )
+                }
+            }
+        }
+        if (showCameras) {
+            Surface(
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .padding(start = Spacing.Medium, bottom = 116.dp),
+                shape = RoundedCornerShape(CornerRadius.Round),
+                color = colors.cardBackground.copy(alpha = 0.92f),
+                shadowElevation = 3.dp
+            ) {
+                Text(
+                    text = cameraDebugText,
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = colors.textSecondary,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+
+        if (showStatsPanel && showCameras) {
+            Surface(
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .padding(start = Spacing.Medium, bottom = 250.dp)
+                    .navigationBarsPadding(),
+                shape = RoundedCornerShape(CornerRadius.Large),
+                color = colors.cardBackground.copy(alpha = 0.96f),
+                shadowElevation = 6.dp
+            ) {
+                Column(
+                    modifier = Modifier.padding(Spacing.Medium),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Text(
+                        "Camera Insights",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = colors.textSecondary
+                    )
+                    Text(
+                        "H:${state.cameraHighCount} M:${state.cameraMediumCount} L:${state.cameraLowCount} • 5m High: ${state.highFor5MinCameras}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = colors.textPrimary
+                    )
+                    featureSuggestions.take(2).forEach { idea ->
+                        Text("• ${idea.title}", style = MaterialTheme.typography.labelSmall, color = colors.textPrimary)
+                    }
+                    improvementIdeas.take(1).forEach { idea ->
+                        Text("△ ${idea.title}", style = MaterialTheme.typography.labelSmall, color = colors.textTertiary)
+                    }
+                }
+            }
+        }
+
         // ══════════════════════ Parking Info Popup ══════════════════════
         AnimatedVisibility(
             visible = selectedParking != null,
@@ -1725,6 +1903,31 @@ fun MapScreen(
             }
         }
 
+        AnimatedVisibility(
+            visible = selectedCamera != null,
+            enter = slideInVertically { it } + fadeIn(),
+            exit = slideOutVertically { it } + fadeOut(),
+            modifier = Modifier.align(Alignment.BottomCenter)
+        ) {
+            selectedCamera?.let { camera ->
+                val routeTarget = remember(camera, state.trafficCameras) {
+                    findBestAlternateCameraTarget(camera, state.trafficCameras)
+                }
+                TrafficCameraInfoCard(
+                    camera = camera,
+                    trend15m = vm.getCameraTrend(camera.id, 15),
+                    peak1h = vm.getCameraPeak(camera.id, 1),
+                    hasAlternate = routeTarget != null,
+                    onNavigateAlternate = {
+                        routeTarget?.let { target ->
+                            openNavigation(context, target.latitude, target.longitude)
+                        }
+                    },
+                    onDismiss = { selectedCamera = null }
+                )
+            }
+        }
+
         // ══════════════════════ Snackbar Host ══════════════════════
         SnackbarHost(
             hostState = snackbarHostState,
@@ -1733,6 +1936,89 @@ fun MapScreen(
                 .navigationBarsPadding()
                 .padding(bottom = 80.dp)
         )
+    }
+}
+
+@Composable
+private fun TrafficCameraInfoCard(
+    camera: TrafficCamera,
+    trend15m: Int = 0,
+    peak1h: Int = 0,
+    hasAlternate: Boolean = false,
+    onNavigateAlternate: () -> Unit = {},
+    onDismiss: () -> Unit
+) {
+    val colors = MaterialTheme.cityFluxColors
+    val levelColor = when (camera.congestionLevel) {
+        "HIGH" -> Color(0xFFB91C1C)
+        "MEDIUM" -> Color(0xFFF59E0B)
+        else -> Color(0xFF10B981)
+    }
+    val healthStatus = getCameraHealthStatus(camera.lastUpdated)
+    val healthLabel = when (healthStatus) {
+        CameraHealthStatus.ONLINE -> "Online"
+        CameraHealthStatus.NO_FEED -> "No Feed"
+        CameraHealthStatus.OFFLINE -> "Offline"
+    }
+    val trendText = if (trend15m > 0) "+$trend15m" else trend15m.toString()
+    val trendColor = when {
+        trend15m > 8 -> Color(0xFFB91C1C)
+        trend15m > 0 -> Color(0xFFF59E0B)
+        else -> Color(0xFF10B981)
+    }
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = Spacing.Medium, vertical = Spacing.Medium)
+            .navigationBarsPadding(),
+        shape = RoundedCornerShape(CornerRadius.XLarge),
+        colors = CardDefaults.cardColors(containerColor = colors.cardBackground)
+    ) {
+        Column(modifier = Modifier.padding(Spacing.Large)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    camera.name,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = colors.textPrimary
+                )
+                IconButton(onClick = onDismiss) {
+                    Icon(Icons.Filled.Close, contentDescription = "Close", tint = colors.textTertiary)
+                }
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                StatBox("Vehicles", camera.vehicleCount.toString(), PrimaryBlue, Modifier.weight(1f))
+                StatBox("Congestion", camera.congestionLevel, levelColor, Modifier.weight(1f))
+                StatBox("Health", healthLabel, colors.textSecondary, Modifier.weight(1f))
+            }
+            Spacer(Modifier.height(8.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                StatBox("Trend 15m", trendText, trendColor, Modifier.weight(1f))
+                StatBox("Peak 1h", peak1h.toString(), PrimaryBlue, Modifier.weight(1f))
+                StatBox("Bands", "L<35 M<70", colors.textSecondary, Modifier.weight(1f))
+            }
+            if (hasAlternate) {
+                Spacer(Modifier.height(8.dp))
+                FilledTonalButton(
+                    onClick = onNavigateAlternate,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(Icons.Outlined.AltRoute, contentDescription = null)
+                    Spacer(Modifier.width(6.dp))
+                    Text("Suggest Alternate Route")
+                }
+            }
+        }
     }
 }
 
@@ -1956,6 +2242,21 @@ private fun SlotInfoChip(
     }
 }
 
+@Composable
+private fun StatBox(
+    label: String,
+    value: String,
+    color: Color,
+    modifier: Modifier = Modifier
+) {
+    SlotInfoChip(
+        label = label,
+        value = value,
+        color = color,
+        modifier = modifier
+    )
+}
+
 
 // ═══════════════════════════════════════════════════════════════════
 // Incident Info Card (Bottom popup)
@@ -2135,6 +2436,61 @@ private fun createCircleMarkerBitmap(color: Int, sizeDp: Int): Bitmap {
     canvas.drawCircle(radius, radius, radius - sizePx * 0.06f, paint)
     canvas.drawCircle(radius, radius, radius - sizePx * 0.06f, borderPaint)
     return bitmap
+}
+
+/** Camera-shaped marker for traffic cameras. */
+private fun createCameraMarkerBitmap(color: Int, sizeDp: Int): Bitmap {
+    val sizePx = (sizeDp * 2.4f).toInt()
+    val bitmap = Bitmap.createBitmap(sizePx, sizePx, Bitmap.Config.ARGB_8888)
+    val canvas = Canvas(bitmap)
+    val bodyColor = Paint(Paint.ANTI_ALIAS_FLAG).apply { this.color = color; style = Paint.Style.FILL }
+    val bodyBorder = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        this.color = android.graphics.Color.WHITE
+        style = Paint.Style.STROKE
+        strokeWidth = sizePx * 0.08f
+    }
+    val lens = Paint(Paint.ANTI_ALIAS_FLAG).apply { this.color = android.graphics.Color.WHITE; style = Paint.Style.FILL }
+    val lensInner = Paint(Paint.ANTI_ALIAS_FLAG).apply { this.color = color; style = Paint.Style.FILL }
+
+    val left = sizePx * 0.14f
+    val top = sizePx * 0.30f
+    val right = sizePx * 0.74f
+    val bottom = sizePx * 0.70f
+    val bodyRect = android.graphics.RectF(left, top, right, bottom)
+    canvas.drawRoundRect(bodyRect, sizePx * 0.12f, sizePx * 0.12f, bodyColor)
+    canvas.drawRoundRect(bodyRect, sizePx * 0.12f, sizePx * 0.12f, bodyBorder)
+
+    val tripod = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        this.color = color
+        strokeWidth = sizePx * 0.08f
+        style = Paint.Style.STROKE
+        strokeCap = Paint.Cap.ROUND
+    }
+    val centerX = sizePx * 0.44f
+    canvas.drawLine(centerX, bottom, centerX - sizePx * 0.16f, sizePx * 0.90f, tripod)
+    canvas.drawLine(centerX, bottom, centerX + sizePx * 0.16f, sizePx * 0.90f, tripod)
+    canvas.drawLine(centerX, bottom, centerX, sizePx * 0.90f, tripod)
+
+    val lensCx = sizePx * 0.58f
+    val lensCy = sizePx * 0.50f
+    val lensR = sizePx * 0.11f
+    canvas.drawCircle(lensCx, lensCy, lensR, lens)
+    canvas.drawCircle(lensCx, lensCy, lensR * 0.46f, lensInner)
+
+    val nose = android.graphics.Path().apply {
+        moveTo(right - sizePx * 0.02f, sizePx * 0.44f)
+        lineTo(sizePx * 0.93f, sizePx * 0.50f)
+        lineTo(right - sizePx * 0.02f, sizePx * 0.56f)
+        close()
+    }
+    canvas.drawPath(nose, bodyColor)
+    canvas.drawPath(nose, bodyBorder)
+
+    return bitmap
+}
+
+private fun createCameraClusterMarkerBitmap(color: Int, sizeDp: Int): Bitmap {
+    return createCameraMarkerBitmap(color, sizeDp)
 }
 
 /** Format distance in meters/km. */
@@ -2513,6 +2869,67 @@ private fun haversineDistance(a: LatLng, b: LatLng): Double {
             Math.sin(dLon / 2) * Math.sin(dLon / 2)
     return R * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h))
 }
+
+private fun findBestAlternateCameraTarget(
+    source: TrafficCamera,
+    allCameras: List<TrafficCamera>
+): TrafficCamera? {
+    val targetLevels = when (source.congestionLevel) {
+        "HIGH" -> listOf("LOW", "MEDIUM")
+        "MEDIUM" -> listOf("LOW")
+        else -> emptyList()
+    }
+    if (targetLevels.isEmpty()) return null
+    return allCameras
+        .asSequence()
+        .filter { it.id != source.id && targetLevels.contains(it.congestionLevel) && it.hasValidLocation() }
+        .minByOrNull { haversineDistance(LatLng(source.latitude, source.longitude), LatLng(it.latitude, it.longitude)) }
+}
+
+private fun showCameraAlertNotification(
+    context: Context,
+    title: String,
+    body: String
+) {
+    val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+    val channelId = "cityflux_alerts"
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+        val channel = NotificationChannel(
+            channelId,
+            "CityFlux Alerts",
+            NotificationManager.IMPORTANCE_HIGH
+        )
+        manager.createNotificationChannel(channel)
+    }
+    val notification = NotificationCompat.Builder(context, channelId)
+        .setSmallIcon(android.R.drawable.ic_dialog_alert)
+        .setContentTitle(title)
+        .setContentText(body)
+        .setPriority(NotificationCompat.PRIORITY_HIGH)
+        .setAutoCancel(true)
+        .setStyle(NotificationCompat.BigTextStyle().bigText(body))
+        .build()
+    manager.notify(System.nanoTime().toInt(), notification)
+}
+
+private data class CameraFeatureSuggestion(
+    val title: String,
+    val detail: String
+)
+
+private fun getCameraFeatureSuggestions(): List<CameraFeatureSuggestion> = listOf(
+    CameraFeatureSuggestion("Camera Feed Health Score", "Track uptime, dropouts, and stale feed rate per camera."),
+    CameraFeatureSuggestion("Smart Event Clips", "Store short clips when congestion changes sharply."),
+    CameraFeatureSuggestion("Adaptive Signal Support", "Share high-load camera zones to traffic signal optimizer."),
+    CameraFeatureSuggestion("Shift Heat Timeline", "Show morning/evening congestion drift on map timeline.")
+)
+
+private fun getCameraImprovementIdeas(): List<CameraFeatureSuggestion> = listOf(
+    CameraFeatureSuggestion("ML anomaly detection", "Detect sudden spikes beyond normal hourly baseline."),
+    CameraFeatureSuggestion("Roadwork aware routing", "Tag planned closures and avoid false congestion alerts."),
+    CameraFeatureSuggestion("Confidence score", "Show confidence from sample freshness + camera reliability."),
+    CameraFeatureSuggestion("Crowd + camera fusion", "Blend live user speed and camera count for better decisions.")
+)
 
 
 // ═══════════════════════════════════════════════════════════════════

@@ -52,7 +52,16 @@ import com.example.cityflux.model.ParkingSpot
 import com.example.cityflux.model.toParkingSpot
 import com.example.cityflux.model.Report
 import com.example.cityflux.model.SolapurDummyData
+import com.example.cityflux.model.TrafficCamera
+import com.example.cityflux.model.CameraSample
+import com.example.cityflux.model.CameraHealthStatus
+import com.example.cityflux.model.computePeakVehicles
+import com.example.cityflux.model.computeCameraTrend
+import com.example.cityflux.model.isHighCongestionForFiveMinutes
 import com.example.cityflux.model.TrafficStatus
+import com.example.cityflux.model.toTrafficCamera
+import com.example.cityflux.model.getCameraHealthStatus
+import com.example.cityflux.model.buildTrafficCameraHeatCells
 import com.example.cityflux.ui.theme.*
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.maps.CameraUpdateFactory
@@ -83,10 +92,12 @@ class CongestionMapViewModel : ViewModel() {
     data class CongestionUiState(
         val isLoading: Boolean = true,
         val trafficMap: Map<String, TrafficStatus> = emptyMap(),
+        val trafficCameras: List<TrafficCamera> = emptyList(),
         val parkingSpots: List<ParkingSpot> = emptyList(),
         val parkingLive: Map<String, ParkingLive> = emptyMap(),
         val incidents: List<Report> = emptyList(),
         val liveLocations: Map<String, LiveUserLocation> = emptyMap(),
+        val cameraHistory: Map<String, List<CameraSample>> = emptyMap(),
         val isOffline: Boolean = false,
         val error: String? = null
     ) {
@@ -97,6 +108,10 @@ class CongestionMapViewModel : ViewModel() {
         val pendingIncidents get() = incidents.count { it.status.equals("Pending", true) }
         val activeIncidents get() = incidents.count { it.status.equals("In Progress", true) }
         val liveUsersCount get() = liveLocations.size
+        val cameraHighCount get() = trafficCameras.count { it.congestionLevel == "HIGH" }
+        val cameraMediumCount get() = trafficCameras.count { it.congestionLevel == "MEDIUM" }
+        val cameraLowCount get() = trafficCameras.count { it.congestionLevel == "LOW" }
+        val highFor5MinCameras get() = cameraHistory.count { (_, history) -> isHighCongestionForFiveMinutes(history) }
     }
 
     private val _uiState = MutableStateFlow(CongestionUiState())
@@ -114,6 +129,7 @@ class CongestionMapViewModel : ViewModel() {
 
     init {
         observeTraffic()
+        observeTrafficCameras()
         observeParkingLive()
         observeLiveLocations()
         fetchParkingSpots()
@@ -160,6 +176,97 @@ class CongestionMapViewModel : ViewModel() {
                     }
                 }
         }
+    }
+
+    private fun observeTrafficCameras() {
+        var singularCameras: List<TrafficCamera> = emptyList()
+        var pluralCameras: List<TrafficCamera> = emptyList()
+        var hyphenCameras: List<TrafficCamera> = emptyList()
+
+        fun publishMerged() {
+            val mergedById = linkedMapOf<String, TrafficCamera>()
+            (singularCameras + pluralCameras + hyphenCameras).forEach { cam ->
+                val existing = mergedById[cam.id]
+                if (existing == null || cam.lastUpdated >= existing.lastUpdated) {
+                    mergedById[cam.id] = cam
+                }
+            }
+            val cameras = mergedById.values.toList()
+
+            val now = System.currentTimeMillis()
+            val previousHistory = _uiState.value.cameraHistory
+            val nextHistory = buildMap<String, List<CameraSample>> {
+                cameras.forEach { camera ->
+                    val existing = previousHistory[camera.id].orEmpty()
+                    val updated = (existing + CameraSample(now, camera.vehicleCount))
+                        .filter { now - it.timestamp <= 60 * 60_000L }
+                    put(camera.id, updated)
+                }
+            }
+
+            _uiState.update {
+                it.copy(
+                    trafficCameras = cameras,
+                    cameraHistory = nextHistory,
+                    isLoading = false
+                )
+            }
+        }
+
+        firestore.collection("traffic camera")
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    Log.e(TAG, "Traffic camera (singular) error", error)
+                    singularCameras = emptyList()
+                    publishMerged()
+                    return@addSnapshotListener
+                }
+                singularCameras = snapshot?.documents
+                    ?.mapNotNull { it.toTrafficCamera() }
+                    ?.filter { it.hasValidLocation() }
+                    .orEmpty()
+                publishMerged()
+            }
+
+        firestore.collection("traffic cameras")
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    Log.e(TAG, "Traffic cameras (plural) error", error)
+                    pluralCameras = emptyList()
+                    publishMerged()
+                    return@addSnapshotListener
+                }
+                pluralCameras = snapshot?.documents
+                    ?.mapNotNull { it.toTrafficCamera() }
+                    ?.filter { it.hasValidLocation() }
+                    .orEmpty()
+                publishMerged()
+            }
+
+        firestore.collection("traffic-cameras")
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    Log.e(TAG, "Traffic cameras (hyphen) error", error)
+                    hyphenCameras = emptyList()
+                    publishMerged()
+                    return@addSnapshotListener
+                }
+                hyphenCameras = snapshot?.documents
+                    ?.mapNotNull { it.toTrafficCamera() }
+                    ?.filter { it.hasValidLocation() }
+                    .orEmpty()
+                publishMerged()
+            }
+    }
+
+    fun getCameraTrend(cameraId: String, windowMinutes: Int): Int {
+        val history = _uiState.value.cameraHistory[cameraId].orEmpty()
+        return computeCameraTrend(history, windowMinutes)
+    }
+
+    fun getCameraPeak(cameraId: String, windowHours: Int): Int {
+        val history = _uiState.value.cameraHistory[cameraId].orEmpty()
+        return computePeakVehicles(history, windowHours * 60L * 60_000L)
     }
 
     private fun observeParkingLive() {
@@ -237,6 +344,7 @@ class CongestionMapViewModel : ViewModel() {
     fun retry() {
         _uiState.update { it.copy(isLoading = true, error = null, isOffline = false) }
         observeTraffic()
+        observeTrafficCameras()
         observeParkingLive()
         observeLiveLocations()
         fetchParkingSpots()
@@ -326,12 +434,17 @@ fun CongestionMapScreen(
     // ── Selection State ──
     var selectedIncident by remember { mutableStateOf<Report?>(null) }
     var selectedParking by remember { mutableStateOf<ParkingSpot?>(null) }
+    var selectedCamera by remember { mutableStateOf<TrafficCamera?>(null) }
+    var ignoreNextMapTap by remember { mutableStateOf(false) }
+    val alertedHighCameraIds = remember { mutableStateListOf<String>() }
 
     // ── Layer Toggles ──
     var showCongestionZones by remember { mutableStateOf(true) }
     var showIncidents by remember { mutableStateOf(true) }
     var showParking by remember { mutableStateOf(true) }
     var showLiveUsers by remember { mutableStateOf(true) }
+    var showCameras by remember { mutableStateOf(true) }
+    var showCameraHeatmap by remember { mutableStateOf(false) }
     var showStatsPanel by remember { mutableStateOf(false) }
     var selectedLiveUser by remember { mutableStateOf<Pair<String, LiveUserLocation>?>(null) }
 
@@ -348,6 +461,9 @@ fun CongestionMapScreen(
     val incidentParking = remember { createCongestionMarkerBitmap(AccentAlerts.toArgb(), 34) }
     val incidentHawker = remember { createCongestionMarkerBitmap(AccentOrange.toArgb(), 34) }
     val incidentDefault = remember { createCongestionMarkerBitmap(PrimaryBlue.toArgb(), 34) }
+    val cameraHigh = remember { createCameraMarkerBitmapPolice(0xFFB91C1C.toInt(), 40) }
+    val cameraMedium = remember { createCameraMarkerBitmapPolice(0xFFF59E0B.toInt(), 40) }
+    val cameraLow = remember { createCameraMarkerBitmapPolice(0xFF10B981.toInt(), 40) }
     
     // ── Pre-cached Live User Bitmaps by speed category (performance optimization) ──
     val liveUserBitmapFast = remember { createLiveUserMarkerBitmapPolice(50, 0f) }
@@ -362,6 +478,22 @@ fun CongestionMapScreen(
     val congestionMedStroke = Color(0xFFF59E0B).copy(alpha = 0.50f)
     val congestionLowFill = Color(0xFF10B981).copy(alpha = 0.10f)
     val congestionLowStroke = Color(0xFF10B981).copy(alpha = 0.35f)
+    val featureSuggestions = remember { getPoliceCameraFeatureSuggestions() }
+    val improvementIdeas = remember { getPoliceCameraImprovementIdeas() }
+
+    LaunchedEffect(state.cameraHistory, state.trafficCameras) {
+        state.trafficCameras.forEach { camera ->
+            val history = state.cameraHistory[camera.id].orEmpty()
+            if (isHighCongestionForFiveMinutes(history) && !alertedHighCameraIds.contains(camera.id)) {
+                alertedHighCameraIds.add(camera.id)
+                showPoliceCameraAlertNotification(
+                    context = context,
+                    title = "Dispatch alert",
+                    body = "${camera.name} remains HIGH for 5+ minutes (${camera.vehicleCount})"
+                )
+            }
+        }
+    }
 
     Box(modifier = Modifier.fillMaxSize()) {
 
@@ -372,9 +504,14 @@ fun CongestionMapScreen(
             properties = mapProperties,
             uiSettings = uiSettings,
             onMapClick = {
+                if (ignoreNextMapTap) {
+                    ignoreNextMapTap = false
+                    return@GoogleMap
+                }
                 selectedIncident = null
                 selectedParking = null
                 selectedLiveUser = null
+                selectedCamera = null
             }
         ) {
 
@@ -402,16 +539,7 @@ fun CongestionMapScreen(
                         fillColor = fillColor,
                         strokeColor = strokeColor,
                         strokeWidth = 3f,
-                        clickable = true,
-                        onClick = {
-                            // Zoom into the congestion zone on click
-                            scope.launch {
-                                cameraPositionState.animate(
-                                    CameraUpdateFactory.newLatLngZoom(latLng, 16f),
-                                    durationMs = 600
-                                )
-                            }
-                        }
+                        clickable = false
                     )
 
                     // Congestion marker at center of zone
@@ -519,6 +647,59 @@ fun CongestionMapScreen(
                             selectedLiveUser = uid to loc
                             true
                         }
+                    )
+                }
+            }
+
+            // ──── Traffic Camera Markers ────
+            if (showCameras) {
+                state.trafficCameras.forEach { camera ->
+                    if (!camera.hasValidLocation()) return@forEach
+                    val cameraIcon = when (camera.congestionLevel) {
+                        "HIGH" -> cameraHigh
+                        "MEDIUM" -> cameraMedium
+                        else -> cameraLow
+                    }
+                    val health = getCameraHealthStatus(camera.lastUpdated)
+                    val healthLabel = when (health) {
+                        CameraHealthStatus.ONLINE -> "online"
+                        CameraHealthStatus.NO_FEED -> "no feed"
+                        CameraHealthStatus.OFFLINE -> "offline"
+                    }
+                    Marker(
+                        state = MarkerState(position = LatLng(camera.latitude, camera.longitude)),
+                        title = camera.name,
+                        snippet = "Vehicles: ${camera.vehicleCount} · ${camera.congestionLevel} · $healthLabel",
+                        icon = BitmapDescriptorFactory.fromBitmap(cameraIcon),
+                        zIndex = 25f,
+                        onClick = {
+                            ignoreNextMapTap = true
+                            selectedIncident = null
+                            selectedParking = null
+                            selectedLiveUser = null
+                            selectedCamera = camera
+                            true
+                        }
+                    )
+                }
+            }
+
+            if (showCameraHeatmap) {
+                val cameraHeatCells = remember(state.trafficCameras, state.incidents) {
+                    buildTrafficCameraHeatCells(state.trafficCameras, state.incidents)
+                }
+                cameraHeatCells.forEach { cell ->
+                    val heatColor = when {
+                        cell.intensity >= 0.55f -> Color(0xFFDC2626)
+                        cell.intensity >= 0.35f -> Color(0xFFF97316)
+                        else -> Color(0xFF22C55E)
+                    }
+                    Circle(
+                        center = LatLng(cell.latitude, cell.longitude),
+                        radius = cell.radiusMeters,
+                        fillColor = heatColor.copy(alpha = cell.intensity),
+                        strokeColor = Color.Transparent,
+                        strokeWidth = 0f
                     )
                 }
             }
@@ -650,6 +831,26 @@ fun CongestionMapScreen(
                         onClick = { showLiveUsers = !showLiveUsers }
                     )
                 }
+                item {
+                    CongestionLayerChip(
+                        label = "Cameras",
+                        icon = Icons.Outlined.Videocam,
+                        isActive = showCameras,
+                        activeColor = PrimaryBlue,
+                        count = state.trafficCameras.size,
+                        onClick = { showCameras = !showCameras }
+                    )
+                }
+                item {
+                    CongestionLayerChip(
+                        label = "Heat",
+                        icon = Icons.Outlined.Whatshot,
+                        isActive = showCameraHeatmap,
+                        activeColor = AccentRed,
+                        count = 0,
+                        onClick = { showCameraHeatmap = !showCameraHeatmap }
+                    )
+                }
             }
         }
 
@@ -741,12 +942,57 @@ fun CongestionMapScreen(
                 LegendRow(color = Color(0xFFB91C1C), label = "High", count = state.highCount)
                 LegendRow(color = Color(0xFFF59E0B), label = "Medium", count = state.mediumCount)
                 LegendRow(color = Color(0xFF10B981), label = "Low", count = state.lowCount)
+                if (showCameras && state.trafficCameras.isNotEmpty()) {
+                    HorizontalDivider(
+                        color = colors.divider,
+                        thickness = 0.5.dp
+                    )
+                    LegendRow(color = PrimaryBlue, label = "Cameras", count = state.trafficCameras.size)
+                }
+                if (state.highFor5MinCameras > 0) {
+                    LegendRow(color = Color(0xFFB91C1C), label = "5m Alerts", count = state.highFor5MinCameras)
+                }
                 if (showLiveUsers && state.liveUsersCount > 0) {
                     HorizontalDivider(
                         color = colors.divider,
                         thickness = 0.5.dp
                     )
                     LegendRow(color = AccentGreen, label = "Live", count = state.liveUsersCount)
+                }
+            }
+        }
+
+        if (showStatsPanel && showCameras) {
+            Surface(
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .padding(start = Spacing.Medium, bottom = 220.dp)
+                    .navigationBarsPadding(),
+                shape = RoundedCornerShape(CornerRadius.Large),
+                color = colors.cardBackground.copy(alpha = 0.96f),
+                shadowElevation = 6.dp
+            ) {
+                Column(
+                    modifier = Modifier.padding(Spacing.Medium),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Text(
+                        "Camera Ops",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = colors.textSecondary
+                    )
+                    Text(
+                        "H:${state.cameraHighCount} M:${state.cameraMediumCount} L:${state.cameraLowCount} • 5m High: ${state.highFor5MinCameras}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = colors.textPrimary
+                    )
+                    featureSuggestions.take(2).forEach { idea ->
+                        Text("• ${idea.title}", style = MaterialTheme.typography.labelSmall, color = colors.textPrimary)
+                    }
+                    improvementIdeas.take(1).forEach { idea ->
+                        Text("△ ${idea.title}", style = MaterialTheme.typography.labelSmall, color = colors.textTertiary)
+                    }
                 }
             }
         }
@@ -863,6 +1109,31 @@ fun CongestionMapScreen(
                     uid = uid,
                     loc = loc,
                     onDismiss = { selectedLiveUser = null }
+                )
+            }
+        }
+
+        AnimatedVisibility(
+            visible = selectedCamera != null,
+            enter = slideInVertically { it } + fadeIn(),
+            exit = slideOutVertically { it } + fadeOut(),
+            modifier = Modifier.align(Alignment.BottomCenter)
+        ) {
+            selectedCamera?.let { camera ->
+                val routeTarget = remember(camera, state.trafficCameras) {
+                    findBestAlternateCameraTargetPolice(camera, state.trafficCameras)
+                }
+                PoliceTrafficCameraCard(
+                    camera = camera,
+                    trend15m = vm.getCameraTrend(camera.id, 15),
+                    peak1h = vm.getCameraPeak(camera.id, 1),
+                    hasAlternate = routeTarget != null,
+                    onNavigateAlternate = {
+                        routeTarget?.let { target ->
+                            openPoliceNavigation(context, target.latitude, target.longitude)
+                        }
+                    },
+                    onDismiss = { selectedCamera = null }
                 )
             }
         }
@@ -1438,6 +1709,60 @@ private fun createCongestionMarkerBitmap(color: Int, sizeDp: Int): Bitmap {
     return bitmap
 }
 
+private fun createCameraMarkerBitmapPolice(color: Int, sizeDp: Int): Bitmap {
+    val sizePx = (sizeDp * 2.4f).toInt()
+    val bitmap = Bitmap.createBitmap(sizePx, sizePx, Bitmap.Config.ARGB_8888)
+    val canvas = Canvas(bitmap)
+    val body = Paint(Paint.ANTI_ALIAS_FLAG).apply { this.color = color; style = Paint.Style.FILL }
+    val border = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        this.color = android.graphics.Color.WHITE
+        style = Paint.Style.STROKE
+        strokeWidth = sizePx * 0.08f
+    }
+    val lensOuter = Paint(Paint.ANTI_ALIAS_FLAG).apply { this.color = android.graphics.Color.WHITE; style = Paint.Style.FILL }
+    val lensInner = Paint(Paint.ANTI_ALIAS_FLAG).apply { this.color = color; style = Paint.Style.FILL }
+
+    val left = sizePx * 0.14f
+    val top = sizePx * 0.30f
+    val right = sizePx * 0.74f
+    val bottom = sizePx * 0.70f
+    val bodyRect = android.graphics.RectF(left, top, right, bottom)
+    canvas.drawRoundRect(bodyRect, sizePx * 0.12f, sizePx * 0.12f, body)
+    canvas.drawRoundRect(bodyRect, sizePx * 0.12f, sizePx * 0.12f, border)
+
+    val tripod = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        this.color = color
+        strokeWidth = sizePx * 0.08f
+        style = Paint.Style.STROKE
+        strokeCap = Paint.Cap.ROUND
+    }
+    val centerX = sizePx * 0.44f
+    canvas.drawLine(centerX, bottom, centerX - sizePx * 0.16f, sizePx * 0.90f, tripod)
+    canvas.drawLine(centerX, bottom, centerX + sizePx * 0.16f, sizePx * 0.90f, tripod)
+    canvas.drawLine(centerX, bottom, centerX, sizePx * 0.90f, tripod)
+
+    val lensCx = sizePx * 0.58f
+    val lensCy = sizePx * 0.50f
+    val lensR = sizePx * 0.11f
+    canvas.drawCircle(lensCx, lensCy, lensR, lensOuter)
+    canvas.drawCircle(lensCx, lensCy, lensR * 0.46f, lensInner)
+
+    val nose = android.graphics.Path().apply {
+        moveTo(right - sizePx * 0.02f, sizePx * 0.44f)
+        lineTo(sizePx * 0.93f, sizePx * 0.50f)
+        lineTo(right - sizePx * 0.02f, sizePx * 0.56f)
+        close()
+    }
+    canvas.drawPath(nose, body)
+    canvas.drawPath(nose, border)
+
+    return bitmap
+}
+
+private fun createCameraClusterMarkerBitmapPolice(color: Int, sizeDp: Int): Bitmap {
+    return createCameraMarkerBitmapPolice(color, sizeDp)
+}
+
 /**
  * Parse lat/lng from road ID. Supports format "road_LAT_LNG" (underscores as separators),
  * or falls back to a deterministic offset from the default center so zones spread out on the map.
@@ -1567,6 +1892,96 @@ private fun buildPoliceTrafficCells(locations: List<LiveUserLocation>): List<Pol
         PoliceHeatCell(LatLng(avgLat, avgLng), radius, color)
     }
 }
+
+private fun findBestAlternateCameraTargetPolice(
+    source: TrafficCamera,
+    allCameras: List<TrafficCamera>
+): TrafficCamera? {
+    val targetLevels = when (source.congestionLevel) {
+        "HIGH" -> listOf("LOW", "MEDIUM")
+        "MEDIUM" -> listOf("LOW")
+        else -> emptyList()
+    }
+    if (targetLevels.isEmpty()) return null
+    return allCameras
+        .asSequence()
+        .filter { it.id != source.id && targetLevels.contains(it.congestionLevel) && it.hasValidLocation() }
+        .minByOrNull { haversineDistancePolice(source.latitude, source.longitude, it.latitude, it.longitude) }
+}
+
+private fun openPoliceNavigation(context: Context, lat: Double, lng: Double) {
+    val uri = android.net.Uri.parse("google.navigation:q=$lat,$lng&mode=d")
+    val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, uri).apply {
+        setPackage("com.google.android.apps.maps")
+    }
+    try {
+        context.startActivity(intent)
+    } catch (_: Exception) {
+        val fallback = android.content.Intent(
+            android.content.Intent.ACTION_VIEW,
+            android.net.Uri.parse("https://www.google.com/maps/dir/?api=1&destination=$lat,$lng")
+        )
+        context.startActivity(fallback)
+    }
+}
+
+private fun haversineDistancePolice(
+    lat1: Double,
+    lng1: Double,
+    lat2: Double,
+    lng2: Double
+): Double {
+    val r = 6371.0
+    val dLat = Math.toRadians(lat2 - lat1)
+    val dLng = Math.toRadians(lng2 - lng1)
+    val a = kotlin.math.sin(dLat / 2) * kotlin.math.sin(dLat / 2) +
+            kotlin.math.cos(Math.toRadians(lat1)) * kotlin.math.cos(Math.toRadians(lat2)) *
+            kotlin.math.sin(dLng / 2) * kotlin.math.sin(dLng / 2)
+    return r * 2 * kotlin.math.atan2(kotlin.math.sqrt(a), kotlin.math.sqrt(1 - a))
+}
+
+private fun showPoliceCameraAlertNotification(
+    context: Context,
+    title: String,
+    body: String
+) {
+    val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
+    val channelId = "cityflux_alerts"
+    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+        val channel = android.app.NotificationChannel(
+            channelId,
+            "CityFlux Alerts",
+            android.app.NotificationManager.IMPORTANCE_HIGH
+        )
+        manager.createNotificationChannel(channel)
+    }
+    val notification = androidx.core.app.NotificationCompat.Builder(context, channelId)
+        .setSmallIcon(android.R.drawable.ic_dialog_alert)
+        .setContentTitle(title)
+        .setContentText(body)
+        .setPriority(androidx.core.app.NotificationCompat.PRIORITY_HIGH)
+        .setAutoCancel(true)
+        .setStyle(androidx.core.app.NotificationCompat.BigTextStyle().bigText(body))
+        .build()
+    manager.notify(System.nanoTime().toInt(), notification)
+}
+
+private data class PoliceCameraFeatureSuggestion(
+    val title: String,
+    val detail: String
+)
+
+private fun getPoliceCameraFeatureSuggestions(): List<PoliceCameraFeatureSuggestion> = listOf(
+    PoliceCameraFeatureSuggestion("Auto dispatch queue", "Queue repeated 5m-high cameras for patrol assignment."),
+    PoliceCameraFeatureSuggestion("Intersection balancing", "Compare neighboring cameras and shift personnel."),
+    PoliceCameraFeatureSuggestion("Signal override hints", "Recommend manual signal timing changes.")
+)
+
+private fun getPoliceCameraImprovementIdeas(): List<PoliceCameraFeatureSuggestion> = listOf(
+    PoliceCameraFeatureSuggestion("Priority corridor mode", "Keep ambulance/fire corridors uncongested."),
+    PoliceCameraFeatureSuggestion("Camera confidence graph", "Track each camera reliability over shifts."),
+    PoliceCameraFeatureSuggestion("Patrol SLA monitor", "Measure time from alert to action closure.")
+)
 
 
 // ═══════════════════════════════════════════════════════════════════
@@ -1708,6 +2123,94 @@ private fun PoliceLiveUserCard(
                         )
                         Text("Lat", style = MaterialTheme.typography.labelSmall, color = colors.textTertiary, fontSize = 10.sp)
                     }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PoliceTrafficCameraCard(
+    camera: TrafficCamera,
+    trend15m: Int = 0,
+    peak1h: Int = 0,
+    hasAlternate: Boolean = false,
+    onNavigateAlternate: () -> Unit = {},
+    onDismiss: () -> Unit
+) {
+    val colors = MaterialTheme.cityFluxColors
+    val levelColor = when (camera.congestionLevel) {
+        "HIGH" -> Color(0xFFB91C1C)
+        "MEDIUM" -> Color(0xFFF59E0B)
+        else -> Color(0xFF10B981)
+    }
+    val healthStatus = getCameraHealthStatus(camera.lastUpdated)
+    val healthLabel = when (healthStatus) {
+        CameraHealthStatus.ONLINE -> "Online"
+        CameraHealthStatus.NO_FEED -> "No Feed"
+        CameraHealthStatus.OFFLINE -> "Offline"
+    }
+    val trendText = if (trend15m > 0) "+$trend15m" else trend15m.toString()
+    val trendColor = when {
+        trend15m > 8 -> Color(0xFFB91C1C)
+        trend15m > 0 -> Color(0xFFF59E0B)
+        else -> Color(0xFF10B981)
+    }
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = Spacing.Medium, vertical = Spacing.Medium)
+            .navigationBarsPadding()
+            .shadow(8.dp, RoundedCornerShape(CornerRadius.XLarge), ambientColor = colors.cardShadow),
+        shape = RoundedCornerShape(CornerRadius.XLarge),
+        colors = CardDefaults.cardColors(containerColor = colors.cardBackground)
+    ) {
+        Column(modifier = Modifier.padding(Spacing.Large)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    camera.name,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = colors.textPrimary
+                )
+                IconButton(onClick = onDismiss, modifier = Modifier.size(28.dp)) {
+                    Icon(Icons.Filled.Close, "Close", tint = colors.textTertiary, modifier = Modifier.size(18.dp))
+                }
+            }
+
+            Spacer(Modifier.height(Spacing.Medium))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                ParkingSlotChip("Vehicles", camera.vehicleCount.toString(), PrimaryBlue, Modifier.weight(1f))
+                ParkingSlotChip("Congestion", camera.congestionLevel, levelColor, Modifier.weight(1f))
+                ParkingSlotChip("Health", healthLabel, colors.textSecondary, Modifier.weight(1f))
+            }
+            Spacer(Modifier.height(8.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                ParkingSlotChip("Trend 15m", trendText, trendColor, Modifier.weight(1f))
+                ParkingSlotChip("Peak 1h", peak1h.toString(), PrimaryBlue, Modifier.weight(1f))
+                ParkingSlotChip("Bands", "L<35 M<70", colors.textSecondary, Modifier.weight(1f))
+            }
+            if (hasAlternate) {
+                Spacer(Modifier.height(8.dp))
+                FilledTonalButton(
+                    onClick = onNavigateAlternate,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(Icons.Outlined.AltRoute, contentDescription = null)
+                    Spacer(Modifier.width(6.dp))
+                    Text("Dispatch Alternate Route")
                 }
             }
         }

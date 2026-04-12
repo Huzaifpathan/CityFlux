@@ -158,6 +158,69 @@ object SolapurDummyData {
     }
 
     /**
+     * Dummy traffic cameras that mirror Firestore `traffic cameras` collection shape.
+     * Used until real live vehicle counts are connected.
+     */
+    val dummyTrafficCameras: List<TrafficCamera> = listOf(
+        TrafficCamera(
+            id = "cam_railway_station",
+            name = "Railway Station Camera",
+            latitude = 17.6715,
+            longitude = 75.9164,
+            vehicleCount = 82,
+            lastUpdated = System.currentTimeMillis()
+        ),
+        TrafficCamera(
+            id = "cam_budhwar_peth",
+            name = "Budhwar Peth Camera",
+            latitude = 17.6650,
+            longitude = 75.9100,
+            vehicleCount = 76,
+            lastUpdated = System.currentTimeMillis()
+        ),
+        TrafficCamera(
+            id = "cam_bus_stand",
+            name = "Central Bus Stand Camera",
+            latitude = 17.6700,
+            longitude = 75.9050,
+            vehicleCount = 68,
+            lastUpdated = System.currentTimeMillis()
+        ),
+        TrafficCamera(
+            id = "cam_civil_hospital",
+            name = "Civil Hospital Camera",
+            latitude = 17.6530,
+            longitude = 75.9130,
+            vehicleCount = 49,
+            lastUpdated = System.currentTimeMillis()
+        ),
+        TrafficCamera(
+            id = "cam_city_center",
+            name = "City Center Camera",
+            latitude = 17.6599,
+            longitude = 75.9064,
+            vehicleCount = 38,
+            lastUpdated = System.currentTimeMillis()
+        ),
+        TrafficCamera(
+            id = "cam_akkalkot_road",
+            name = "Akkalkot Road Camera",
+            latitude = 17.6580,
+            longitude = 75.9250,
+            vehicleCount = 22,
+            lastUpdated = System.currentTimeMillis()
+        ),
+        TrafficCamera(
+            id = "cam_vijapur_road",
+            name = "Vijapur Road Camera",
+            latitude = 17.6750,
+            longitude = 75.9100,
+            vehicleCount = 16,
+            lastUpdated = System.currentTimeMillis()
+        )
+    )
+
+    /**
      * Get congestion level for a specific road ID
      */
     fun getRoadCongestionLevel(roadId: String): String {
