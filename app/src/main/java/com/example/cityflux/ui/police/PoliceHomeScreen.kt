@@ -15,6 +15,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -23,12 +24,14 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.cityflux.R
 import com.example.cityflux.data.RealtimeDbService
 import com.example.cityflux.model.ParkingLive
 import com.example.cityflux.model.ParkingSpot
@@ -37,6 +40,7 @@ import com.example.cityflux.model.Report
 import com.example.cityflux.model.SolapurDummyData
 import com.example.cityflux.model.TrafficStatus
 import com.example.cityflux.model.LocationUtils
+import com.example.cityflux.ui.dashboard.CityFluxAIScreen
 import com.example.cityflux.ui.theme.*
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
@@ -57,6 +61,16 @@ fun PoliceHomeScreen(
     val colors = MaterialTheme.cityFluxColors
     val auth = FirebaseAuth.getInstance()
     val firestore = FirebaseFirestore.getInstance()
+    var showAIScreen by remember { mutableStateOf(false) }
+
+    if (showAIScreen) {
+        CityFluxAIScreen(
+            onClose = { showAIScreen = false },
+            apiKey = geminiApiKey,
+            userType = "police"
+        )
+        return
+    }
 
     // ── User profile ──
     var userName by remember { mutableStateOf<String?>(null) }
@@ -271,11 +285,12 @@ fun PoliceHomeScreen(
             .statusBarsPadding()
     ) {
         // ──────── HEADER ────────
-        PoliceHomeTopBar(
+        PoliceHomeGreetingCard(
             userName = userName,
             userLoading = userLoading,
             unreadCount = unreadCount,
             areaName = policeAreaName,
+            onAIClick = { showAIScreen = true },
             onNotificationClick = { onNavigateToTab(PoliceTab.REPORTS) },
             onProfileClick = { onNavigateToTab(PoliceTab.PROFILE) }
         )
@@ -491,6 +506,257 @@ fun PoliceHomeScreen(
 // ═══════════════════════════════════════════════════════════════════
 // ── TOP BAR ─────────────────────────────────────────────────────
 // ═══════════════════════════════════════════════════════════════════
+
+@Composable
+private fun PoliceHomeGreetingCard(
+    userName: String?,
+    userLoading: Boolean,
+    unreadCount: Int,
+    areaName: String = "",
+    onAIClick: () -> Unit,
+    onNotificationClick: () -> Unit,
+    onProfileClick: () -> Unit
+) {
+    val greeting = remember {
+        val hour = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)
+        when {
+            hour < 12 -> "Good Morning"
+            hour < 17 -> "Good Afternoon"
+            else -> "Good Evening"
+        }
+    }
+    val greetingEmoji = remember {
+        val hour = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)
+        when {
+            hour < 12 -> "\u2600\uFE0F"
+            hour < 17 -> "\uD83C\uDF24\uFE0F"
+            hour < 20 -> "\uD83C\uDF06"
+            else -> "\uD83C\uDF19"
+        }
+    }
+    val opsLabel = remember(areaName) {
+        if (areaName.isNotBlank()) "$areaName | Live Operations"
+        else "City Traffic Control | Live Operations"
+    }
+
+    val infiniteTransition = rememberInfiniteTransition(label = "policeTopBarBreath")
+    val breathScale by infiniteTransition.animateFloat(
+        initialValue = 1f,
+        targetValue = 1.01f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(3000, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "policeTopBarBreathScale"
+    )
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = Spacing.Large, vertical = Spacing.Medium)
+            .scale(breathScale)
+            .shadow(
+                elevation = 16.dp,
+                shape = RoundedCornerShape(20.dp),
+                ambientColor = PrimaryBlue.copy(alpha = 0.25f),
+                spotColor = GradientBright.copy(alpha = 0.15f)
+            ),
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.Transparent)
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(
+                    Brush.linearGradient(
+                        colors = listOf(
+                            Color(0xFF1E3A5F),
+                            Color(0xFF2E5A8F),
+                            Color(0xFF1E4976)
+                        ),
+                        start = Offset.Zero,
+                        end = Offset(Float.POSITIVE_INFINITY, Float.POSITIVE_INFINITY)
+                    )
+                )
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(
+                        Brush.radialGradient(
+                            colors = listOf(
+                                Color.White.copy(alpha = 0.08f),
+                                Color.Transparent
+                            ),
+                            center = Offset(100f, 50f),
+                            radius = 300f
+                        )
+                    )
+            )
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp, vertical = 16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(52.dp)
+                        .clip(CircleShape)
+                        .background(
+                            Brush.linearGradient(
+                                colors = listOf(
+                                    Color(0xFF60A5FA),
+                                    Color(0xFF3B82F6)
+                                )
+                            )
+                        )
+                        .padding(2.dp)
+                        .clip(CircleShape)
+                        .background(Color(0xFF1E3A5F)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (!userLoading && !userName.isNullOrBlank()) {
+                        Text(
+                            text = userName.first().uppercaseChar().toString(),
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White
+                        )
+                    } else {
+                        Icon(
+                            imageVector = Icons.Filled.Shield,
+                            contentDescription = null,
+                            tint = Color.White,
+                            modifier = Modifier.size(26.dp)
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.width(14.dp))
+
+                Column(modifier = Modifier.weight(1f)) {
+                    if (userLoading) {
+                        Box(
+                            modifier = Modifier
+                                .width(120.dp)
+                                .height(16.dp)
+                                .clip(RoundedCornerShape(4.dp))
+                                .background(Color.White.copy(alpha = 0.2f))
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Box(
+                            modifier = Modifier
+                                .width(150.dp)
+                                .height(12.dp)
+                                .clip(RoundedCornerShape(4.dp))
+                                .background(Color.White.copy(alpha = 0.15f))
+                        )
+                    } else {
+                        Text(
+                            text = "$greeting $greetingEmoji",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color(0xFF93C5FD),
+                            fontWeight = FontWeight.Medium,
+                            letterSpacing = 0.5.sp
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = "Officer ${userName ?: "On Duty"}",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White,
+                            letterSpacing = 0.25.sp
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = opsLabel,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color.White.copy(alpha = 0.76f),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Surface(
+                        onClick = onAIClick,
+                        shape = CircleShape,
+                        color = Color.White.copy(alpha = 0.12f),
+                        modifier = Modifier.size(40.dp)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                painter = painterResource(id = R.drawable.ic_ai_assistant),
+                                contentDescription = "CityFlux AI",
+                                tint = Color.Unspecified,
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
+                    }
+
+                    Box {
+                        Surface(
+                            onClick = onNotificationClick,
+                            shape = CircleShape,
+                            color = Color.White.copy(alpha = 0.12f),
+                            modifier = Modifier.size(40.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = Icons.Outlined.Notifications,
+                                    contentDescription = "Notifications",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        }
+                        if (unreadCount > 0) {
+                            Surface(
+                                modifier = Modifier
+                                    .align(Alignment.TopEnd)
+                                    .offset(x = 4.dp, y = (-2).dp),
+                                shape = CircleShape,
+                                color = AccentRed,
+                                shadowElevation = 2.dp
+                            ) {
+                                Text(
+                                    text = if (unreadCount > 99) "99+" else "$unreadCount",
+                                    modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White
+                                )
+                            }
+                        }
+                    }
+
+                    Surface(
+                        onClick = onProfileClick,
+                        shape = CircleShape,
+                        color = Color.White.copy(alpha = 0.12f),
+                        modifier = Modifier.size(40.dp)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = Icons.Outlined.AccountCircle,
+                                contentDescription = "Profile",
+                                tint = Color.White,
+                                modifier = Modifier.size(21.dp)
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
 
 @Composable
 private fun PoliceHomeTopBar(

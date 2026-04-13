@@ -62,6 +62,9 @@ import com.example.cityflux.model.TrafficStatus
 import com.example.cityflux.model.toTrafficCamera
 import com.example.cityflux.model.getCameraHealthStatus
 import com.example.cityflux.model.buildTrafficCameraHeatCells
+import com.example.cityflux.ui.map.MarkerGlyph
+import com.example.cityflux.ui.map.createLiveUserPinBitmap
+import com.example.cityflux.ui.map.createSymbolPinBitmap
 import com.example.cityflux.ui.theme.*
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.maps.CameraUpdateFactory
@@ -452,24 +455,24 @@ fun CongestionMapScreen(
     val isOffline = remember { !isNetworkAvailablePolice(context) }
 
     // ── Custom Marker Bitmaps (cached) ──
-    val highBitmap = remember { createCongestionMarkerBitmap(0xFFB91C1C.toInt(), 44) }
-    val medBitmap = remember { createCongestionMarkerBitmap(0xFFF59E0B.toInt(), 38) }
-    val lowBitmap = remember { createCongestionMarkerBitmap(0xFF10B981.toInt(), 32) }
-    val parkingGreen = remember { createCongestionMarkerBitmap(AccentParking.toArgb(), 36) }
-    val parkingRed = remember { createCongestionMarkerBitmap(AccentRed.toArgb(), 36) }
-    val incidentAccident = remember { createCongestionMarkerBitmap(0xFFDC2626.toInt(), 34) }
-    val incidentParking = remember { createCongestionMarkerBitmap(AccentAlerts.toArgb(), 34) }
-    val incidentHawker = remember { createCongestionMarkerBitmap(AccentOrange.toArgb(), 34) }
-    val incidentDefault = remember { createCongestionMarkerBitmap(PrimaryBlue.toArgb(), 34) }
-    val cameraHigh = remember { createCameraMarkerBitmapPolice(0xFFB91C1C.toInt(), 40) }
-    val cameraMedium = remember { createCameraMarkerBitmapPolice(0xFFF59E0B.toInt(), 40) }
-    val cameraLow = remember { createCameraMarkerBitmapPolice(0xFF10B981.toInt(), 40) }
+    val highBitmap = remember { createSymbolPinBitmap(0xFFB91C1C.toInt(), 44, MarkerGlyph.TRAFFIC) }
+    val medBitmap = remember { createSymbolPinBitmap(0xFFF59E0B.toInt(), 38, MarkerGlyph.TRAFFIC) }
+    val lowBitmap = remember { createSymbolPinBitmap(0xFF10B981.toInt(), 32, MarkerGlyph.TRAFFIC) }
+    val parkingGreen = remember { createSymbolPinBitmap(AccentParking.toArgb(), 36, MarkerGlyph.PARKING) }
+    val parkingRed = remember { createSymbolPinBitmap(AccentRed.toArgb(), 36, MarkerGlyph.PARKING) }
+    val incidentAccident = remember { createSymbolPinBitmap(0xFFDC2626.toInt(), 34, MarkerGlyph.INCIDENT) }
+    val incidentParking = remember { createSymbolPinBitmap(AccentAlerts.toArgb(), 34, MarkerGlyph.PARKING_ALERT) }
+    val incidentHawker = remember { createSymbolPinBitmap(AccentOrange.toArgb(), 34, MarkerGlyph.HAWKER) }
+    val incidentDefault = remember { createSymbolPinBitmap(PrimaryBlue.toArgb(), 34, MarkerGlyph.INCIDENT) }
+    val cameraHigh = remember { createSymbolPinBitmap(0xFFB91C1C.toInt(), 40, MarkerGlyph.CAMERA) }
+    val cameraMedium = remember { createSymbolPinBitmap(0xFFF59E0B.toInt(), 40, MarkerGlyph.CAMERA) }
+    val cameraLow = remember { createSymbolPinBitmap(0xFF10B981.toInt(), 40, MarkerGlyph.CAMERA) }
     
     // ── Pre-cached Live User Bitmaps by speed category (performance optimization) ──
-    val liveUserBitmapFast = remember { createLiveUserMarkerBitmapPolice(50, 0f) }
-    val liveUserBitmapModerate = remember { createLiveUserMarkerBitmapPolice(25, 0f) }
-    val liveUserBitmapSlow = remember { createLiveUserMarkerBitmapPolice(5, 0f) }
-    val liveUserBitmapStopped = remember { createLiveUserMarkerBitmapPolice(0, 0f) }
+    val liveUserBitmapFast = remember { createLiveUserPinBitmap(50, false) }
+    val liveUserBitmapModerate = remember { createLiveUserPinBitmap(25, false) }
+    val liveUserBitmapSlow = remember { createLiveUserPinBitmap(5, false) }
+    val liveUserBitmapStopped = remember { createLiveUserPinBitmap(0, false) }
 
     // ── Congestion zone colors for circles ──
     val congestionHighFill = Color(0xFFB91C1C).copy(alpha = 0.30f)
@@ -639,8 +642,7 @@ fun CongestionMapScreen(
                         title = loc.name,
                         snippet = "${loc.speed} km/h · $speedLabel",
                         icon = BitmapDescriptorFactory.fromBitmap(markerBitmap),
-                        flat = true,
-                        anchor = androidx.compose.ui.geometry.Offset(0.5f, 0.5f),
+                        anchor = androidx.compose.ui.geometry.Offset(0.5f, 1f),
                         onClick = {
                             selectedIncident = null
                             selectedParking = null
@@ -1686,77 +1688,11 @@ private fun ParkingSlotChip(
 
 /** Create a colored circle bitmap for map markers with a ring border. */
 private fun createCongestionMarkerBitmap(color: Int, sizeDp: Int): Bitmap {
-    val sizePx = (sizeDp * 2.5f).toInt()
-    val bitmap = Bitmap.createBitmap(sizePx, sizePx, Bitmap.Config.ARGB_8888)
-    val canvas = Canvas(bitmap)
-    val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        this.color = color
-        style = Paint.Style.FILL
-    }
-    val borderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        this.color = android.graphics.Color.WHITE
-        style = Paint.Style.STROKE
-        strokeWidth = sizePx * 0.14f
-    }
-    val innerDot = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        this.color = android.graphics.Color.WHITE
-        style = Paint.Style.FILL
-    }
-    val radius = sizePx / 2f
-    canvas.drawCircle(radius, radius, radius - sizePx * 0.07f, paint)
-    canvas.drawCircle(radius, radius, radius - sizePx * 0.07f, borderPaint)
-    canvas.drawCircle(radius, radius, radius * 0.22f, innerDot)
-    return bitmap
+    return createSymbolPinBitmap(color, sizeDp, MarkerGlyph.TRAFFIC)
 }
 
 private fun createCameraMarkerBitmapPolice(color: Int, sizeDp: Int): Bitmap {
-    val sizePx = (sizeDp * 2.4f).toInt()
-    val bitmap = Bitmap.createBitmap(sizePx, sizePx, Bitmap.Config.ARGB_8888)
-    val canvas = Canvas(bitmap)
-    val body = Paint(Paint.ANTI_ALIAS_FLAG).apply { this.color = color; style = Paint.Style.FILL }
-    val border = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        this.color = android.graphics.Color.WHITE
-        style = Paint.Style.STROKE
-        strokeWidth = sizePx * 0.08f
-    }
-    val lensOuter = Paint(Paint.ANTI_ALIAS_FLAG).apply { this.color = android.graphics.Color.WHITE; style = Paint.Style.FILL }
-    val lensInner = Paint(Paint.ANTI_ALIAS_FLAG).apply { this.color = color; style = Paint.Style.FILL }
-
-    val left = sizePx * 0.14f
-    val top = sizePx * 0.30f
-    val right = sizePx * 0.74f
-    val bottom = sizePx * 0.70f
-    val bodyRect = android.graphics.RectF(left, top, right, bottom)
-    canvas.drawRoundRect(bodyRect, sizePx * 0.12f, sizePx * 0.12f, body)
-    canvas.drawRoundRect(bodyRect, sizePx * 0.12f, sizePx * 0.12f, border)
-
-    val tripod = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        this.color = color
-        strokeWidth = sizePx * 0.08f
-        style = Paint.Style.STROKE
-        strokeCap = Paint.Cap.ROUND
-    }
-    val centerX = sizePx * 0.44f
-    canvas.drawLine(centerX, bottom, centerX - sizePx * 0.16f, sizePx * 0.90f, tripod)
-    canvas.drawLine(centerX, bottom, centerX + sizePx * 0.16f, sizePx * 0.90f, tripod)
-    canvas.drawLine(centerX, bottom, centerX, sizePx * 0.90f, tripod)
-
-    val lensCx = sizePx * 0.58f
-    val lensCy = sizePx * 0.50f
-    val lensR = sizePx * 0.11f
-    canvas.drawCircle(lensCx, lensCy, lensR, lensOuter)
-    canvas.drawCircle(lensCx, lensCy, lensR * 0.46f, lensInner)
-
-    val nose = android.graphics.Path().apply {
-        moveTo(right - sizePx * 0.02f, sizePx * 0.44f)
-        lineTo(sizePx * 0.93f, sizePx * 0.50f)
-        lineTo(right - sizePx * 0.02f, sizePx * 0.56f)
-        close()
-    }
-    canvas.drawPath(nose, body)
-    canvas.drawPath(nose, border)
-
-    return bitmap
+    return createSymbolPinBitmap(color, sizeDp, MarkerGlyph.CAMERA)
 }
 
 private fun createCameraClusterMarkerBitmapPolice(color: Int, sizeDp: Int): Bitmap {
@@ -1798,65 +1734,7 @@ private fun isNetworkAvailablePolice(context: Context): Boolean {
 // ═══════════════════════════════════════════════════════════════════
 
 private fun createLiveUserMarkerBitmapPolice(speed: Int, heading: Float): Bitmap {
-    val sizePx = 72
-    val bitmap = Bitmap.createBitmap(sizePx, sizePx, Bitmap.Config.ARGB_8888)
-    val canvas = Canvas(bitmap)
-    val cx = sizePx / 2f
-    val cy = sizePx / 2f
-    val radius = 22f
-
-    val fillColor = when {
-        speed >= 40 -> android.graphics.Color.rgb(34, 197, 94)   // Green = fast
-        speed >= 15 -> android.graphics.Color.rgb(249, 115, 22)  // Orange = moderate
-        else        -> android.graphics.Color.rgb(239, 68, 68)   // Red = slow/stopped
-    }
-
-    // Glow ring
-    val glowPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = fillColor; alpha = 50; style = Paint.Style.FILL
-    }
-    canvas.drawCircle(cx, cy, radius + 10f, glowPaint)
-
-    // White border
-    val borderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = android.graphics.Color.WHITE; style = Paint.Style.FILL
-    }
-    canvas.drawCircle(cx, cy, radius + 3f, borderPaint)
-
-    // Fill
-    val fillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = fillColor; style = Paint.Style.FILL
-    }
-    canvas.drawCircle(cx, cy, radius, fillPaint)
-
-    // Direction arrow
-    if (speed > 3) {
-        canvas.save()
-        canvas.rotate(heading, cx, cy)
-        val arrowPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = android.graphics.Color.WHITE; style = Paint.Style.FILL
-        }
-        val path = android.graphics.Path().apply {
-            moveTo(cx, cy - radius - 9f)
-            lineTo(cx - 6f, cy - radius + 1f)
-            lineTo(cx + 6f, cy - radius + 1f)
-            close()
-        }
-        canvas.drawPath(path, arrowPaint)
-        canvas.restore()
-    }
-
-    // Speed label
-    val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = android.graphics.Color.WHITE
-        textSize = 13f
-        typeface = android.graphics.Typeface.DEFAULT_BOLD
-        textAlign = Paint.Align.CENTER
-    }
-    val textY = cy - (textPaint.descent() + textPaint.ascent()) / 2f
-    canvas.drawText("${speed}", cx, textY, textPaint)
-
-    return bitmap
+    return createLiveUserPinBitmap(speed = speed, isMe = false)
 }
 
 
