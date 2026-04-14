@@ -685,6 +685,124 @@ exports.onReportStatusChange = functions.firestore
   });
 
 /**
+ * seedDemoParkingZones – Callable Cloud Function
+ *
+ * Writes a fixed set of demo parking-zone documents into the `parking`
+ * Firestore collection so the app has data to display without requiring
+ * manual Firestore edits.  Safe to call multiple times – deterministic
+ * document IDs mean existing documents are overwritten rather than
+ * duplicated.
+ *
+ * Requires the caller to be authenticated.
+ *
+ * Input:  {} (no parameters required)
+ * Output: { seeded: number }  – number of zones written
+ */
+exports.seedDemoParkingZones = functions.https.onCall(async (_data, context) => {
+  if (!context.auth) {
+    throw new functions.https.HttpsError(
+      "unauthenticated",
+      "You must be signed in to seed demo data."
+    );
+  }
+
+  const DEMO_ZONES = [
+    {
+      id: "demo_parking_001",
+      address: "Central Plaza Parking – Level 1, Main St",
+      latitude: 3.1478,
+      longitude: 101.6953,
+      totalSlots: 120,
+      availableSlots: 45,
+      isLegal: true,
+    },
+    {
+      id: "demo_parking_002",
+      address: "Riverside Mall Multi-Storey Car Park",
+      latitude: 3.1512,
+      longitude: 101.7021,
+      totalSlots: 200,
+      availableSlots: 0,
+      isLegal: true,
+    },
+    {
+      id: "demo_parking_003",
+      address: "City Park Open-Air Lot, Park Ave",
+      latitude: 3.1445,
+      longitude: 101.6897,
+      totalSlots: 60,
+      availableSlots: 12,
+      isLegal: true,
+    },
+    {
+      id: "demo_parking_004",
+      address: "North Market Street Roadside Bays",
+      latitude: 3.1560,
+      longitude: 101.6870,
+      totalSlots: 30,
+      availableSlots: 4,
+      isLegal: true,
+    },
+    {
+      id: "demo_parking_005",
+      address: "Tech Hub Tower Basement P2",
+      latitude: 3.1490,
+      longitude: 101.7085,
+      totalSlots: 80,
+      availableSlots: 80,
+      isLegal: true,
+    },
+    {
+      id: "demo_parking_006",
+      address: "Heritage Square – Unmarked Lot (Illegal)",
+      latitude: 3.1433,
+      longitude: 101.6945,
+      totalSlots: 20,
+      availableSlots: 20,
+      isLegal: false,
+    },
+    {
+      id: "demo_parking_007",
+      address: "Sunrise Hotel Visitors Bay, Jalan Ampang",
+      latitude: 3.1538,
+      longitude: 101.7112,
+      totalSlots: 50,
+      availableSlots: 18,
+      isLegal: true,
+    },
+    {
+      id: "demo_parking_008",
+      address: "Stadium Road Public Car Park",
+      latitude: 3.1405,
+      longitude: 101.6830,
+      totalSlots: 150,
+      availableSlots: 67,
+      isLegal: true,
+    },
+  ];
+
+  const batch = db.batch();
+  for (const { id, address, latitude, longitude, totalSlots, availableSlots, isLegal } of DEMO_ZONES) {
+    const ref = db.collection("parking").doc(id);
+    batch.set(
+      ref,
+      {
+        address,
+        location: new admin.firestore.GeoPoint(latitude, longitude),
+        totalSlots,
+        availableSlots,
+        isLegal,
+      },
+      { merge: false }
+    );
+  }
+  await batch.commit();
+
+  functions.logger.info(`seedDemoParkingZones: wrote ${DEMO_ZONES.length} demo zones`);
+  return { seeded: DEMO_ZONES.length };
+});
+
+/**
  * uploadReportImage – Callable Cloud Function
  *
  * Accepts a base64-encoded image from the client, uploads it to Cloud Storage
