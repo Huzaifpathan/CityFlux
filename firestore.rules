@@ -153,6 +153,41 @@ service cloud.firestore {
     }
 
     // ═══════════════════════════════════════════════════════════
+    // 🗺️ MAP MIRROR COLLECTIONS (Admin Dashboard + Website)
+    // - Read: any authenticated app user + admin dashboard users
+    // - Write: server-side Cloud Functions only (clients blocked)
+    // ═══════════════════════════════════════════════════════════
+    match /map_traffic/{docId} {
+      allow read: if isAuthenticated();
+      allow write: if false;
+    }
+
+    match /map_parking_live/{docId} {
+      allow read: if isAuthenticated();
+      allow write: if false;
+    }
+
+    match /map_live_users/{docId} {
+      allow read: if isAuthenticated();
+      allow write: if false;
+    }
+
+    match /map_incidents/{docId} {
+      allow read: if isAuthenticated();
+      allow write: if false;
+    }
+
+    match /map_parking_spots/{docId} {
+      allow read: if isAuthenticated();
+      allow write: if false;
+    }
+
+    match /map_traffic_cameras/{docId} {
+      allow read: if isAuthenticated();
+      allow write: if false;
+    }
+
+    // ═══════════════════════════════════════════════════════════
     // 🆘 SOS ALERTS COLLECTION
     // - Any authenticated user can create an SOS alert
     // - All authenticated users can read SOS alerts

@@ -25,6 +25,16 @@ const CLUSTER_THRESHOLD_HIGH = 3; // >= this => HIGH
 const CLUSTER_THRESHOLD_MEDIUM = 2; // == this => MEDIUM
 const CONGESTION_DECAY_MINUTES = 30; // if no updates for this many minutes, lower congestion
 
+// Canonical Firestore mirror collections for admin map dashboard
+const MAP_COLLECTIONS = {
+  TRAFFIC: "map_traffic",
+  PARKING_LIVE: "map_parking_live",
+  LIVE_USERS: "map_live_users",
+  INCIDENTS: "map_incidents",
+  PARKING_SPOTS: "map_parking_spots",
+  TRAFFIC_CAMERAS: "map_traffic_cameras",
+};
+
 // ── Mapping report type → human-friendly alert message ───────────
 const REPORT_ALERTS = {
   illegal_parking: "🅿️ Illegal parking reported in your area",
@@ -71,6 +81,72 @@ function haversineMeters(lat1, lon1, lat2, lon2) {
     Math.sin(dLon / 2) * Math.sin(dLon / 2);
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   return R * c;
+}
+
+function toNumber(value, fallback = 0) {
+  if (typeof value === "number" && !Number.isNaN(value)) return value;
+  if (typeof value === "string" && value.trim().length) {
+    const parsed = Number(value);
+    if (!Number.isNaN(parsed)) return parsed;
+  }
+  return fallback;
+}
+
+function parseCameraCoordinates(data = {}) {
+  const directLat = data.latitude ?? data.lat;
+  const directLng = data.longitude ?? data.lng;
+  if (directLat !== undefined && directLng !== undefined) {
+    return { latitude: toNumber(directLat, 0), longitude: toNumber(directLng, 0) };
+  }
+
+  const location = data.location || data.coordinates;
+  if (Array.isArray(location) && location.length >= 2) {
+    return { latitude: toNumber(location[0], 0), longitude: toNumber(location[1], 0) };
+  }
+
+  if (location && typeof location === "object") {
+    if (typeof location.latitude === "number" && typeof location.longitude === "number") {
+      return { latitude: location.latitude, longitude: location.longitude };
+    }
+    if (typeof location.lat === "number" && typeof location.lng === "number") {
+      return { latitude: location.lat, longitude: location.lng };
+    }
+  }
+
+  return { latitude: 0, longitude: 0 };
+}
+
+async function mirrorTrafficCameraDoc(change, cameraId, sourceCollection) {
+  const targetRef = db.collection(MAP_COLLECTIONS.TRAFFIC_CAMERAS).doc(cameraId);
+  if (!change.after.exists) {
+    await targetRef.delete().catch(() => null);
+    return;
+  }
+
+  const data = change.after.data() || {};
+  const { latitude, longitude } = parseCameraCoordinates(data);
+  const vehicleCount = toNumber(
+    data.vehicleCount ??
+    data.liveVehicleCount ??
+    data.currentVehicleCount ??
+    data.vehicle_count ??
+    data.count ??
+    data.countedVehicles ??
+    data.counted ??
+    data.detected,
+    0
+  );
+
+  await targetRef.set({
+    cameraId,
+    sourceCollection,
+    name: data.name || data.cameraName || data.title || data.camera_name || `Camera ${cameraId}`,
+    latitude,
+    longitude,
+    vehicleCount: Math.max(0, vehicleCount),
+    raw: data,
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  }, { merge: true });
 }
 
 async function notifyRoles(roles, notification, data = {}) {
@@ -257,6 +333,18 @@ exports.onParkingLiveChange = functions.database.ref('/parking_live/{parkingId}'
   functions.logger.info(`parking_live ${parkingId} changed`, { before, after });
 
   try {
+    const mirrorRef = db.collection(MAP_COLLECTIONS.PARKING_LIVE).doc(parkingId);
+    if (!change.after.exists()) {
+      await mirrorRef.delete().catch(() => null);
+    } else {
+      await mirrorRef.set({
+        parkingId,
+        ...after,
+        source: "rtdb",
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      }, { merge: true });
+    }
+
     const available = typeof after.availableSlots === 'number' ? after.availableSlots : null;
     if (available === 0) {
       // Find parking doc to get location
@@ -277,6 +365,69 @@ exports.onParkingLiveChange = functions.database.ref('/parking_live/{parkingId}'
     functions.logger.error('Error in onParkingLiveChange', err);
     throw err;
   }
+  return null;
+});
+
+/** === Function: onTrafficNodeChange (Realtime DB -> Firestore mirror) === */
+exports.onTrafficNodeChange = functions.database.ref('/traffic/{roadId}').onWrite(async (change, context) => {
+  const roadId = context.params.roadId;
+  const targetRef = db.collection(MAP_COLLECTIONS.TRAFFIC).doc(roadId);
+
+  try {
+    if (!change.after.exists()) {
+      await targetRef.delete().catch(() => null);
+      return null;
+    }
+
+    const after = change.after.val() || {};
+    const center = after.center || {};
+    await targetRef.set({
+      roadId,
+      congestionLevel: (after.congestionLevel || "LOW").toString().toUpperCase(),
+      lastUpdated: toNumber(after.lastUpdated, nowMs()),
+      centerLat: toNumber(center.lat, 0),
+      centerLng: toNumber(center.lng, 0),
+      source: "rtdb",
+      raw: after,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    }, { merge: true });
+  } catch (err) {
+    functions.logger.error("Error in onTrafficNodeChange", err);
+    throw err;
+  }
+
+  return null;
+});
+
+/** === Function: onLiveLocationChange (Realtime DB -> Firestore mirror) === */
+exports.onLiveLocationChange = functions.database.ref('/live_locations/{userId}').onWrite(async (change, context) => {
+  const userId = context.params.userId;
+  const targetRef = db.collection(MAP_COLLECTIONS.LIVE_USERS).doc(userId);
+
+  try {
+    if (!change.after.exists()) {
+      await targetRef.delete().catch(() => null);
+      return null;
+    }
+
+    const after = change.after.val() || {};
+    await targetRef.set({
+      userId,
+      lat: toNumber(after.lat, 0),
+      lng: toNumber(after.lng, 0),
+      speed: Math.max(0, Math.round(toNumber(after.speed, 0))),
+      heading: toNumber(after.heading, 0),
+      name: (after.name || "Citizen").toString(),
+      timestamp: toNumber(after.timestamp, nowMs()),
+      source: "rtdb",
+      raw: after,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    }, { merge: true });
+  } catch (err) {
+    functions.logger.error("Error in onLiveLocationChange", err);
+    throw err;
+  }
+
   return null;
 });
 
@@ -301,6 +452,102 @@ exports.syncParkingToRealtime = functions.firestore.document('parking/{parkingId
     functions.logger.info(`Synced parking ${parkingId} to Realtime DB`);
   } catch (err) {
     functions.logger.error('Error syncing parking to RTDB', err);
+    throw err;
+  }
+  return null;
+});
+
+/** === Function: onParkingSpotChange (parking -> Firestore map mirror) === */
+exports.onParkingSpotChange = functions.firestore.document('parking/{parkingId}').onWrite(async (change, context) => {
+  const parkingId = context.params.parkingId;
+  const targetRef = db.collection(MAP_COLLECTIONS.PARKING_SPOTS).doc(parkingId);
+
+  try {
+    if (!change.after.exists) {
+      await targetRef.delete().catch(() => null);
+      return null;
+    }
+
+    const after = change.after.data() || {};
+    await targetRef.set({
+      parkingId,
+      ...after,
+      sourceCollection: "parking",
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    }, { merge: true });
+  } catch (err) {
+    functions.logger.error("Error in onParkingSpotChange", err);
+    throw err;
+  }
+
+  return null;
+});
+
+/** === Function: onReportMirrorToMapIncidents (reports -> Firestore map mirror) === */
+exports.onReportMirrorToMapIncidents = functions.firestore.document('reports/{reportId}').onWrite(async (change, context) => {
+  const reportId = context.params.reportId;
+  const targetRef = db.collection(MAP_COLLECTIONS.INCIDENTS).doc(reportId);
+
+  try {
+    if (!change.after.exists) {
+      await targetRef.delete().catch(() => null);
+      return null;
+    }
+
+    const report = change.after.data() || {};
+    await targetRef.set({
+      reportId,
+      userId: report.userId || "",
+      type: report.type || "other",
+      title: report.title || "",
+      description: report.description || "",
+      imageUrl: report.imageUrl || "",
+      imageUrls: Array.isArray(report.imageUrls) ? report.imageUrls : [],
+      latitude: toNumber(report.latitude, 0),
+      longitude: toNumber(report.longitude, 0),
+      status: report.status || "Pending",
+      priority: report.priority || "medium",
+      assignedTo: report.assignedTo || "",
+      timestamp: report.timestamp || null,
+      isAnonymous: Boolean(report.isAnonymous),
+      upvoteCount: toNumber(report.upvoteCount, 0),
+      sourceCollection: "reports",
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    }, { merge: true });
+  } catch (err) {
+    functions.logger.error("Error in onReportMirrorToMapIncidents", err);
+    throw err;
+  }
+
+  return null;
+});
+
+/** === Functions: mirror traffic camera collections into one canonical collection === */
+exports.onTrafficCameraSingularMirror = functions.firestore.document('traffic camera/{cameraId}').onWrite(async (change, context) => {
+  try {
+    await mirrorTrafficCameraDoc(change, context.params.cameraId, "traffic camera");
+  } catch (err) {
+    functions.logger.error("Error in onTrafficCameraSingularMirror", err);
+    throw err;
+  }
+  return null;
+});
+
+exports.onTrafficCamerasPluralMirror = functions.firestore.document('traffic cameras/{cameraId}').onWrite(async (change, context) => {
+  try {
+    await mirrorTrafficCameraDoc(change, context.params.cameraId, "traffic cameras");
+  } catch (err) {
+    functions.logger.error("Error in onTrafficCamerasPluralMirror", err);
+    throw err;
+  }
+  return null;
+});
+
+exports.onTrafficCamerasHyphenMirror = functions.firestore.document('traffic-cameras/{cameraId}').onWrite(async (change, context) => {
+  try {
+    await mirrorTrafficCameraDoc(change, context.params.cameraId, "traffic-cameras");
+  } catch (err) {
+    functions.logger.error("Error in onTrafficCamerasHyphenMirror", err);
     throw err;
   }
   return null;
